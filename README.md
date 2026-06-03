@@ -96,8 +96,8 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 ## Setup
 
 ### Requirements
-* [Python 3.12](https://www.python.org/downloads/release/python-31213/)
-* Node.js
+* [Python 3.12](https://www.python.org/downloads/release/python-31210/)
+* Node.js (if building extension from source)
 * Python 3.12-venv (on Linux)
 * Valid TOTK dump
 
