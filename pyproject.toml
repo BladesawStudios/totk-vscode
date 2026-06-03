@@ -39,6 +39,7 @@ select = [
 ignore = [
     "E501",  # line too long, handled by formatter
     "E402",  # Module level import not at top of file
+    "F821",  # Undefined Name
 ]
 
 [tool.ruff.format]
