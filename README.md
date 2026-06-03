@@ -48,6 +48,8 @@ Preview and edit subfiles of SARC and BNTX archives
 - ASB (Changes automatically applied to corresponding BAEV)
 - BAEV (Changes automatically applied to corresponding ASB)
 - XLINK
+- PCHTXT
+- TKMM Config Files
 
 ---
 
@@ -91,6 +93,7 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 - Audio Support (BARS, BWAV.)
 - Actor Tooling (Automating the process as much as possible.)
 - Full romfs file content string searching
+- New project creation
 - <sub></sup>PTCL/Effect support is being researched but not confirmed. This is uncharted territory.</sup></sub>
 
 ## Setup
