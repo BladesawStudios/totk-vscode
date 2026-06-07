@@ -62,6 +62,11 @@ jobs:
       - name: Run Extension Tests
         run: xvfb-run -a npm test
 
+      - name: Inject Commit Hash into Version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          jq ".version += \"-$SHORT_SHA\"" package.json > package.json.tmp && mv package.json.tmp package.json
+
       - name: Package VSIX
         run: npm run package:vsix
 
