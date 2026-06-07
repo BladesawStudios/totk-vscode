@@ -313,7 +313,22 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         this.onDidChangeRootsEmitter.fire();
     }
 
-    refresh(): void {
+    async refresh(): Promise<void> {
+        for (const root of this.roots) {
+            const fileRootPath = root.fsPath;
+            const validMods = await findValidModFolders(root);
+            if (validMods.length > 1) {
+                this.hasMultipleMods.add(fileRootPath);
+            } else {
+                this.hasMultipleMods.delete(fileRootPath);
+                if (validMods.length === 1) {
+                    this.logicalRoots.set(fileRootPath, validMods[0]!.fsPath);
+                } else {
+                    this.logicalRoots.delete(fileRootPath);
+                }
+            }
+        }
+        await this.persistLogicalRoots();
         this.onDidChangeTreeDataEmitter.fire(undefined);
     }
 
