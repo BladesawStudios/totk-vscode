@@ -39,13 +39,30 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      - name: Cache Node.js modules
+        id: cache-node
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+
       - name: Install Node dependencies
+        if: steps.cache-node.outputs.cache-hit != 'true'
         run: npm ci
 
+      - name: Cache Python Virtual Environment
+        id: cache-python
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-python-${{ hashFiles('pyproject.toml') }}
+
       - name: Install Python dependencies
+        if: steps.cache-python.outputs.cache-hit != 'true'
         run: |
-          python -m pip install --upgrade pip
-          pip install ".[dev]"
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install ".[dev]"
 
       - name: Run TypeScript Linter
         run: npm run lint
@@ -54,10 +71,16 @@ jobs:
         run: npm run check-types
 
       - name: Run Python Ruff Linter
-        run: ruff check .
+        run: .venv/bin/ruff check .
 
       - name: Run Python Ruff Formatter Check
-        run: ruff format --check .
+        run: .venv/bin/ruff format --check .
+
+      - name: Cache VS Code Test Downloads
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: ${{ runner.os }}-vscode-test-${{ hashFiles('package.json', '.vscode-test.mjs') }}
 
       - name: Run Extension Tests
         run: xvfb-run -a npm test
@@ -74,4 +97,4 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: totk-vscode-extension
-          path: "*.vsix"
+          path: "out/*.vsix"
