@@ -56,6 +56,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
 
       - name: Setup Python
         uses: actions/setup-python@v6.2.0
@@ -89,6 +91,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -143,6 +147,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -161,7 +167,6 @@ jobs:
         if: steps.cache-node.outputs.cache-hit != 'true'
         run: npm ci
 
-      # --- ADDED PYTHON SETUP HERE ---
       - name: Setup Python
         uses: actions/setup-python@v6.2.0
         with:
@@ -181,7 +186,6 @@ jobs:
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install ".[dev]"
-      # -------------------------------
 
       - name: Inject Commit Hash into Version
         run: |
