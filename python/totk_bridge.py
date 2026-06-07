@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 
 import oead
@@ -185,6 +186,27 @@ def save_sarc(archive_path, sarc_bytes, is_sarc_compressed):
         f.write(sarc_bytes)
 
 
+def _patch_python_byml():
+    import byml.byml as b
+    if not hasattr(b.Byml, "_orig_parse_node"):
+        orig_parse = b.Byml._parse_node
+        def my_parse(self, nt, off):
+            if nt == 0xa2:
+                return self._parse_binary_node(self._read_u32(off))
+            return orig_parse(self, nt, off)
+        b.Byml._orig_parse_node = orig_parse
+        b.Byml._parse_node = my_parse
+
+    if not hasattr(b.Writer, "_orig_to_byml_type"):
+        orig_to_type = b.Writer._to_byml_type
+        def my_to_type(self, data):
+            if isinstance(data, bytes):
+                return 0xa2
+            return orig_to_type(self, data)
+        b.Writer._orig_to_byml_type = orig_to_type
+        b.Writer._to_byml_type = my_to_type
+    return b
+
 def read_byml_content(file_data, logical_path="", romfs_path=""):
     file_data, _, _ = decompress_container(file_data, logical_path, romfs_path)
     if len(file_data) == 0:
@@ -198,15 +220,40 @@ def read_byml_content(file_data, logical_path="", romfs_path=""):
     try:
         byml_doc = oead.byml.from_binary(file_data)
     except Exception as e:
-        if "version" in str(e).lower():
-            mutable = bytearray(file_data)
-            if is_little:
-                mutable[2:4] = (4).to_bytes(2, "little")
-            else:
-                mutable[2:4] = (4).to_bytes(2, "big")
-            byml_doc = oead.byml.from_binary(bytes(mutable))
+        if "version" in str(e).lower() or "unexpected type" in str(e).lower():
+            # Try to parse with patched python byml
+            try:
+                b = _patch_python_byml()
+                py_doc = b.Byml(file_data).parse()
+                
+                # Check for PtclBin
+                if 'PtclBin' in py_doc and isinstance(py_doc['PtclBin'], bytes):
+                    from ptcl_io import ptclbin_to_json
+                    ptcl_json = ptclbin_to_json(py_doc['PtclBin'])
+                    del py_doc['PtclBin']
+                    py_doc['PTCL_JSON'] = ptcl_json
+                    
+                # Convert py_doc back to oead format for text dumping.
+                # Actually, python byml produces pure python dicts, which oead.byml.to_text doesn't mind!
+                # Wait, oead.byml functions require oead types (like oead.byml.Hash).
+                def py_to_oead(node):
+                    if isinstance(node, dict):
+                        return oead.byml.Hash({k: py_to_oead(v) for k, v in node.items()})
+                    elif isinstance(node, list):
+                        return oead.byml.Array([py_to_oead(x) for x in node])
+                    elif isinstance(node, b.Int): return oead.S32(node)
+                    elif isinstance(node, b.UInt): return oead.U32(node)
+                    elif isinstance(node, b.Float): return oead.F32(node)
+                    elif isinstance(node, b.Int64): return oead.S64(node)
+                    elif isinstance(node, b.UInt64): return oead.U64(node)
+                    elif isinstance(node, b.Double): return oead.F64(node)
+                    return node
+
+                byml_doc = py_to_oead(py_doc)
+            except Exception as e2:
+                return f"# Error: Unsupported BYML version or node type\n# Detail: {str(e2)}\n"
         else:
-            raise e
+            return f"# Error parsing BYML\n# Detail: {str(e)}\n"
 
     file_name = Path(logical_path).name.lower()
     if file_name.startswith("tag.product.") and "rstbl" in file_name:
@@ -219,6 +266,7 @@ def read_byml_content(file_data, logical_path="", romfs_path=""):
         return to_editor_text(byml_doc)
     except Exception:
         return format_byml_for_editor(byml_doc)
+
 
 
 def read_msbt_content(file_data, logical_path="", romfs_path=""):
@@ -267,6 +315,39 @@ def write_byml_bytes(orig_file_data, new_yaml, logical_path="", romfs_path=""):
         return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
 
     byml_doc = oead.byml.from_text(normalize_byml_u64_literals(new_yaml))
+    
+    # Check if we need to restore PTCL data and write using python byml
+    if "PTCL_JSON" in byml_doc:
+        import byml.byml as b
+        def oead_to_py(node):
+            if isinstance(node, oead.byml.Hash):
+                return {k: oead_to_py(v) for k, v in node.items()}
+            elif isinstance(node, oead.byml.Array):
+                return [oead_to_py(x) for x in node]
+            elif isinstance(node, oead.S32): return b.Int(node)
+            elif isinstance(node, oead.U32): return b.UInt(node)
+            elif isinstance(node, oead.F32): return b.Float(node)
+            elif isinstance(node, oead.S64): return b.Int64(node)
+            elif isinstance(node, oead.U64): return b.UInt64(node)
+            elif isinstance(node, oead.F64): return b.Double(node)
+            elif isinstance(node, memoryview): return bytes(node)
+            return node
+
+        py_doc = oead_to_py(byml_doc)
+        ptcl_json = py_doc.pop("PTCL_JSON")
+        
+        # Get original PtclBin
+        b_mod = _patch_python_byml()
+        orig_doc = b_mod.Byml(orig_file_data).parse()
+        orig_ptcl_bin = orig_doc.get("PtclBin", b"")
+        
+        from ptcl_io import json_to_ptclbin
+        new_ptcl_bin = json_to_ptclbin(orig_ptcl_bin, ptcl_json)
+        py_doc["PtclBin"] = new_ptcl_bin
+        
+        writer = b_mod.Writer(py_doc, be=big_endian, version=version)
+        new_byml_bytes = writer.get_bytes()
+        return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
 
     try:
         new_byml_bytes = oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)

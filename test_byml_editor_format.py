@@ -1,10 +1,4 @@
-"""Format oead BYML documents for editor display."""
-
-import os
-
 import oead
-
-_MAX_COUNT = int(os.environ.get("TOTK_BYML_INLINE_CONTAINER_MAX_COUNT", "1"))
 
 SCALAR_TYPES = (
     str,
@@ -21,54 +15,28 @@ SCALAR_TYPES = (
     type(None),
 )
 
-
 def _fmt_scalar(value, indent: int = 0) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, oead.U64):
-        return f"!ul 0x{int(value) & 0xFFFFFFFFFFFFFFFF:x}"
-    if isinstance(value, oead.S64):
-        signed = int(value)
-        if signed < 0:
-            return f"!sl 0x{signed & 0xFFFFFFFFFFFFFFFF:x}"
-        return f"!sl {signed}"
-    if isinstance(value, oead.U32):
-        return f"!u 0x{int(value) & 0xFFFFFFFF:08x}"
-    if isinstance(value, oead.S32):
-        return str(int(value))
-    if isinstance(value, oead.F64):
-        return f"!f64 {float(value)}"
-    if isinstance(value, oead.F32):
-        number = float(value)
-        s = str(number)
-        return s if ("." in s or "e" in s or "nan" in s.lower() or "inf" in s.lower()) else s + ".0"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, oead.Bytes):
-        return repr(bytes(value))
-    if value is None:
-        return "null"
     if isinstance(value, str):
         if "\n" in value:
             lines = value.split("\n")
             sp = "  " * (indent + 1)
             formatted_lines = [f"{sp}{line}" if line else sp for line in lines]
             return "|\n" + "\n".join(formatted_lines)
-        if not value or any(ch in value for ch in ":#[]{},\"'\n\t") or value[0] in "-?":
-            return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+        if not value or any(ch in value for ch in ":#[]{},\"'\t") or value[0] in "-?":
+            return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
         return value
     return str(value)
 
-
 def _is_scalar(value) -> bool:
     return isinstance(value, SCALAR_TYPES)
-
 
 def _can_inline(node) -> bool:
     if isinstance(node, str) and "\n" in node:
         return False
     if isinstance(node, (oead.byml.Hash, oead.byml.Array)):
-        if len(node) > _MAX_COUNT:
+        if len(node) > 1:
             return False
         if isinstance(node, oead.byml.Hash):
             for key in node:
@@ -81,7 +49,6 @@ def _can_inline(node) -> bool:
                     return False
             return True
     return True
-
 
 def _serialize_inline(node) -> str:
     if isinstance(node, oead.byml.Hash):
@@ -96,11 +63,9 @@ def _serialize_inline(node) -> str:
     else:
         return _fmt_scalar(node, 0)
 
-
 def _serialize_hash_entries(node: oead.byml.Hash, indent: int) -> list[str]:
     sp = "  " * indent
-    lines: list[str] = []
-
+    lines = []
     for key in node:
         value = node[key]
         if isinstance(value, (oead.byml.Hash, oead.byml.Array)):
@@ -111,21 +76,16 @@ def _serialize_hash_entries(node: oead.byml.Hash, indent: int) -> list[str]:
                 lines.extend(_serialize(value, indent + 1))
         else:
             lines.append(f"{sp}{key}: {_fmt_scalar(value, indent)}")
-
     return lines
-
 
 def _serialize_array_item_hash(item: oead.byml.Hash, indent: int) -> list[str]:
     sp = "  " * indent
     keys = list(item.keys())
-
     if len(keys) == 1:
         return _serialize_single_key_hash_item(item, keys[0], indent)
-
-    lines: list[str] = []
+    lines = []
     first_key = keys[0]
     first_value = item[first_key]
-
     if isinstance(first_value, (oead.byml.Hash, oead.byml.Array)):
         if _can_inline(first_value):
             lines.append(f"{sp}- {first_key}: {_serialize_inline(first_value)}")
@@ -134,7 +94,6 @@ def _serialize_array_item_hash(item: oead.byml.Hash, indent: int) -> list[str]:
             lines.extend(_serialize(first_value, indent + 2))
     else:
         lines.append(f"{sp}- {first_key}: {_fmt_scalar(first_value, indent + 1)}")
-
     for key in keys[1:]:
         value = item[key]
         if isinstance(value, (oead.byml.Hash, oead.byml.Array)):
@@ -145,15 +104,12 @@ def _serialize_array_item_hash(item: oead.byml.Hash, indent: int) -> list[str]:
                 lines.extend(_serialize(value, indent + 2))
         else:
             lines.append(f"{sp}  {key}: {_fmt_scalar(value, indent + 1)}")
-
     return lines
-
 
 def _serialize_single_key_hash_item(item: oead.byml.Hash, key: str, indent: int) -> list[str]:
     sp = "  " * indent
     value = item[key]
-    lines: list[str] = []
-
+    lines = []
     if isinstance(value, (oead.byml.Hash, oead.byml.Array)):
         if _can_inline(value):
             lines.append(f"{sp}- {key}: {_serialize_inline(value)}")
@@ -165,36 +121,28 @@ def _serialize_single_key_hash_item(item: oead.byml.Hash, key: str, indent: int)
     else:
         lines.append(f"{sp}- {key}:")
         lines.extend(_serialize(value, indent + 2))
-
     return lines
-
 
 def _serialize_flat_hash_item(item: oead.byml.Hash, indent: int) -> list[str]:
     sp = "  " * indent
     keys = list(item.keys())
-    lines: list[str] = []
-
+    lines = []
     first = keys[0]
     lines.append(f"{sp}- {first}: {_fmt_scalar(item[first], indent + 1)}")
     for key in keys[1:]:
         lines.append(f"{sp}  {key}: {_fmt_scalar(item[key], indent + 1)}")
-
     return lines
-
 
 def _serialize(node, indent: int = 0) -> list[str]:
     if isinstance(node, (oead.byml.Hash, oead.byml.Array)):
         if _can_inline(node):
             sp = "  " * indent
             return [f"{sp}{_serialize_inline(node)}"]
-
     if isinstance(node, oead.byml.Hash):
         return _serialize_hash_entries(node, indent)
-
     if isinstance(node, oead.byml.Array):
         sp = "  " * indent
-        lines: list[str] = []
-
+        lines = []
         for item in node:
             if isinstance(item, oead.byml.Hash):
                 if _can_inline(item):
@@ -215,12 +163,21 @@ def _serialize(node, indent: int = 0) -> list[str]:
                     lines.extend(_serialize(item, indent + 1))
             else:
                 lines.append(f"{sp}- {_fmt_scalar(item, indent)}")
-
         return lines
-
     sp = "  " * indent
     return [f"{sp}{_fmt_scalar(node, indent)}"]
 
-
 def to_editor_text(document) -> str:
     return "\n".join(_serialize(document)).rstrip() + "\n"
+
+test_doc = oead.byml.Hash({
+    "PTCL_JSON": "line1\nline2\n",
+    "List": oead.byml.Array([
+        "l1\nl2",
+        "l3"
+    ]),
+    "HashList": oead.byml.Array([
+        oead.byml.Hash({"Key": "v1\nv2"})
+    ])
+})
+print(to_editor_text(test_doc))
