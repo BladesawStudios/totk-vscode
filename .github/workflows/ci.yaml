@@ -161,6 +161,28 @@ jobs:
         if: steps.cache-node.outputs.cache-hit != 'true'
         run: npm ci
 
+      # --- ADDED PYTHON SETUP HERE ---
+      - name: Setup Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Cache Python Virtual Environment
+        id: cache-python
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-python-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install Python dependencies
+        if: steps.cache-python.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install ".[dev]"
+      # -------------------------------
+
       - name: Inject Commit Hash into Version
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
@@ -172,5 +194,5 @@ jobs:
       - name: Upload VSIX Artifact
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: totk-vscode-extension
+          name: tkvsc-vsix
           path: "out/*.vsix"
