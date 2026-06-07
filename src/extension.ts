@@ -64,7 +64,7 @@ import {
     setCanonicalIndexExtensionPath,
 } from './canonicalPathIndex';
 import { propagateCanonicalSave } from './canonicalSavePropagation';
-import { normalizePath, pathsEqual } from './projectPaths';
+import { getProjectModRoots, normalizePath, pathsEqual } from './projectPaths';
 import type { DiskWriteNotification } from './totkDiskFs';
 import { configureFilteringRules } from './filteringRules';
 import {
@@ -1078,6 +1078,14 @@ export async function activate(context: vscode.ExtensionContext) {
             return;
         }
 
+        const allModRoots = new Set<string>();
+        for (const root of roots) {
+            const modRoots = getProjectModRoots(root.fsPath);
+            for (const m of modRoots) {
+                allModRoots.add(m);
+            }
+        }
+
         await vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
@@ -1085,10 +1093,10 @@ export async function activate(context: vscode.ExtensionContext) {
                 cancellable: false,
             },
             async () => {
-                for (const root of roots) {
+                for (const modRoot of allModRoots) {
                     await ensureProjectCanonicalImport({
                         overlayDbPath: projectCanonicalOverlayPath,
-                        projectRoot: root.fsPath,
+                        projectRoot: modRoot,
                         romfsPath,
                         pythonExecutable: pythonExe,
                         bridgePath,

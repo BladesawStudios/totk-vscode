@@ -129,7 +129,7 @@ function pathMatchesBlacklistedFileSuffix(pathValue: string, fileSuffixes: strin
     return false;
 }
 
-function inferActiveProjectRoot(
+function inferActiveModRoot(
     editedPath: string,
     roots: ProjectRootInfo[],
 ): ProjectRootInfo | undefined {
@@ -148,7 +148,21 @@ function inferActiveProjectRoot(
         }
     }
 
-    return best?.root;
+    if (!best) {
+        return undefined;
+    }
+    
+    // Narrow down to the specific mod option if applicable
+    const wsRoot = best.root.fsPath;
+    const rel = path.relative(wsRoot, normalizedEditedPath);
+    const parts = rel.split(path.sep);
+
+    if (parts.length >= 4 && parts[0]?.toLowerCase() === 'options') {
+        const modRoot = path.join(wsRoot, 'options', parts[1]!, parts[2]!);
+        return { ...best.root, fsPath: normalizePath(modRoot) };
+    }
+
+    return best.root;
 }
 
 async function ensureArchiveInProject(
@@ -202,7 +216,7 @@ export async function propagateCanonicalSave(
         return;
     }
 
-    const activeProjectRoot = inferActiveProjectRoot(
+    const activeProjectRoot = inferActiveModRoot(
         options.writeInput.diskArchivePath,
         options.projectRoots,
     );

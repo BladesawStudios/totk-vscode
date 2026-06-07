@@ -146,6 +146,7 @@ export function resolveProjectDestination(
         if (path.basename(gameRomfs).toLowerCase() === 'exefs') {
             isExefs = true;
         }
+        foundFolder = true;
     } else {
         // Source is in the project (or a different dump structure). Find its relative path.
         const projectRel = path.relative(project, source);
@@ -205,4 +206,26 @@ export function resolveAddToCopyPaths(
         source: copySource,
         destination: resolveProjectDestination(copySource, projectRoot, romfsRoot, tkmmOption),
     };
+}
+
+/** 
+ * Returns all isolated mod roots within a given workspace folder.
+ * This includes the workspace root itself and all TKMM options (options/<Group>/<Option>).
+ */
+export function getProjectModRoots(projectRoot: string): string[] {
+    const project = normalizePath(projectRoot);
+    const roots: string[] = [project];
+    const optionsDir = path.join(project, 'options');
+    
+    if (fs.existsSync(optionsDir) && isDirectory(optionsDir)) {
+        const groups = listSubdirectories(optionsDir);
+        for (const group of groups) {
+            const options = listSubdirectories(group);
+            for (const option of options) {
+                roots.push(normalizePath(option));
+            }
+        }
+    }
+    
+    return roots;
 }
