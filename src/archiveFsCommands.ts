@@ -1419,14 +1419,34 @@ export class ArchiveTreeDragDrop
             return;
         }
         const uris = transfer.value as string[];
-        const sources = uris.map((uriString) => {
+        const sources: ArchiveTreeItem[] = [];
+        
+        for (const uriString of uris) {
             const uri = vscode.Uri.parse(uriString);
-            return {
+            const srcFsPath = uri.fsPath.toLowerCase();
+            const destFsPath = folderUri.fsPath.toLowerCase();
+            
+            // Prevent dropping onto itself or its own parent (accidental drag)
+            if (srcFsPath === destFsPath || path.dirname(srcFsPath) === destFsPath) {
+                continue;
+            }
+            
+            // Prevent dropping a folder into its own subdirectory
+            if (destFsPath.startsWith(srcFsPath + path.sep) || destFsPath.startsWith(srcFsPath + '/')) {
+                void vscode.window.showErrorMessage(`Cannot move an item into its own subdirectory.`);
+                continue;
+            }
+            
+            sources.push({
                 resourceUri: uri,
                 entryName: path.basename(uri.fsPath),
                 contextValue: 'archiveFile',
-            } as ArchiveTreeItem;
-        });
+            } as ArchiveTreeItem);
+        }
+
+        if (sources.length === 0) {
+            return;
+        }
         try {
             const targets = await copyEntries(sources, folderUri, true);
             const moves = sources.map((source, index) => ({

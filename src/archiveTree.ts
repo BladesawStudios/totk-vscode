@@ -121,18 +121,30 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
 
         try {
             const entries = await vscode.workspace.fs.readDirectory(element.resourceUri);
-            const isProjectRoot = element.contextValue === 'archiveRoot';
+            const isProjectRoot = element.contextValue === 'archiveRoot' || element.contextValue === 'archiveProjectDir' || element.contextValue === 'archiveProjectDirActive';
             
-            // Find the project root path for this element
-            let projectRootPath = element.resourceUri.fsPath;
-            if (!isProjectRoot) {
+            // Find the workspace root path for hasMultipleMods
+            let workspaceRootPath = element.resourceUri.fsPath;
+            if (element.contextValue !== 'archiveRoot') {
                 const matchedRoot = this.roots.find(r => element.resourceUri.fsPath.startsWith(r.fsPath));
                 if (matchedRoot) {
-                    projectRootPath = matchedRoot.fsPath;
+                    workspaceRootPath = matchedRoot.fsPath;
                 }
             }
+
+            // Find the project root for TKMM options
+            let tkmmProjectRoot = element.resourceUri.fsPath;
+            if (element.contextValue === 'tkmmOptionsRoot') {
+                tkmmProjectRoot = path.dirname(element.resourceUri.fsPath);
+            } else if (element.contextValue === 'tkmmOptionGroup') {
+                tkmmProjectRoot = path.dirname(path.dirname(element.resourceUri.fsPath));
+            } else if (element.contextValue === 'tkmmOption' || element.contextValue === 'tkmmOptionActive') {
+                tkmmProjectRoot = path.dirname(path.dirname(path.dirname(element.resourceUri.fsPath)));
+            } else if (!isProjectRoot) {
+                tkmmProjectRoot = workspaceRootPath;
+            }
             
-            const activeTkmmOption = getActiveTkmmOption(this.context, projectRootPath);
+            const activeTkmmOption = getActiveTkmmOption(this.context, tkmmProjectRoot);
 
             const children = await Promise.all(entries
                 .sort(compareEntriesFoldersFirstKeepingArchivesMixed)
@@ -147,7 +159,7 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                         contextValue = 'tkmmOptionGroup';
                     } else if (element.contextValue === 'tkmmOptionGroup' && isDirectory) {
                         contextValue = 'tkmmOption';
-                    } else if (isDirectory && this.hasMultipleMods.has(projectRootPath) && contextValue === 'archiveDir') {
+                    } else if (isDirectory && this.hasMultipleMods.has(workspaceRootPath) && contextValue === 'archiveDir') {
                         // Check if this directory is a valid mod folder (has romfs/exefs/.tkproj)
                         let isModFolder = false;
                         try {
@@ -163,7 +175,7 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                             // Ignore
                         }
                         if (isModFolder) {
-                            const currentLogicalRoot = this.logicalRoots.get(projectRootPath);
+                            const currentLogicalRoot = this.logicalRoots.get(workspaceRootPath);
                             if (currentLogicalRoot && currentLogicalRoot === childUri.fsPath) {
                                 contextValue = 'archiveProjectDirActive';
                             } else {
