@@ -1,7 +1,7 @@
 name: TODO Item
 description: For the dev team to keep track of what we need to do
 labels: ["todo"]
-title: "[TODO] "
+title: "[TODO]"
 body:
   - type: textarea
     id: problem
