@@ -254,6 +254,11 @@
         "icon": "$(repo-create)"
       },
       {
+        "command": "totk-editor.createProject",
+        "title": "TKVSC: Create New Project",
+        "icon": "$(new-folder)"
+      },
+      {
         "command": "totk-editor.addProjectFolders",
         "title": "TKVSC: Add Projects via File Explorer",
         "icon": "$(folder-opened)"
@@ -500,6 +505,11 @@
         {
           "command": "totk-editor.canonicalSyncOff",
           "when": "view == totk-editor.archives && !config.totk-editor.enableCanonicalSavePropagation",
+          "group": "navigation"
+        },
+        {
+          "command": "totk-editor.createProject",
+          "when": "view == totk-editor.archives",
           "group": "navigation"
         },
         {

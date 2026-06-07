@@ -496,6 +496,58 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
         }
     };
 
+    const createProject = async (): Promise<void> => {
+        const config = vscode.workspace.getConfiguration('TKVSC');
+        const projectsPath = config.get<string>('projectsPath');
+        if (!projectsPath) {
+            void vscode.window.showErrorMessage('TKVSC: Please set a default projects path in settings (TKVSC.projectsPath) first.');
+            return;
+        }
+
+        const projectName = await vscode.window.showInputBox({
+            prompt: 'Enter the name for the new project',
+            placeHolder: 'My New Project'
+        });
+
+        if (!projectName) {
+            return;
+        }
+
+        const projectFolderUri = vscode.Uri.file(path.join(projectsPath, projectName));
+        
+        try {
+            // Check if exists
+            try {
+                const stat = await vscode.workspace.fs.stat(projectFolderUri);
+                if (stat) {
+                    void vscode.window.showErrorMessage(`TKVSC: Project folder '${projectName}' already exists at the specified path.`);
+                    return;
+                }
+            } catch {
+                // Doesn't exist, which is good
+            }
+
+            // Create folder
+            await vscode.workspace.fs.createDirectory(projectFolderUri);
+            
+            // Create romfs
+            await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(projectFolderUri, 'romfs'));
+            
+            // Create .tkproj
+            await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(projectFolderUri, '.tkproj'), new Uint8Array(0));
+
+            // Add to workspace/archive tree
+            await provider.addRoot(projectFolderUri);
+            void focusArchiveSidebar();
+
+            void vscode.window.showInformationMessage(`TKVSC: Created new project '${projectName}'.`);
+
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            void vscode.window.showErrorMessage(`TKVSC: Failed to create project: ${message}`);
+        }
+    };
+
     const importTKMMProjects = async (): Promise<void> => {
         const foundPath = await getTkmmRecentJsonPath();
 
@@ -536,6 +588,7 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
         // Backwards-compat alias for an older mistyped command id.
         vscode.commands.registerCommand('totk-edit.addWorkspaceToArchives', addWorkspaceToArchives),
         vscode.commands.registerCommand('totk-editor.addProjectFolders', addProjectFolders),
+        vscode.commands.registerCommand('totk-editor.createProject', createProject),
         vscode.commands.registerCommand('totk-editor.importTKMMProjects', importTKMMProjects),
     );
 
