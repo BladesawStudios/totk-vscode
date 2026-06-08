@@ -1,9 +1,7 @@
 """TOTK game-dictionary ZSTD (ZsDic.pack.zs) for .pack.zs, .byml.zs, etc."""
 
 import os
-import sys
 from functools import lru_cache
-from pathlib import Path
 
 import oead
 import zstandard as zstd
@@ -22,15 +20,7 @@ def zsdic_pack_path(romfs_path: str) -> str:
 
 
 def _ensure_vendor_zstd() -> None:
-    script_dir = Path(__file__).resolve().parent
-    candidates = [
-        script_dir / "vendor" / "asb",
-        script_dir.parent / "vendor" / "asb",
-    ]
-    for vendor in candidates:
-        vendor_str = str(vendor)
-        if vendor.is_dir() and vendor_str not in sys.path:
-            sys.path.insert(0, vendor_str)
+    pass
 
 
 @lru_cache(maxsize=4)
