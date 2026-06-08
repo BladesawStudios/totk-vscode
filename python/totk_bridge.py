@@ -678,6 +678,22 @@ def main():
                     texture_name = Path(archive_path).name or "texture"
                 print(json.dumps(_read_txtg_texture_result(file_data, texture_name, logical_path)))
 
+            elif command == "read-bwav":
+                internal_path = sys.argv[3] if len(sys.argv) > 3 else ""
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    logical_path = internal_path
+                else:
+                    file_data = Path(archive_path).read_bytes()
+                    logical_path = archive_path
+                from bwav_io import read_bwav_as_base64_wav
+                try:
+                    b64 = read_bwav_as_base64_wav(file_data, logical_path, romfs_path)
+                    print(json.dumps({"wavBase64": b64}))
+                except Exception as e:
+                    print(json.dumps({"error": str(e)}))
+
+
             elif command == "export-temp":
                 internal_path = sys.argv[3]
                 print(

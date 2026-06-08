@@ -24,6 +24,13 @@ export function isTxtgFile(filePath: string): boolean {
     return TXTG_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
 }
 
+const BWAV_FILE_PATTERN = /\.bwav(\.zs)?$/i;
+
+export function isBwavAudioFile(filePath: string): boolean {
+    return BWAV_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
+}
+
+
 /** True when the path continues *inside* an archive file (virtual path). */
 export function isPathInsideArchive(filePath: string): boolean {
     const normalized = filePath.replace(/\\/g, '/').replace(/\/+$/, '');

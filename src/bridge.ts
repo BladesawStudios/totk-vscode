@@ -133,6 +133,16 @@ export interface BntxMiscInfo {
     sampleCount: number;
 }
 
+export interface BridgeResult {
+    success?: boolean;
+    error?: string;
+    [key: string]: any;
+}
+
+export interface BwavAudioResult extends BridgeResult {
+    wavBase64?: string;
+}
+
 export interface BntxTextureResult {
     bntxTexture: true;
     error?: string;

@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile } from './archives';
+import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile, isBwavAudioFile } from './archives';
 import { registerArchiveFileCommands, ArchiveTreeDragDrop, setArchiveTreeView } from './archiveFsCommands';
 import { getActiveTkmmOption, createTkmmOptionGroup, createTkmmOption, setActiveTkmmOption } from './tkmmOptions';
 
@@ -39,9 +39,13 @@ export class ArchiveTreeItem extends vscode.TreeItem {
                 this.iconPath = new vscode.ThemeIcon('star-full');
             }
         } else if (collapsibleState === vscode.TreeItemCollapsibleState.None) {
-            this.command = (isBntxTextureUri(resourceUri) || isTxtgFile(resourceUri.fsPath))
-                ? { command: 'totk-editor.openBntxTexture', title: 'View Texture', arguments: [resourceUri] }
-                : { command: 'vscode.open', title: 'Open', arguments: [resourceUri] };
+            if (isBntxTextureUri(resourceUri) || isTxtgFile(resourceUri.fsPath)) {
+                this.command = { command: 'totk-editor.openBntxTexture', title: 'View Texture', arguments: [resourceUri] };
+            } else if (isBwavAudioFile(resourceUri.fsPath)) {
+                this.command = { command: 'totk-editor.openBwavAudio', title: 'Play Audio', arguments: [resourceUri] };
+            } else {
+                this.command = { command: 'vscode.open', title: 'Open', arguments: [resourceUri] };
+            }
         }
         
         if (!options?.isRoot && options?.isActive) {
@@ -50,6 +54,8 @@ export class ArchiveTreeItem extends vscode.TreeItem {
             this.iconPath = new vscode.ThemeIcon('package');
         } else if ((isBntxTextureUri(resourceUri) || isTxtgFile(resourceUri.fsPath)) && extensionUri) {
             this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'texture.svg');
+        } else if (isBwavAudioFile(resourceUri.fsPath) && extensionUri) {
+            this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'bwav.svg');
         } else if (isTkprojFile(entryName) && extensionUri) {
             this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'tkproj.svg');
         } else if (isTkvscFile(entryName) && extensionUri) {

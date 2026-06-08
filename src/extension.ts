@@ -12,6 +12,7 @@ import {
     runBridgeReadContentAsync,
 } from './bridge';
 import { openTextureViewer, initTextureViewer } from './textureViewer';
+import { openAudioViewer, initAudioViewer } from './audioViewer';
 import {
     ensurePythonEnvironment,
     getCachedPythonExecutable,
@@ -748,6 +749,7 @@ export async function activate(context: vscode.ExtensionContext) {
     initAampExtensions(context.extensionPath);
     initCoreFsExtensions(context.extensionPath);
     initTextureViewer(context.extensionUri);
+    initAudioViewer(context.extensionUri);
     setExtensionPath(context.extensionPath);
     setCanonicalIndexExtensionPath(context.extensionPath);
     setProjectCanonicalOverlayExtensionPath(context.extensionPath);
@@ -1253,6 +1255,37 @@ export async function activate(context: vscode.ExtensionContext) {
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
                 void vscode.window.showErrorMessage(`Texture preview error: ${msg}`);
+            }
+        }),
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('totk-editor.openBwavAudio', async (uri: vscode.Uri) => {
+            const python = getPython();
+            if (!python) {
+                void vscode.window.showErrorMessage('Python not configured.');
+                return;
+            }
+            try {
+                const diskArchive = getDiskArchivePath(uri.fsPath);
+                const filePath = getLocatorInsideDiskArchive(uri.fsPath, diskArchive);
+                const raw = await runBridgeReadAsync(
+                    python,
+                    bridgePath,
+                    ['read-bwav', diskArchive, filePath],
+                    getBridgeEnv(),
+                );
+                
+                if (raw && (raw as any).wavBase64) {
+                    const audioName = filePath.split('/').pop() ?? 'audio';
+                    openAudioViewer(audioName, (raw as any).wavBase64);
+                } else {
+                    const err = raw && (raw as any).error ? (raw as any).error : 'Unknown error';
+                    void vscode.window.showErrorMessage('Failed to decode BWAV audio: ' + err);
+                }
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                void vscode.window.showErrorMessage(`Audio preview error: ${msg}`);
             }
         }),
     );
