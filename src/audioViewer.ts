@@ -11,9 +11,9 @@ export function initAudioViewer(extUri: vscode.Uri): void {
 
 export function openAudioViewer(
     audioName: string,
+    key: string,
     base64Wav: string,
 ): void {
-    const key = audioName;
     const existing = panels.get(key);
     
     if (existing) {

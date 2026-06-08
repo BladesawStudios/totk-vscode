@@ -93,3 +93,33 @@ def read_bwav_as_base64_wav(
     tool = find_vgmstream_cli()
     wav_bytes = _decode_bwav_to_wav(tool, data)
     return base64.b64encode(wav_bytes).decode("ascii")
+
+
+def read_bwav_to_temp_wav(
+    file_data: bytes,
+    logical_path: str = "",
+    romfs_path: str = "",
+) -> str:
+    """Decompress if needed, decode BWAV to WAV, return path to temporary WAV file."""
+    data, _, _ = decompress_container(file_data, logical_path, romfs_path)
+    if not data.startswith(_BWAV_MAGIC):
+        raise ValueError(f"Not a BWAV file (got magic {data[:4]!r})")
+    tool = find_vgmstream_cli()
+    
+    fd, out_path = tempfile.mkstemp(prefix="totk-bwav-", suffix=".wav")
+    os.close(fd)
+    
+    with tempfile.TemporaryDirectory(prefix="totk-bwav-in-") as tmp:
+        inp = Path(tmp) / "input.bwav"
+        inp.write_bytes(data)
+        result = subprocess.run(
+            [tool, "-o", out_path, str(inp)],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+            detail = (result.stderr or result.stdout or b"").decode(errors="replace").strip()
+            raise RuntimeError(f"vgmstream-cli failed: {detail or f'exit {result.returncode}'}")
+        
+    return out_path

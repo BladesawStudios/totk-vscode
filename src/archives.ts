@@ -30,6 +30,12 @@ export function isBwavAudioFile(filePath: string): boolean {
     return BWAV_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
 }
 
+const BARS_FILE_PATTERN = /\.bars(\.zs)?$/i;
+
+export function isBarsAudioArchive(filePath: string): boolean {
+    return BARS_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
+}
+
 
 /** True when the path continues *inside* an archive file (virtual path). */
 export function isPathInsideArchive(filePath: string): boolean {

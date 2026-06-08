@@ -140,7 +140,27 @@ export interface BridgeResult {
 }
 
 export interface BwavAudioResult extends BridgeResult {
-    wavBase64?: string;
+    wavPath?: string;
+}
+
+export interface BarsEntry {
+    name: string;
+    name_hash: number;
+    amta_offset: number;
+    bwav_offset: number;
+    has_prefetch: boolean;
+    has_romfs_bwav: boolean;
+    metadata?: any;
+}
+
+export interface BarsListResult extends BridgeResult {
+    entries?: BarsEntry[];
+}
+
+export interface BarsAudioResult extends BridgeResult {
+    wavPath?: string;
+    name?: string;
+    isPrefetch?: boolean;
 }
 
 export interface BntxTextureResult {

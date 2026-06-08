@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile, isBwavAudioFile } from './archives';
+import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile, isBwavAudioFile, isBarsAudioArchive } from './archives';
 import { registerArchiveFileCommands, ArchiveTreeDragDrop, setArchiveTreeView } from './archiveFsCommands';
 import { getActiveTkmmOption, createTkmmOptionGroup, createTkmmOption, setActiveTkmmOption } from './tkmmOptions';
 
@@ -43,6 +43,8 @@ export class ArchiveTreeItem extends vscode.TreeItem {
                 this.command = { command: 'totk-editor.openBntxTexture', title: 'View Texture', arguments: [resourceUri] };
             } else if (isBwavAudioFile(resourceUri.fsPath)) {
                 this.command = { command: 'totk-editor.openBwavAudio', title: 'Play Audio', arguments: [resourceUri] };
+            } else if (isBarsAudioArchive(resourceUri.fsPath)) {
+                this.command = { command: 'totk-editor.openBarsArchive', title: 'Open BARS Archive', arguments: [resourceUri] };
             } else {
                 this.command = { command: 'vscode.open', title: 'Open', arguments: [resourceUri] };
             }
@@ -56,6 +58,8 @@ export class ArchiveTreeItem extends vscode.TreeItem {
             this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'texture.svg');
         } else if (isBwavAudioFile(resourceUri.fsPath) && extensionUri) {
             this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'bwav.svg');
+        } else if (isBarsAudioArchive(resourceUri.fsPath) && extensionUri) {
+            this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'bars.svg');
         } else if (isTkprojFile(entryName) && extensionUri) {
             this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'tkproj.svg');
         } else if (isTkvscFile(entryName) && extensionUri) {
