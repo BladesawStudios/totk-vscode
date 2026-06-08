@@ -1,10 +1,6 @@
 """Format MSBT label/text data for editor display."""
 
 import re
-import sys
-from pathlib import Path
-
-import references
 
 from msbt_tag_formatter import command_to_tag, tag_to_command
 from pymsbt.classes import TextCommand, TextComponent

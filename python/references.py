@@ -23,6 +23,7 @@ VENDOR_SUBDIRS = [
     VENDOR_DIR / "hexpyt" / "src",
 ]
 
+
 def setup_vendor_paths() -> None:
     """Scan and insert existing vendor directories into sys.path."""
     # Add script_dir itself and workspace root just in case
@@ -36,6 +37,7 @@ def setup_vendor_paths() -> None:
         path_str = str(path)
         if path.is_dir() and path_str not in sys.path:
             sys.path.insert(0, path_str)
+
 
 # Automatically run the path setup when imported
 setup_vendor_paths()

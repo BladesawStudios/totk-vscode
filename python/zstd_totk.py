@@ -1,11 +1,8 @@
 """TOTK game-dictionary ZSTD (ZsDic.pack.zs) for .pack.zs, .byml.zs, etc."""
 
 import os
-import sys
 from functools import lru_cache
-from pathlib import Path
 
-import references
 import oead
 import zstandard as zstd
 
