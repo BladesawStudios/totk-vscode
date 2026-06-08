@@ -1,7 +1,5 @@
-import sys
-from pathlib import Path
-
 from vendor_sys import add_vendor_to_path
+
 add_vendor_to_path("ptcl")
 
 from ptcl import ptcl_apply_edits_lib, ptcl_binary_to_text_lib

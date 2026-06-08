@@ -1,8 +1,6 @@
 """Format MSBT label/text data for editor display."""
 
 import re
-import sys
-from pathlib import Path
 
 from vendor_sys import add_vendor_to_path
 

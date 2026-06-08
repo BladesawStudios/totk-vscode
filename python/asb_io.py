@@ -11,6 +11,8 @@ from pathlib import Path
 import oead
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
+
+
 def _ensure_asb_toolkit_on_path() -> None:
     from vendor_sys import add_vendor_to_path
 

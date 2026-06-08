@@ -1,4 +1,5 @@
 """Helper module to handle adding vendor dependencies to sys.path."""
+
 import sys
 from pathlib import Path
 
