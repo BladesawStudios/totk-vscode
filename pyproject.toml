@@ -9,7 +9,8 @@ dependencies = [
     "mmh3>=4.0.0",
     "Pillow>=10.0.0",
     "texture2ddecoder>=1.0.4",
-    "PyYAML>=6.0"
+    "PyYAML>=6.0",
+    "byml"
 ]
 
 [tool.setuptools]

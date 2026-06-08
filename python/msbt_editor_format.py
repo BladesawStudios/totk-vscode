@@ -4,9 +4,7 @@ import re
 import sys
 from pathlib import Path
 
-_VENDOR_PYMSBT = Path(__file__).resolve().parent.parent / "vendor" / "pymsbt"
-if str(_VENDOR_PYMSBT) not in sys.path:
-    sys.path.insert(0, str(_VENDOR_PYMSBT))
+import references
 
 from msbt_tag_formatter import command_to_tag, tag_to_command
 from pymsbt.classes import TextCommand, TextComponent

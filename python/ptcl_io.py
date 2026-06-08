@@ -1,11 +1,7 @@
 import sys
 from pathlib import Path
 
-# Ensure vendor/ptcl is in sys.path so ptcl.py can import .utils properly
-_script_dir = Path(__file__).resolve().parent
-_ptcl_vendor = _script_dir.parent / "vendor" / "ptcl"
-if str(_ptcl_vendor) not in sys.path:
-    sys.path.insert(0, str(_ptcl_vendor))
+import references
 
 from ptcl import ptcl_apply_edits_lib, ptcl_binary_to_text_lib
 
