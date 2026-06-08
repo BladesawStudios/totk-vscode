@@ -155,5 +155,5 @@ See: [CONTRIBUTING.md](./.github/CONTRIBUTING.md)
 
 ## Help and Community
 
-- [Discord Server](https://discord.gg/BbVXenRFVc)
+- [Discord Server](https://discord.gg/vwPnX2uB8s )
 <!--- [Documentation]()--->
