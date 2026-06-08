@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from './logger';
 
-const MAX_BUFFER = 1024 * 1024 * 50;
+const MAX_BUFFER = 1024 * 1024 * 500;
 export function runBridge(
     pythonExecutable: string,
     bridgePath: string,

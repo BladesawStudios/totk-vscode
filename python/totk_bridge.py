@@ -566,6 +566,9 @@ def main():
                 print(json.dumps({"error": f"Hexpat compile error: {e}"}))
                 sys.exit(0)
 
+            with open(r"C:\Users\dmone\Desktop\hexpat_generated.py", "w") as f:
+                f.write(python_code)
+
             local_env = {
                 "byts": file_data,
                 "primitives": primitives,
@@ -574,12 +577,61 @@ def main():
                 if not k.startswith("_"):
                     local_env[k] = getattr(primitives, k)
 
-            exec(python_code, local_env, local_env)
+            primitives.std.mem.byts = file_data
+
+            import threading
+            exec_error = None
+            def run_exec():
+                nonlocal exec_error
+                import sys
+                old_limit = sys.getrecursionlimit()
+                sys.setrecursionlimit(5000)
+                try:
+                    primitives.std.mem.byts = file_data
+                    exec(python_code, local_env, local_env)
+                except Exception as e:
+                    exec_error = e
+                finally:
+                    sys.setrecursionlimit(old_limit)
+
+            threading.stack_size(32 * 1024 * 1024)  # 32 MB
+            t = threading.Thread(target=run_exec)
+            t.start()
+            t.join()
+
+            if exec_error is not None:
+                print(json.dumps({"error": f"Hexpat exec error: {type(exec_error).__name__} - {str(exec_error)}"}))
+                sys.exit(0)
 
             ast_nodes = []
 
-            def dump_ast(obj, name):
-                if isinstance(obj, primitives.Struct):
+            def dump_ast(obj, name, visited=None, depth=0):
+                if depth > 100:
+                    return {"name": name, "type": "MaxDepthReached", "start_offset": 0, "size": 0, "children": []}
+                if visited is None:
+                    visited = set()
+                if id(obj) in visited:
+                    return None
+                visited.add(id(obj))
+
+                if isinstance(obj, list):
+                    if len(obj) == 0: return None
+                    if not isinstance(obj[0], primitives.Struct): return None
+                    start = int(obj[0].address())
+                    end = int(obj[-1].dollar())
+                    node = {
+                        "name": name,
+                        "type": "Array",
+                        "start_offset": start,
+                        "size": end - start,
+                        "children": []
+                    }
+                    for i, item in enumerate(obj):
+                        child = dump_ast(item, f"[{i}]", visited, depth + 1)
+                        if child:
+                            node["children"].append(child)
+                    return node
+                elif isinstance(obj, primitives.Struct):
                     node = {
                         "name": name,
                         "type": obj.__class__.__name__,
@@ -594,26 +646,9 @@ def main():
                             pass
                     for k, v in obj.__dict__.items():
                         if not k.startswith("_") and k != "value":
-                            child = dump_ast(v, k)
+                            child = dump_ast(v, k, visited, depth + 1)
                             if child:
                                 node["children"].append(child)
-                    return node
-                elif isinstance(obj, list):
-                    if len(obj) == 0: return None
-                    if not isinstance(obj[0], primitives.Struct): return None
-                    start = int(obj[0].address())
-                    end = int(obj[-1].dollar())
-                    node = {
-                        "name": name,
-                        "type": "Array",
-                        "start_offset": start,
-                        "size": end - start,
-                        "children": []
-                    }
-                    for i, item in enumerate(obj):
-                        child = dump_ast(item, f"[{i}]")
-                        if child:
-                            node["children"].append(child)
                     return node
                 return None
 
