@@ -8,7 +8,6 @@ import tempfile
 import traceback
 from pathlib import Path
 
-import references
 import oead
 from aamp_io import (
     is_aamp_binary,

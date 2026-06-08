@@ -8,7 +8,6 @@ import tempfile
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 
-import references
 import oead
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
@@ -19,7 +18,10 @@ _ASB_TOOLKIT_DIRS = [
 
 
 def _ensure_asb_toolkit_on_path() -> None:
-    pass
+    for toolkit_dir in _ASB_TOOLKIT_DIRS:
+        toolkit_str = str(toolkit_dir)
+        if toolkit_dir.is_dir() and toolkit_str not in sys.path:
+            sys.path.insert(0, toolkit_str)
 
 
 @contextmanager
