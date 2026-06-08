@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 
 import oead
@@ -220,50 +221,61 @@ def read_byml_content(file_data, logical_path="", romfs_path=""):
     if not file_data.startswith(b"YB") and not file_data.startswith(b"BY"):
         return f"<Unknown BYML Magic: {file_data[:4]}>"
 
+    byml_doc = None
     try:
         byml_doc = oead.byml.from_binary(file_data)
     except Exception as e:
-        if "version" in str(e).lower() or "unexpected type" in str(e).lower():
-            # Try to parse with patched python byml
+        if "version" in str(e).lower():
+            patched_data = bytearray(file_data)
+            if patched_data.startswith(b"BY"):
+                patched_data[2:4] = b"\x00\x04"
+            elif patched_data.startswith(b"YB"):
+                patched_data[2:4] = b"\x04\x00"
             try:
-                b = _patch_python_byml()
-                py_doc = b.Byml(file_data).parse()
+                byml_doc = oead.byml.from_binary(bytes(patched_data))
+            except Exception:
+                pass
 
-                # Check for PtclBin
-                if "PtclBin" in py_doc and isinstance(py_doc["PtclBin"], bytes):
-                    from ptcl_io import ptclbin_to_json
+    if byml_doc is None:
+        try:
+            b = _patch_python_byml()
+            py_doc = b.Byml(file_data).parse()
 
-                    ptcl_json = ptclbin_to_json(py_doc["PtclBin"])
-                    del py_doc["PtclBin"]
-                    py_doc["PTCL_JSON"] = ptcl_json
+            # Check for PtclBin
+            if "PtclBin" in py_doc and isinstance(py_doc["PtclBin"], bytes):
+                from ptcl_io import ptclbin_to_json
 
-                # Convert py_doc back to oead format for text dumping.
-                # Actually, python byml produces pure python dicts, which oead.byml.to_text doesn't mind!
-                # Wait, oead.byml functions require oead types (like oead.byml.Hash).
-                def py_to_oead(node):
-                    if isinstance(node, dict):
-                        return oead.byml.Hash({k: py_to_oead(v) for k, v in node.items()})
-                    elif isinstance(node, list):
-                        return oead.byml.Array([py_to_oead(x) for x in node])
-                    elif isinstance(node, b.Int):
-                        return oead.S32(node)
-                    elif isinstance(node, b.UInt):
-                        return oead.U32(node)
-                    elif isinstance(node, b.Float):
-                        return oead.F32(node)
-                    elif isinstance(node, b.Int64):
-                        return oead.S64(node)
-                    elif isinstance(node, b.UInt64):
-                        return oead.U64(node)
-                    elif isinstance(node, b.Double):
-                        return oead.F64(node)
-                    return node
+                ptcl_json = ptclbin_to_json(py_doc["PtclBin"])
+                del py_doc["PtclBin"]
+                py_doc["PTCL_JSON"] = ptcl_json
 
-                byml_doc = py_to_oead(py_doc)
-            except Exception as e2:
-                return f"# Error: Unsupported BYML version or node type\n# Detail: {str(e2)}\n"
-        else:
-            return f"# Error parsing BYML\n# Detail: {str(e)}\n"
+            # Convert py_doc back to oead format for text dumping.
+            # Actually, python byml produces pure python dicts, which oead.byml.to_text doesn't mind!
+            # Wait, oead.byml functions require oead types (like oead.byml.Hash).
+            def py_to_oead(node):
+                if isinstance(node, dict):
+                    return oead.byml.Hash({k: py_to_oead(v) for k, v in node.items()})
+                elif isinstance(node, list):
+                    return oead.byml.Array([py_to_oead(x) for x in node])
+                elif isinstance(node, b.Int):
+                    return oead.S32(node)
+                elif isinstance(node, b.UInt):
+                    return oead.U32(node)
+                elif isinstance(node, b.Float):
+                    return oead.F32(node)
+                elif isinstance(node, b.Int64):
+                    return oead.S64(node)
+                elif isinstance(node, b.UInt64):
+                    return oead.U64(node)
+                elif isinstance(node, b.Double):
+                    return oead.F64(node)
+                elif isinstance(node, bytes):
+                    return oead.Bytes(node)
+                return node
+
+            byml_doc = py_to_oead(py_doc)
+        except Exception as e2:
+            return f"# Error: Unsupported BYML version or node type\n# Detail: {str(e2)}\n"
 
     file_name = Path(logical_path).name.lower()
     if file_name.startswith("tag.product.") and "rstbl" in file_name:
@@ -828,8 +840,6 @@ def main():
                                 os.unlink(out_path)
                             out_path = cvt_path
                         except Exception:
-                            import traceback
-
                             traceback.print_exc()
                             out_path = png_path
 

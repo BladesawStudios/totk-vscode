@@ -6,9 +6,9 @@ import yaml
 
 
 def to_editor_text(byml_doc: oead.byml.Hash) -> str:
-    path_list = byml_doc.get("PathList", [])
-    tag_list = [str(x) for x in byml_doc.get("TagList", [])]
-    bit_table = bytes(byml_doc.get("BitTable", b""))
+    path_list = byml_doc["PathList"] if "PathList" in byml_doc else []
+    tag_list = [str(x) for x in (byml_doc["TagList"] if "TagList" in byml_doc else [])]
+    bit_table = bytes(byml_doc["BitTable"] if "BitTable" in byml_doc else b"")
 
     actor_tag_data = {}
     path_list_count = len(path_list)
@@ -80,4 +80,19 @@ def from_editor_text(editor_text: str, big_endian: bool, version: int) -> bytes:
     }
 
     byml_doc = oead.byml.Hash(byml_dict)
-    return oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)
+    try:
+        new_byml_bytes = oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)
+    except Exception as e:
+        if "version" in str(e).lower():
+            new_byml_bytes = bytearray(
+                oead.byml.to_binary(byml_doc, big_endian=big_endian, version=4)
+            )
+            if big_endian:
+                new_byml_bytes[2:4] = version.to_bytes(2, "big")
+            else:
+                new_byml_bytes[2:4] = version.to_bytes(2, "little")
+            new_byml_bytes = bytes(new_byml_bytes)
+        else:
+            raise e
+
+    return new_byml_bytes

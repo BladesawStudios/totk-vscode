@@ -1,6 +1,6 @@
 [project]
 name = "totk-vscode-python"
-version = "0.0.2b2"
+version = "0.0.2b3"
 description = "Python scripts for TOTK VSCode extension"
 requires-python = "~=3.12"
 dependencies = [
@@ -9,7 +9,8 @@ dependencies = [
     "mmh3>=4.0.0",
     "Pillow>=10.0.0",
     "texture2ddecoder>=1.0.4",
-    "PyYAML>=6.0"
+    "PyYAML>=6.0",
+    "byml"
 ]
 
 [tool.setuptools]

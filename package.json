@@ -4,7 +4,7 @@
   "publisher": "TKVSC-Team",
   "displayName": "TKVSC",
   "description": "Canonically Amazing",
-  "version": "0.0.2-beta.2",
+  "version": "0.0.2-beta.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/TKVSC-Team/totk-vscode"
@@ -590,7 +590,7 @@
         },
         {
           "command": "totk-editor.clearActiveOption",
-          "when": "view == totk-editor.archives && (viewItem == archiveRoot || viewItem == tkmmOptionActive)",
+          "when": "view == totk-editor.archives && (viewItem == archiveRoot || viewItem == archiveProjectDir || viewItem == archiveProjectDirActive || viewItem == tkmmOptionActive)",
           "group": "1_active@3"
         },
         {

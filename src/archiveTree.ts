@@ -672,14 +672,29 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
             'totk-editor.clearActiveOption',
             async (item: ArchiveTreeItem | undefined) => {
                 let rootUri: string | undefined;
-                if (item?.contextValue === 'archiveRoot') {
+                if (!item) {
+                    rootUri = provider.getActiveProject();
+                    if (!rootUri && provider.getProjectRoots().length > 0) {
+                        rootUri = provider.getProjectRoots()[0]?.fsPath;
+                    }
+                } else if (item.contextValue === 'archiveRoot') {
+                    const mapped = provider.getProjectRoots().find(r => r.fsPath.startsWith(item.resourceUri.fsPath) || item.resourceUri.fsPath.startsWith(r.fsPath));
+                    rootUri = mapped ? mapped.fsPath : item.resourceUri.fsPath;
+                } else if (item.contextValue === 'archiveProjectDir' || item.contextValue === 'archiveProjectDirActive') {
                     rootUri = item.resourceUri.fsPath;
-                } else if (item?.contextValue === 'tkmmOptionActive') {
+                } else if (item.contextValue === 'tkmmOptionActive' || item.contextValue === 'tkmmOption') {
                     rootUri = path.dirname(path.dirname(path.dirname(item.resourceUri.fsPath)));
+                } else if (item.contextValue === 'tkmmOptionGroup') {
+                    rootUri = path.dirname(path.dirname(item.resourceUri.fsPath));
+                } else if (item.contextValue === 'tkmmOptionsRoot') {
+                    rootUri = path.dirname(item.resourceUri.fsPath);
                 }
+                
                 if (rootUri) {
                     await setActiveTkmmOption(context, rootUri, undefined, undefined);
                     provider.refresh();
+                } else {
+                    void vscode.window.showInformationMessage("TKVSC: No active project found to unset.");
                 }
             }
         ),
