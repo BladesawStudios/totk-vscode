@@ -11,17 +11,10 @@ from pathlib import Path
 import oead
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
-_ASB_TOOLKIT_DIRS = [
-    _SCRIPT_DIR / "vendor" / "asb",
-    _SCRIPT_DIR.parent / "vendor" / "asb",
-]
-
-
 def _ensure_asb_toolkit_on_path() -> None:
-    for toolkit_dir in _ASB_TOOLKIT_DIRS:
-        toolkit_str = str(toolkit_dir)
-        if toolkit_dir.is_dir() and toolkit_str not in sys.path:
-            sys.path.insert(0, toolkit_str)
+    from vendor_sys import add_vendor_to_path
+
+    add_vendor_to_path("asb")
 
 
 @contextmanager
