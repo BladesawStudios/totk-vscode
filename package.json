@@ -488,7 +488,7 @@
     "viewsWelcome": [
       {
         "view": "totk-editor.archives",
-        "contents": "You don't currently have any Project Folders, please add one using the button below.\n\n[Add Projects via File Explorer](command:totk-editor.addProjectFolders)"
+        "contents": "You don't currently have any Project Folders, please create or add one using the buttons below.\n\n[Create New Project](command:totk-editor.createProject)\n[Add Projects via File Explorer](command:totk-editor.addProjectFolders)"
       },
       {
         "view": "totk-editor.gameDump",
