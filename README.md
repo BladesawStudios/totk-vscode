@@ -100,6 +100,7 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 
 ### Requirements
 * [Python 3.12](https://www.python.org/downloads/release/python-31210/)
+* [Microsoft C++ Redis](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
 * Node.js (if building extension from source)
 * Python 3.12-venv (on Linux)
 * Valid TOTK dump
