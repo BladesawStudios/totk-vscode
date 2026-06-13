@@ -8,7 +8,7 @@ import yaml
 def to_editor_text(byml_doc: oead.byml.Hash) -> str:
     path_list = byml_doc["PathList"] if "PathList" in byml_doc else []
     tag_list = [str(x) for x in (byml_doc["TagList"] if "TagList" in byml_doc else [])]
-    
+
     raw_bit_table = byml_doc["BitTable"] if "BitTable" in byml_doc else b""
     if isinstance(raw_bit_table, str):
         bit_table = raw_bit_table.encode("utf-8")

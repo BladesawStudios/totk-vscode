@@ -333,12 +333,13 @@ def write_byml_bytes(orig_file_data, new_yaml, logical_path="", romfs_path=""):
     file_name = Path(logical_path).name.lower()
     if file_name.startswith("tag.product.") and "rstbl" in file_name:
         import yaml
+
         try:
             json_data = yaml.safe_load(new_yaml)
             is_tag_product_fmt = isinstance(json_data.get("PathList"), dict)
         except Exception:
             is_tag_product_fmt = False
-        
+
         if is_tag_product_fmt:
             new_byml_bytes = tag_product_from_editor_text(new_yaml, big_endian, version)
             return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
