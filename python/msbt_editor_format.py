@@ -65,7 +65,7 @@ def display_to_components(text: str) -> list:
             if parsed:
                 magic, group, cmd_type, hexdata = parsed
             else:
-                magic, group, cmd_type, hexdata = 14, 0, 0, ""
+                magic, group, cmd_type, hexdata = '0xe', 0, 0, ""
         else:
             magic, group, cmd_type, hexdata = (
                 match.group(1),

@@ -545,9 +545,6 @@ def write_file_content(
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
     elif kind == "msbt":
-        path_check = (archive_path + "/" + logical_path).lower()
-        if not any(lang in path_check for lang in ["usen", "euen", "gben"]):
-            raise ValueError("Saving non-English MSBT files is not supported at this time.")
         orig = get_original_bytes()
         new_bytes = write_msbt_bytes(orig, editor_text, logical_path, romfs_path)
         writer = oead.SarcWriter.from_sarc(sarc)
@@ -620,9 +617,6 @@ def main():
                     )
                 )
             elif kind == "msbt":
-                path_check = file_path.lower()
-                if not any(lang in path_check for lang in ["usen", "euen", "gben"]):
-                    raise ValueError("Saving non-English MSBT files is not supported at this time.")
                 Path(file_path).write_bytes(
                     write_msbt_bytes(
                         Path(file_path).read_bytes(), editor_text, file_path, romfs_path

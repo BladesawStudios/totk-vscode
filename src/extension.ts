@@ -596,7 +596,7 @@ class SarcProvider implements vscode.FileSystemProvider {
                 }
             );
         } catch (error) {
-            logger.error('Python Write Error:', error as Error);
+            logger.error('Write Error:', error as Error);
             vscode.window.showErrorMessage(`Failed to save: ${error}`);
             throw vscode.FileSystemError.Unavailable(error as string);
         }
