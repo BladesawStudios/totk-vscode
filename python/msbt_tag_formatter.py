@@ -162,7 +162,7 @@ def tag_to_command(tag_content):
     tag_def = MSBT_TAGS_BY_NAME[tag_name]
     group = tag_def["group"]
     type_ = tag_def["type"]
-    magic = '0xe'
+    magic = "0xe"
 
     args_def = tag_def.get("arguments", [])
     b = bytearray()
