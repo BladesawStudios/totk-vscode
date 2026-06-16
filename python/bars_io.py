@@ -6,7 +6,7 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bwav_io import read_bwav_as_base64_wav, read_bwav_to_temp_wav
+from bwav_io import read_bwav_to_temp_wav
 from zstd_totk import decompress_container
 
 _BARS_MAGIC = b"BARS"
@@ -22,6 +22,7 @@ _BWAV_SEARCH_PATHS = [
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AmtaMarker:
@@ -40,14 +41,14 @@ class AmtaStreamTrack:
 @dataclass
 class AmtaMetadata:
     name: str
-    audio_type: str             # "Wave" or "Stream"
+    audio_type: str  # "Wave" or "Stream"
     sample_rate: int
     channel_count: int
     num_samples: int
     loop_start: int
     is_looped: bool
-    volume_db: float            # raw dB value from file
-    volume_linear: float        # 10 ** (volume_db / 20)
+    volume_db: float  # raw dB value from file
+    volume_linear: float  # 10 ** (volume_db / 20)
     stream_tracks: list[AmtaStreamTrack]
     markers: list[AmtaMarker]
     amplitude_peak: float | None  # v4.0+ only
@@ -57,20 +58,21 @@ class AmtaMetadata:
 class BarsEntry:
     name: str
     name_hash: int
-    amta_offset: int    # absolute offset of AMTA block in BARS data
-    bwav_offset: int    # absolute offset of prefetch BWAV, or -1 if absent
+    amta_offset: int  # absolute offset of AMTA block in BARS data
+    bwav_offset: int  # absolute offset of prefetch BWAV, or -1 if absent
     metadata: AmtaMetadata | None = field(default=None)
 
 
 @dataclass
 class BarsFile:
     entries: list[BarsEntry]
-    data: bytes         # raw (decompressed) BARS bytes
+    data: bytes  # raw (decompressed) BARS bytes
 
 
 # ---------------------------------------------------------------------------
 # Primitive readers
 # ---------------------------------------------------------------------------
+
 
 def _u32(data: bytes, offset: int) -> int:
     return struct.unpack_from("<I", data, offset)[0]
@@ -97,9 +99,10 @@ def _cstring(data: bytes, offset: int) -> str:
 # AMTA parsing
 # ---------------------------------------------------------------------------
 
+
 def _parse_amta(data: bytes, amta_offset: int) -> AmtaMetadata:
     """Parse a full AMTA block and return structured metadata."""
-    if data[amta_offset:amta_offset + 4] != _AMTA_MAGIC:
+    if data[amta_offset : amta_offset + 4] != _AMTA_MAGIC:
         raise ValueError(f"Expected AMTA magic at offset {amta_offset:#x}")
 
     # AMTA header:
@@ -119,25 +122,27 @@ def _parse_amta(data: bytes, amta_offset: int) -> AmtaMetadata:
         data_rel = _u32(data, amta_offset + 0x10)
         mark_rel = _u32(data, amta_offset + 0x14)
         strg_rel = _u32(data, amta_offset + 0x18)
-        
+
         data_abs = amta_offset + data_rel if data_rel else None
         mark_abs = amta_offset + mark_rel if mark_rel else None
 
         markers: list[AmtaMarker] = []
         name = ""
-        
+
         if mark_abs is not None:
             marker_count = _u32(data, mark_abs)
-            
+
             for i in range(marker_count):
                 m_off = mark_abs + 4 + i * 16
                 m_name_off = _u32(data, m_off + 4)
-                markers.append(AmtaMarker(
-                    id=_u32(data, m_off + 0),
-                    name=_cstring(data, m_off + 4 + m_name_off),
-                    start=_u32(data, m_off + 8),
-                    length=_u32(data, m_off + 12),
-                ))
+                markers.append(
+                    AmtaMarker(
+                        id=_u32(data, m_off + 0),
+                        name=_cstring(data, m_off + 4 + m_name_off),
+                        start=_u32(data, m_off + 8),
+                        length=_u32(data, m_off + 12),
+                    )
+                )
 
         # In V5, the asset name immediately follows the DATA blob that starts at amta_offset + 0x24
         # The size of this blob is the first 4 bytes at amta_offset + 0x24
@@ -168,8 +173,8 @@ def _parse_amta(data: bytes, amta_offset: int) -> AmtaMetadata:
             amplitude_peak=None,
         )
 
-    data_rel  = _u32(data, amta_offset + 0xC)
-    mark_rel  = _u32(data, amta_offset + 0x10)
+    data_rel = _u32(data, amta_offset + 0xC)
+    mark_rel = _u32(data, amta_offset + 0x10)
 
     if major >= 3:
         strg_rel = _u32(data, amta_offset + 0x18)
@@ -182,8 +187,7 @@ def _parse_amta(data: bytes, amta_offset: int) -> AmtaMetadata:
 
     if strg_rel == 0:
         raise ValueError(
-            f"AMTA at {amta_offset:#x}: STRG section offset is zero — "
-            "cannot read asset name"
+            f"AMTA at {amta_offset:#x}: STRG section offset is zero — cannot read asset name"
         )
 
     # STRG: 4 magic + 4 size + body of null-terminated strings
@@ -207,28 +211,30 @@ def _parse_amta(data: bytes, amta_offset: int) -> AmtaMetadata:
     #   0x20 8*8 stream tracks (up to 8, each: 4 channel_count + 4 volume float)
     #   0x60 4   amplitude peak (float, v4.0+ only)
 
-    name_strg_off  = _u32(data, data_body + 0x0)
+    name_strg_off = _u32(data, data_body + 0x0)
     audio_type_raw = data[data_body + 0x8]
-    channel_count  = data[data_body + 0x9]
-    track_count    = data[data_body + 0xA]
-    flags          = data[data_body + 0xB]
-    sample_rate    = _u32(data, data_body + 0x10)
-    loop_start     = _u32(data, data_body + 0x14)
-    num_samples    = _u32(data, data_body + 0x18)
-    volume_db      = _f32(data, data_body + 0x1C)
-    volume_linear  = 10.0 ** (volume_db / 20.0)
-    is_looped      = bool(flags & 0x4)
-    audio_type     = "Stream" if audio_type_raw == 1 else "Wave"
+    channel_count = data[data_body + 0x9]
+    track_count = data[data_body + 0xA]
+    flags = data[data_body + 0xB]
+    sample_rate = _u32(data, data_body + 0x10)
+    loop_start = _u32(data, data_body + 0x14)
+    num_samples = _u32(data, data_body + 0x18)
+    volume_db = _f32(data, data_body + 0x1C)
+    volume_linear = 10.0 ** (volume_db / 20.0)
+    is_looped = bool(flags & 0x4)
+    audio_type = "Stream" if audio_type_raw == 1 else "Wave"
 
     name = _cstring(data, strg_body + name_strg_off)
 
     stream_tracks: list[AmtaStreamTrack] = []
     for i in range(min(track_count, 8)):
         t_off = data_body + 0x20 + i * 8
-        stream_tracks.append(AmtaStreamTrack(
-            channel_count=_u32(data, t_off + 0x0),
-            volume=_f32(data, t_off + 0x4),
-        ))
+        stream_tracks.append(
+            AmtaStreamTrack(
+                channel_count=_u32(data, t_off + 0x0),
+                volume=_f32(data, t_off + 0x4),
+            )
+        )
 
     amplitude_peak: float | None = None
     if major >= 4:
@@ -244,12 +250,14 @@ def _parse_amta(data: bytes, amta_offset: int) -> AmtaMetadata:
         for i in range(marker_count):
             m_off = mark_body + 0x4 + i * 16
             m_name_off = _u32(data, m_off + 0x4)
-            markers.append(AmtaMarker(
-                id=_u32(data, m_off + 0x0),
-                name=_cstring(data, strg_body + m_name_off),
-                start=_u32(data, m_off + 0x8),
-                length=_u32(data, m_off + 0xC),
-            ))
+            markers.append(
+                AmtaMarker(
+                    id=_u32(data, m_off + 0x0),
+                    name=_cstring(data, strg_body + m_name_off),
+                    start=_u32(data, m_off + 0x8),
+                    length=_u32(data, m_off + 0xC),
+                )
+            )
 
     return AmtaMetadata(
         name=name,
@@ -271,6 +279,7 @@ def _parse_amta(data: bytes, amta_offset: int) -> AmtaMetadata:
 # BARS parsing
 # ---------------------------------------------------------------------------
 
+
 def parse_bars(data: bytes) -> BarsFile:
     """Parse a decompressed BARS file and return all entries with metadata."""
     if data[:4] != _BARS_MAGIC:
@@ -278,7 +287,7 @@ def parse_bars(data: bytes) -> BarsFile:
 
     num_assets = _u32(data, 0xC)
 
-    hashes_start  = 0x10
+    hashes_start = 0x10
     offsets_start = hashes_start + num_assets * 4
 
     entries: list[BarsEntry] = []
@@ -290,26 +299,29 @@ def parse_bars(data: bytes) -> BarsFile:
         if bwav_off != -1:
             if bwav_off + 14 > len(data):
                 bwav_off = -1
-            elif data[bwav_off:bwav_off+4] != b"BWAV":
+            elif data[bwav_off : bwav_off + 4] != b"BWAV":
                 bwav_off = -1
             else:
-                bom = data[bwav_off+4:bwav_off+6]
+                bom = data[bwav_off + 4 : bwav_off + 6]
                 import struct
-                if bom == b'\xfe\xff':
-                    blocks = struct.unpack('>H', data[bwav_off+12:bwav_off+14])[0]
+
+                if bom == b"\xfe\xff":
+                    blocks = struct.unpack(">H", data[bwav_off + 12 : bwav_off + 14])[0]
                 else:
-                    blocks = struct.unpack('<H', data[bwav_off+12:bwav_off+14])[0]
+                    blocks = struct.unpack("<H", data[bwav_off + 12 : bwav_off + 14])[0]
                 if blocks == 0:
                     bwav_off = -1
 
         metadata = _parse_amta(data, amta_off)
-        entries.append(BarsEntry(
-            name=metadata.name,
-            name_hash=name_hash,
-            amta_offset=amta_off,
-            bwav_offset=bwav_off,
-            metadata=metadata,
-        ))
+        entries.append(
+            BarsEntry(
+                name=metadata.name,
+                name_hash=name_hash,
+                amta_offset=amta_off,
+                bwav_offset=bwav_off,
+                metadata=metadata,
+            )
+        )
 
     return BarsFile(entries=entries, data=data)
 
@@ -317,6 +329,7 @@ def parse_bars(data: bytes) -> BarsFile:
 # ---------------------------------------------------------------------------
 # Romfs lookup
 # ---------------------------------------------------------------------------
+
 
 def _find_bwav_in_romfs(name: str, romfs_path: str) -> bytes | None:
     for pattern in _BWAV_SEARCH_PATHS:
@@ -329,6 +342,7 @@ def _find_bwav_in_romfs(name: str, romfs_path: str) -> bytes | None:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def is_bars_extension(logical_path: str) -> bool:
     lower = logical_path.lower().replace("\\", "/")
@@ -375,8 +389,7 @@ def read_bars_entry_audio(
 
     if entry_index >= len(bars.entries):
         raise IndexError(
-            f"Entry index {entry_index} out of range "
-            f"(BARS has {len(bars.entries)} entries)"
+            f"Entry index {entry_index} out of range (BARS has {len(bars.entries)} entries)"
         )
 
     entry = bars.entries[entry_index]
@@ -384,11 +397,16 @@ def read_bars_entry_audio(
     if romfs_path and not force_prefetch:
         bwav_data = _find_bwav_in_romfs(entry.name, romfs_path)
         if bwav_data is not None:
-            wav_path, loop_start, loop_end = read_bwav_to_temp_wav(bwav_data, entry.name + ".bwav", romfs_path)
+            wav_path, loop_start, loop_end = read_bwav_to_temp_wav(
+                bwav_data, entry.name + ".bwav", romfs_path
+            )
             return BarsAudioResult(
-                name=entry.name, wav_path=wav_path,
-                is_prefetch=False, metadata=entry.metadata,
-                loop_start=loop_start, loop_end=loop_end,
+                name=entry.name,
+                wav_path=wav_path,
+                is_prefetch=False,
+                metadata=entry.metadata,
+                loop_start=loop_start,
+                loop_end=loop_end,
             )
 
     if entry.bwav_offset == -1:
@@ -398,16 +416,20 @@ def read_bars_entry_audio(
                 "and this entry has no embedded prefetch clip."
             )
         raise FileNotFoundError(
-            f"No audio available for '{entry.name}': "
-            "no prefetch clip and romfs is not configured."
+            f"No audio available for '{entry.name}': no prefetch clip and romfs is not configured."
         )
 
-    bwav_data = data[entry.bwav_offset:]
-    wav_path, loop_start, loop_end = read_bwav_to_temp_wav(bwav_data, entry.name + ".bwav", romfs_path)
+    bwav_data = data[entry.bwav_offset :]
+    wav_path, loop_start, loop_end = read_bwav_to_temp_wav(
+        bwav_data, entry.name + ".bwav", romfs_path
+    )
     return BarsAudioResult(
-        name=entry.name, wav_path=wav_path,
-        is_prefetch=True, metadata=entry.metadata,
-        loop_start=loop_start, loop_end=loop_end,
+        name=entry.name,
+        wav_path=wav_path,
+        is_prefetch=True,
+        metadata=entry.metadata,
+        loop_start=loop_start,
+        loop_end=loop_end,
     )
 
 
@@ -430,31 +452,35 @@ def list_bars_entries(
             has_romfs = _find_bwav_in_romfs(entry.name, romfs_path) is not None
 
         m = entry.metadata
-        result.append({
-            "name": entry.name,
-            "name_hash": entry.name_hash,
-            "amta_offset": entry.amta_offset,
-            "bwav_offset": entry.bwav_offset,
-            "has_prefetch": entry.bwav_offset != -1,
-            "has_romfs_bwav": has_romfs,
-            "metadata": {
-                "audio_type": m.audio_type,
-                "sample_rate": m.sample_rate,
-                "channel_count": m.channel_count,
-                "num_samples": m.num_samples,
-                "loop_start": m.loop_start,
-                "is_looped": m.is_looped,
-                "volume_db": m.volume_db,
-                "volume_linear": m.volume_linear,
-                "amplitude_peak": m.amplitude_peak,
-                "stream_tracks": [
-                    {"channel_count": t.channel_count, "volume": t.volume}
-                    for t in m.stream_tracks
-                ],
-                "markers": [
-                    {"id": mk.id, "name": mk.name, "start": mk.start, "length": mk.length}
-                    for mk in m.markers
-                ],
-            } if m is not None else None,
-        })
+        result.append(
+            {
+                "name": entry.name,
+                "name_hash": entry.name_hash,
+                "amta_offset": entry.amta_offset,
+                "bwav_offset": entry.bwav_offset,
+                "has_prefetch": entry.bwav_offset != -1,
+                "has_romfs_bwav": has_romfs,
+                "metadata": {
+                    "audio_type": m.audio_type,
+                    "sample_rate": m.sample_rate,
+                    "channel_count": m.channel_count,
+                    "num_samples": m.num_samples,
+                    "loop_start": m.loop_start,
+                    "is_looped": m.is_looped,
+                    "volume_db": m.volume_db,
+                    "volume_linear": m.volume_linear,
+                    "amplitude_peak": m.amplitude_peak,
+                    "stream_tracks": [
+                        {"channel_count": t.channel_count, "volume": t.volume}
+                        for t in m.stream_tracks
+                    ],
+                    "markers": [
+                        {"id": mk.id, "name": mk.name, "start": mk.start, "length": mk.length}
+                        for mk in m.markers
+                    ],
+                }
+                if m is not None
+                else None,
+            }
+        )
     return result

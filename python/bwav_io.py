@@ -105,10 +105,10 @@ def read_bwav_to_temp_wav(
     if not data.startswith(_BWAV_MAGIC):
         raise ValueError(f"Not a BWAV file (got magic {data[:4]!r})")
     tool = find_vgmstream_cli()
-    
+
     fd, out_path = tempfile.mkstemp(prefix="totk-bwav-", suffix=".wav")
     os.close(fd)
-    
+
     with tempfile.TemporaryDirectory(prefix="totk-bwav-in-") as tmp:
         inp = Path(tmp) / "input.bwav"
         inp.write_bytes(data)
@@ -121,22 +121,23 @@ def read_bwav_to_temp_wav(
                 os.remove(out_path)
             detail = (result.stderr or result.stdout or b"").decode(errors="replace").strip()
             raise RuntimeError(f"vgmstream-cli failed: {detail or f'exit {result.returncode}'}")
-        
+
         stdout_str = result.stdout.decode(errors="replace")
-        
+
         import re
+
         loop_start_sec = None
         loop_end_sec = None
-        
+
         m_rate = re.search(r"sample rate: (\d+) Hz", stdout_str)
         sample_rate = float(m_rate.group(1)) if m_rate else 48000.0
-        
+
         m_start = re.search(r"loop start: (\d+) samples", stdout_str)
         if m_start:
             loop_start_sec = float(m_start.group(1)) / sample_rate
-            
+
         m_end = re.search(r"loop end: (\d+) samples", stdout_str)
         if m_end:
             loop_end_sec = float(m_end.group(1)) / sample_rate
-        
+
     return out_path, loop_start_sec, loop_end_sec
