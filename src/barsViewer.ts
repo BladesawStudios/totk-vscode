@@ -372,7 +372,8 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
 
         const playableIndices = ${JSON.stringify(playableIndices)};
         let fetchQueue = [...playableIndices];
-        let isFetching = false;
+        let activeFetches = 0;
+        const MAX_CONCURRENT = 5;
         
         const prefetchStates = {};
         
@@ -496,13 +497,11 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
         requestAnimationFrame(renderLoop);
 
         function fetchNext() {
-            if (fetchQueue.length === 0) {
-                isFetching = false;
-                return;
+            while (fetchQueue.length > 0 && activeFetches < MAX_CONCURRENT) {
+                activeFetches++;
+                const index = fetchQueue.shift();
+                vscode.postMessage({ type: 'fetch-audio', index, usePrefetch: prefetchStates[index] });
             }
-            isFetching = true;
-            const index = fetchQueue.shift();
-            vscode.postMessage({ type: 'fetch-audio', index, usePrefetch: prefetchStates[index] });
         }
 
         // Initialize players
@@ -561,7 +560,7 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                 if (loopLabel) loopLabel.style.display = 'none';
 
                 fetchQueue.push(idx);
-                if (!isFetching) fetchNext();
+                fetchNext();
             }
 
             if (btnRomfs) {
@@ -672,7 +671,7 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                             }
                         }
                         
-                        isFetching = false;
+                        activeFetches--;
                         fetchNext();
                     })
                     .catch(e => {
@@ -681,7 +680,7 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                             btn.title = "Error decoding";
                             btn.querySelector('.play-icon').textContent = '✕';
                         }
-                        isFetching = false;
+                        activeFetches--;
                         fetchNext();
                     });
             } else if (message.type === 'audio-error') {
@@ -690,7 +689,7 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                     btn.title = "Error loading";
                     btn.querySelector('.play-icon').textContent = '✕';
                 }
-                isFetching = false;
+                activeFetches--;
                 fetchNext();
             }
         });
