@@ -1311,11 +1311,11 @@ export async function activate(context: vscode.ExtensionContext) {
                 
                 if (raw && (raw as any).entries) {
                     const barsName = path.basename(uri.fsPath) || 'audio.bars';
-                    openBarsViewer(barsName, uri.toString(), (raw as any).entries, async (index: number) => {
+                    openBarsViewer(barsName, uri.toString(), (raw as any).entries, async (index: number, usePrefetch: boolean) => {
                         const audioRaw = await runBridgeReadAsync(
                             python,
                             bridgePath,
-                            ['read-bars-audio', diskArchive, filePath, index.toString()],
+                            ['read-bars-audio', diskArchive, filePath, index.toString(), usePrefetch ? 'true' : 'false'],
                             getBridgeEnv(),
                         );
                         return audioRaw as any;

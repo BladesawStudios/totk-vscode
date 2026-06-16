@@ -286,7 +286,21 @@ def parse_bars(data: bytes) -> BarsFile:
         name_hash = _u32(data, hashes_start + i * 4)
         amta_off = _u32(data, offsets_start + i * 8 + 0)
         bwav_raw = _i32(data, offsets_start + i * 8 + 4)
-        bwav_off = -1 if bwav_raw == -1 else bwav_raw
+        bwav_off = -1 if bwav_raw in (-1, 0) else bwav_raw
+        if bwav_off != -1:
+            if bwav_off + 14 > len(data):
+                bwav_off = -1
+            elif data[bwav_off:bwav_off+4] != b"BWAV":
+                bwav_off = -1
+            else:
+                bom = data[bwav_off+4:bwav_off+6]
+                import struct
+                if bom == b'\xfe\xff':
+                    blocks = struct.unpack('>H', data[bwav_off+12:bwav_off+14])[0]
+                else:
+                    blocks = struct.unpack('<H', data[bwav_off+12:bwav_off+14])[0]
+                if blocks == 0:
+                    bwav_off = -1
 
         metadata = _parse_amta(data, amta_off)
         entries.append(BarsEntry(
@@ -346,6 +360,7 @@ def read_bars_entry_audio(
     entry_index: int = 0,
     logical_path: str = "",
     romfs_path: str = "",
+    force_prefetch: bool = False,
 ) -> BarsAudioResult:
     """
     Decode audio for one entry in a BARS file.
@@ -364,7 +379,7 @@ def read_bars_entry_audio(
 
     entry = bars.entries[entry_index]
 
-    if romfs_path:
+    if romfs_path and not force_prefetch:
         bwav_data = _find_bwav_in_romfs(entry.name, romfs_path)
         if bwav_data is not None:
             wav_path = read_bwav_to_temp_wav(bwav_data, entry.name + ".bwav", romfs_path)

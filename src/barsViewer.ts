@@ -12,7 +12,7 @@ export function openBarsViewer(
     barsName: string,
     key: string,
     entries: BarsEntry[],
-    fetchAudio: (index: number) => Promise<BarsAudioResult>,
+    fetchAudio: (index: number, usePrefetch: boolean) => Promise<BarsAudioResult>,
 ): void {
     const existing = panels.get(key);
     
@@ -42,7 +42,7 @@ export function openBarsViewer(
     panel.webview.onDidReceiveMessage(async (message) => {
         if (message.type === 'fetch-audio') {
             try {
-                const res = await fetchAudio(message.index);
+                const res = await fetchAudio(message.index, !!message.usePrefetch);
                 if (res.wavPath) {
                     const uri = panel.webview.asWebviewUri(vscode.Uri.file(res.wavPath));
                     panel.webview.postMessage({ type: 'audio-loaded', index: message.index, url: uri.toString() });
@@ -103,8 +103,8 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
             <div class="entry-header">
                 <div class="entry-name">${escapeHtml(e.name)}</div>
                 <div class="entry-meta">
-                    ${e.has_prefetch ? '<span class="tag prefetch">Prefetch</span>' : ''}
-                    ${e.has_romfs_bwav ? '<span class="tag romfs">RomFS</span>' : ''}
+                    ${e.has_prefetch ? `<button class="tag prefetch" id="tag-prefetch-${idx}" data-index="${idx}">Prefetch</button>` : ''}
+                    ${e.has_romfs_bwav ? `<button class="tag romfs" id="tag-romfs-${idx}" data-index="${idx}">Full</button>` : ''}
                 </div>
             </div>
             
@@ -188,6 +188,17 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
         text-transform: uppercase;
         font-weight: 600;
         white-space: nowrap;
+        border: 1px solid transparent;
+        cursor: pointer;
+        opacity: 0.5;
+        transition: opacity 0.1s, border-color 0.1s;
+    }
+    .tag:hover {
+        opacity: 0.8;
+    }
+    .tag.active {
+        opacity: 1;
+        border-color: currentColor;
     }
     .tag.prefetch { background: #3b82f640; color: #60a5fa; }
     .tag.romfs { background: #10b98140; color: #34d399; }
@@ -278,7 +289,9 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
 </style>
 </head>
 <body>
-    <div class="header">BARS: ${escapeHtml(barsName)}</div>
+    <div class="header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <span>BARS: ${escapeHtml(barsName)}</span>
+    </div>
     <div class="entry-list">
         ${entriesHtml}
     </div>
@@ -296,16 +309,74 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
         const playableIndices = ${JSON.stringify(playableIndices)};
         let fetchQueue = [...playableIndices];
         let isFetching = false;
+        
+        const prefetchStates = {};
 
         function fetchNext() {
-            if (fetchQueue.length === 0) return;
+            if (fetchQueue.length === 0) {
+                isFetching = false;
+                return;
+            }
             isFetching = true;
             const index = fetchQueue.shift();
-            vscode.postMessage({ type: 'fetch-audio', index });
+            vscode.postMessage({ type: 'fetch-audio', index, usePrefetch: prefetchStates[index] });
         }
 
         // Initialize players
         playableIndices.forEach(idx => {
+            const btnRomfs = document.getElementById('tag-romfs-' + idx);
+            const btnPrefetch = document.getElementById('tag-prefetch-' + idx);
+            
+            prefetchStates[idx] = !btnRomfs && !!btnPrefetch;
+
+            function updateTags() {
+                if (btnRomfs) btnRomfs.classList.toggle('active', !prefetchStates[idx]);
+                if (btnPrefetch) btnPrefetch.classList.toggle('active', prefetchStates[idx]);
+            }
+            updateTags();
+
+            function toggleAudio(usePrefetch) {
+                if (prefetchStates[idx] === usePrefetch) return;
+                prefetchStates[idx] = usePrefetch;
+                updateTags();
+                
+                const audio = document.getElementById('audio-' + idx);
+                audio.pause();
+                audio.removeAttribute('src');
+                audio.load();
+                
+                const btn = document.getElementById('play-btn-' + idx);
+                const progress = document.getElementById('progress-' + idx);
+                const timeTotal = document.getElementById('time-total-' + idx);
+                const timeCurrent = document.getElementById('time-current-' + idx);
+                const playIcon = btn.querySelector('.play-icon');
+                const pauseIcon = btn.querySelector('.pause-icon');
+
+                if (btn) {
+                    btn.disabled = true;
+                    btn.title = "Loading...";
+                }
+                if (playIcon) playIcon.style.display = 'inline';
+                if (pauseIcon) pauseIcon.style.display = 'none';
+                
+                if (progress) {
+                    progress.value = 0;
+                    progress.disabled = true;
+                }
+                if (timeTotal) timeTotal.textContent = '--:--';
+                if (timeCurrent) timeCurrent.textContent = '0:00';
+
+                fetchQueue.push(idx);
+                if (!isFetching) fetchNext();
+            }
+
+            if (btnRomfs) {
+                btnRomfs.addEventListener('click', () => toggleAudio(false));
+            }
+            if (btnPrefetch) {
+                btnPrefetch.addEventListener('click', () => toggleAudio(true));
+            }
+
             const btn = document.getElementById('play-btn-' + idx);
             const audio = document.getElementById('audio-' + idx);
             const progress = document.getElementById('progress-' + idx);

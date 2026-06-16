@@ -711,6 +711,7 @@ def main():
             elif command == "read-bars-audio":
                 internal_path = sys.argv[3] if len(sys.argv) > 3 else ""
                 entry_index = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+                force_prefetch = sys.argv[5] == "true" if len(sys.argv) > 5 else False
                 if internal_path:
                     file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
                     logical_path = internal_path
@@ -719,7 +720,7 @@ def main():
                     logical_path = archive_path
                 from bars_io import read_bars_entry_audio
                 try:
-                    res = read_bars_entry_audio(file_data, entry_index, logical_path, romfs_path)
+                    res = read_bars_entry_audio(file_data, entry_index, logical_path, romfs_path, force_prefetch)
                     print(json.dumps({"wavPath": res.wav_path, "name": res.name, "isPrefetch": res.is_prefetch}))
                 except Exception as e:
                     print(json.dumps({"error": str(e)}))
