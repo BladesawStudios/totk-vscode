@@ -161,6 +161,8 @@ export interface BarsAudioResult extends BridgeResult {
     wavPath?: string;
     name?: string;
     isPrefetch?: boolean;
+    loopStart?: number;
+    loopEnd?: number;
 }
 
 export interface BntxTextureResult {

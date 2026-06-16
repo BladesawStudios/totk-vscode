@@ -353,6 +353,8 @@ class BarsAudioResult:
     wav_path: str
     is_prefetch: bool
     metadata: AmtaMetadata | None
+    loop_start: float | None = None
+    loop_end: float | None = None
 
 
 def read_bars_entry_audio(
@@ -382,10 +384,11 @@ def read_bars_entry_audio(
     if romfs_path and not force_prefetch:
         bwav_data = _find_bwav_in_romfs(entry.name, romfs_path)
         if bwav_data is not None:
-            wav_path = read_bwav_to_temp_wav(bwav_data, entry.name + ".bwav", romfs_path)
+            wav_path, loop_start, loop_end = read_bwav_to_temp_wav(bwav_data, entry.name + ".bwav", romfs_path)
             return BarsAudioResult(
                 name=entry.name, wav_path=wav_path,
                 is_prefetch=False, metadata=entry.metadata,
+                loop_start=loop_start, loop_end=loop_end,
             )
 
     if entry.bwav_offset == -1:
@@ -400,10 +403,11 @@ def read_bars_entry_audio(
         )
 
     bwav_data = data[entry.bwav_offset:]
-    wav_path = read_bwav_to_temp_wav(bwav_data, entry.name + ".bwav", romfs_path)
+    wav_path, loop_start, loop_end = read_bwav_to_temp_wav(bwav_data, entry.name + ".bwav", romfs_path)
     return BarsAudioResult(
         name=entry.name, wav_path=wav_path,
         is_prefetch=True, metadata=entry.metadata,
+        loop_start=loop_start, loop_end=loop_end,
     )
 
 

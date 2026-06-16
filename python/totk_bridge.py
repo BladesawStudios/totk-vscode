@@ -721,7 +721,7 @@ def main():
                 from bars_io import read_bars_entry_audio
                 try:
                     res = read_bars_entry_audio(file_data, entry_index, logical_path, romfs_path, force_prefetch)
-                    print(json.dumps({"wavPath": res.wav_path, "name": res.name, "isPrefetch": res.is_prefetch}))
+                    print(json.dumps({"wavPath": res.wav_path, "name": res.name, "isPrefetch": res.is_prefetch, "loopStart": res.loop_start, "loopEnd": res.loop_end}))
                 except Exception as e:
                     print(json.dumps({"error": str(e)}))
 

@@ -99,7 +99,7 @@ def read_bwav_to_temp_wav(
     file_data: bytes,
     logical_path: str = "",
     romfs_path: str = "",
-) -> str:
+) -> tuple[str, float | None, float | None]:
     """Decompress if needed, decode BWAV to WAV, return path to temporary WAV file."""
     data, _, _ = decompress_container(file_data, logical_path, romfs_path)
     if not data.startswith(_BWAV_MAGIC):
@@ -122,4 +122,21 @@ def read_bwav_to_temp_wav(
             detail = (result.stderr or result.stdout or b"").decode(errors="replace").strip()
             raise RuntimeError(f"vgmstream-cli failed: {detail or f'exit {result.returncode}'}")
         
-    return out_path
+        stdout_str = result.stdout.decode(errors="replace")
+        
+        import re
+        loop_start_sec = None
+        loop_end_sec = None
+        
+        m_rate = re.search(r"sample rate: (\d+) Hz", stdout_str)
+        sample_rate = float(m_rate.group(1)) if m_rate else 48000.0
+        
+        m_start = re.search(r"loop start: (\d+) samples", stdout_str)
+        if m_start:
+            loop_start_sec = float(m_start.group(1)) / sample_rate
+            
+        m_end = re.search(r"loop end: (\d+) samples", stdout_str)
+        if m_end:
+            loop_end_sec = float(m_end.group(1)) / sample_rate
+        
+    return out_path, loop_start_sec, loop_end_sec

@@ -45,7 +45,7 @@ export function openBarsViewer(
                 const res = await fetchAudio(message.index, !!message.usePrefetch);
                 if (res.wavPath) {
                     const uri = panel.webview.asWebviewUri(vscode.Uri.file(res.wavPath));
-                    panel.webview.postMessage({ type: 'audio-loaded', index: message.index, url: uri.toString() });
+                    panel.webview.postMessage({ type: 'audio-loaded', index: message.index, url: uri.toString(), result: res });
                 } else {
                     void vscode.window.showErrorMessage('Failed to decode BARS audio entry: ' + (res.error || 'Unknown error'));
                     // Reset UI loading state
@@ -108,14 +108,24 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                 </div>
             </div>
             
-            <div class="custom-player" id="player-container-${idx}">
-                <button class="player-play-btn" id="play-btn-${idx}" data-index="${idx}" ${!canPlay ? 'disabled title="Unavailable"' : 'disabled title="Loading..."'}>
-                    ${canPlay ? '<span class="play-icon">▶</span><span class="pause-icon" style="display:none;">⏸</span>' : '✕'}
-                </button>
-                <span class="time-display" id="time-current-${idx}">0:00</span>
-                <input type="range" class="progress-bar" id="progress-${idx}" value="0" min="0" max="100" step="0.01" disabled>
-                <span class="time-display" id="time-total-${idx}">--:--</span>
-                <audio id="audio-${idx}" style="display: none;"></audio>
+            <div class="custom-player-wrapper">
+                <div class="custom-player" id="player-container-${idx}">
+                    <button class="player-play-btn" id="play-btn-${idx}" data-index="${idx}" ${!canPlay ? 'disabled title="Unavailable"' : 'disabled title="Loading..."'}>
+                        ${canPlay ? '<span class="play-icon">▶</span><span class="pause-icon" style="display:none;">⏸</span>' : '✕'}
+                    </button>
+                    <button class="player-repeat-btn" id="repeat-btn-${idx}" data-index="${idx}" style="display: none;" title="Repeat">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+                    </button>
+                    <span class="time-display" id="time-current-${idx}">0:00</span>
+                    <div class="progress-container">
+                        <input type="range" class="progress-bar" id="progress-${idx}" value="0" min="0" max="100" step="0.01" disabled>
+                        <div id="loop-start-marker-${idx}" class="loop-marker" style="display: none;"></div>
+                        <div id="loop-end-marker-${idx}" class="loop-marker" style="display: none;"></div>
+                    </div>
+                    <span class="time-display" id="time-total-${idx}">--:--</span>
+                    <audio id="audio-${idx}" style="display: none;"></audio>
+                </div>
+                <div class="loop-label" id="loop-label-${idx}" style="display: none;"></div>
             </div>
 
             ${metaHtml}
@@ -242,8 +252,14 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
         text-align: center;
         font-variant-numeric: tabular-nums;
     }
-    input[type=range].progress-bar {
+    .progress-container {
         flex: 1;
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+    input[type=range].progress-bar {
+        width: 100%;
         -webkit-appearance: none;
         background: transparent;
         cursor: pointer;
@@ -270,7 +286,44 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
         cursor: not-allowed;
         opacity: 0.5;
     }
-    
+    .loop-marker {
+        position: absolute;
+        top: 2px;
+        bottom: 2px;
+        width: 2px;
+        background: #f59e0b;
+        pointer-events: none;
+        z-index: 1;
+        border-radius: 1px;
+    }
+    .player-repeat-btn {
+        background: transparent;
+        color: var(--player-text);
+        border: none;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0.5;
+        transition: opacity 0.1s, background 0.1s;
+    }
+    .player-repeat-btn:hover {
+        background: var(--vscode-list-hoverBackground, #2a2d2e);
+        opacity: 0.8;
+    }
+    .player-repeat-btn.active {
+        opacity: 1;
+        color: #f59e0b;
+    }
+    .loop-label {
+        font-size: 11px;
+        color: #f59e0b;
+        margin-top: 6px;
+        text-align: center;
+    }
     .metadata-block {
         font-size: 11px;
         color: var(--vscode-descriptionForeground, #a0a0a0);
@@ -365,6 +418,23 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                 }
                 if (timeTotal) timeTotal.textContent = '--:--';
                 if (timeCurrent) timeCurrent.textContent = '0:00';
+                
+                loopStart = null;
+                loopEnd = null;
+                isLooping = false;
+                
+                const repeatBtn = document.getElementById('repeat-btn-' + idx);
+                const markerStart = document.getElementById('loop-start-marker-' + idx);
+                const markerEnd = document.getElementById('loop-end-marker-' + idx);
+                const loopLabel = document.getElementById('loop-label-' + idx);
+                
+                if (repeatBtn) {
+                    repeatBtn.style.display = 'none';
+                    repeatBtn.classList.remove('active');
+                }
+                if (markerStart) markerStart.style.display = 'none';
+                if (markerEnd) markerEnd.style.display = 'none';
+                if (loopLabel) loopLabel.style.display = 'none';
 
                 fetchQueue.push(idx);
                 if (!isFetching) fetchNext();
@@ -383,8 +453,12 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
             const timeCurrent = document.getElementById('time-current-' + idx);
             const playIcon = btn.querySelector('.play-icon');
             const pauseIcon = btn.querySelector('.pause-icon');
+            const repeatBtn = document.getElementById('repeat-btn-' + idx);
 
             let isSeeking = false;
+            let loopStart = null;
+            let loopEnd = null;
+            let isLooping = true;
 
             btn.addEventListener('click', () => {
                 if (audio.paused) {
@@ -400,6 +474,11 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                 }
             });
 
+            repeatBtn.addEventListener('click', () => {
+                isLooping = !isLooping;
+                repeatBtn.classList.toggle('active', isLooping);
+            });
+
             audio.addEventListener('play', () => {
                 playIcon.style.display = 'none';
                 pauseIcon.style.display = 'inline';
@@ -411,6 +490,9 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
             });
 
             audio.addEventListener('timeupdate', () => {
+                if (isLooping && loopEnd !== null && audio.currentTime >= loopEnd) {
+                    audio.currentTime = loopStart;
+                }
                 if (!isSeeking) {
                     progress.value = audio.currentTime;
                     timeCurrent.textContent = formatTime(audio.currentTime);
@@ -433,12 +515,21 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                 progress.value = 0;
                 timeCurrent.textContent = formatTime(0);
             });
+            
+            // Expose properties so we can set them when loaded
+            audio._setLoopPoints = (start, end) => {
+                loopStart = start;
+                loopEnd = end;
+                isLooping = true;
+                repeatBtn.classList.add('active');
+                repeatBtn.style.display = 'flex';
+            };
         });
 
         window.addEventListener('message', event => {
             const message = event.data;
             if (message.type === 'audio-loaded') {
-                const { index, url } = message;
+                const { index, url, result } = message;
                 const audio = document.getElementById('audio-' + index);
                 const btn = document.getElementById('play-btn-' + index);
                 const progress = document.getElementById('progress-' + index);
@@ -448,12 +539,31 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                     audio.src = url;
                     audio.load();
                     
+                    if (result.loopStart !== undefined && result.loopStart !== null && result.loopEnd !== undefined && result.loopEnd !== null) {
+                        audio._setLoopPoints(result.loopStart, result.loopEnd);
+                    }
+                    
                     audio.addEventListener('loadedmetadata', () => {
                         timeTotal.textContent = formatTime(audio.duration);
                         progress.max = audio.duration;
                         progress.disabled = false;
                         btn.disabled = false;
                         btn.title = "Play/Pause";
+                        
+                        if (result.loopStart !== undefined && result.loopStart !== null) {
+                            const markerStart = document.getElementById('loop-start-marker-' + index);
+                            const markerEnd = document.getElementById('loop-end-marker-' + index);
+                            const loopLabel = document.getElementById('loop-label-' + index);
+                            
+                            markerStart.style.display = 'block';
+                            markerStart.style.left = (result.loopStart / audio.duration * 100) + '%';
+                            
+                            markerEnd.style.display = 'block';
+                            markerEnd.style.left = (result.loopEnd / audio.duration * 100) + '%';
+                            
+                            loopLabel.style.display = 'block';
+                            loopLabel.textContent = \`Loop: \${formatTime(result.loopStart)} - \${formatTime(result.loopEnd)}\`;
+                        }
                     }, { once: true });
                 }
                 
