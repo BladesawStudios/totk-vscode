@@ -106,7 +106,7 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
         }
 
         return `
-        <div class="entry">
+        <div class="entry" data-index="${idx}" data-name="${escapeHtml(e.name)}">
             <div class="entry-header">
                 <div class="entry-name">${escapeHtml(e.name)}</div>
                 <div class="entry-meta">
@@ -355,6 +355,13 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
 <body>
     <div class="header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <span>BARS: ${escapeHtml(barsName)}</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <label for="sort-select" style="font-size: 13px; color: var(--vscode-descriptionForeground);">Sort by:</label>
+            <select id="sort-select" style="background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); padding: 4px; border-radius: 4px; outline: none; cursor: pointer;">
+                <option value="default">Default</option>
+                <option value="alphabetical">Alphabetical</option>
+            </select>
+        </div>
     </div>
     <div class="entry-list">
         ${entriesHtml}
@@ -369,6 +376,23 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
             const s = Math.floor(seconds % 60);
             return m + ':' + (s < 10 ? '0' : '') + s;
         }
+
+        const sortSelect = document.getElementById('sort-select');
+        sortSelect.addEventListener('change', () => {
+            const list = document.querySelector('.entry-list');
+            const entries = Array.from(list.querySelectorAll('.entry'));
+            const mode = sortSelect.value;
+            
+            entries.sort((a, b) => {
+                if (mode === 'alphabetical') {
+                    return a.dataset.name.localeCompare(b.dataset.name);
+                } else {
+                    return parseInt(a.dataset.index) - parseInt(b.dataset.index);
+                }
+            });
+            
+            entries.forEach(e => list.appendChild(e));
+        });
 
         const playableIndices = ${JSON.stringify(playableIndices)};
         let fetchQueue = [...playableIndices];
