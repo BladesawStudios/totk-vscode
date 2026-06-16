@@ -8,6 +8,9 @@ import tempfile
 import traceback
 from pathlib import Path
 
+import struct
+import bwav_io
+
 import oead
 from aamp_io import (
     is_aamp_binary,
@@ -699,6 +702,54 @@ def main():
                     texture_name = Path(archive_path).name or "texture"
                 print(json.dumps(_read_txtg_texture_result(file_data, texture_name, logical_path)))
 
+            elif command == "read-bwav":
+                internal_path = sys.argv[3] if len(sys.argv) > 3 else ""
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    logical_path = internal_path
+                else:
+                    file_data = Path(archive_path).read_bytes()
+                    logical_path = archive_path
+                from bwav_io import read_bwav_to_temp_wav
+                try:
+                    wav_path = read_bwav_to_temp_wav(file_data, logical_path, romfs_path)
+                    print(json.dumps({"wavPath": wav_path}))
+                except Exception as e:
+                    print(json.dumps({"error": str(e)}))
+
+            elif command == "list-bars":
+                internal_path = sys.argv[3] if len(sys.argv) > 3 else ""
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    logical_path = internal_path
+                else:
+                    file_data = Path(archive_path).read_bytes()
+                    logical_path = archive_path
+                from bars_io import list_bars_entries
+                try:
+                    entries = list_bars_entries(file_data, logical_path, romfs_path)
+                    print(json.dumps({"entries": entries}))
+                except Exception as e:
+                    print(json.dumps({"error": str(e)}))
+
+            elif command == "read-bars-audio":
+                internal_path = sys.argv[3] if len(sys.argv) > 3 else ""
+                entry_index = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+                force_prefetch = sys.argv[5] == "true" if len(sys.argv) > 5 else False
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    logical_path = internal_path
+                else:
+                    file_data = Path(archive_path).read_bytes()
+                    logical_path = archive_path
+                from bars_io import read_bars_entry_audio
+                try:
+                    res = read_bars_entry_audio(file_data, entry_index, logical_path, romfs_path, force_prefetch)
+                    print(json.dumps({"wavPath": res.wav_path, "name": res.name, "isPrefetch": res.is_prefetch, "loopStart": res.loop_start, "loopEnd": res.loop_end}))
+                except Exception as e:
+                    print(json.dumps({"error": str(e)}))
+
+
             elif command == "export-temp":
                 internal_path = sys.argv[3]
                 print(
@@ -1016,6 +1067,35 @@ def main():
                     internal_path, editor_text, sarc, is_sarc_compressed, archive_path, romfs_path
                 )
                 print(json.dumps({"success": True}))
+
+            elif command == "read-bwav-audio":
+                internal_path = sys.argv[3]
+                
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    bwav_name = internal_path
+                else:
+                    with open(archive_path, "rb") as f:
+                        file_data = f.read()
+                    bwav_name = archive_path
+
+                # Check dummy clip
+                if len(file_data) > 0x12:
+                    block_count = struct.unpack_from("<H", file_data, 0x12)[0]
+                    if block_count == 0:
+                        raise ValueError("This BWAV is a dummy clip (0 blocks) and contains no audio data.")
+
+                # Decode to wav and extract loops
+                wav_path, loop_start, loop_end = bwav_io.read_bwav_to_temp_wav(file_data, bwav_name, romfs_path)
+                
+                res = {
+                    "wavPath": wav_path,
+                    "name": Path(bwav_name).name,
+                    "isPrefetch": False,
+                    "loopStart": loop_start,
+                    "loopEnd": loop_end
+                }
+                print(json.dumps(res))
 
     except Exception as e:
         print(json.dumps({"error": str(e), "traceback": traceback.format_exc()}))

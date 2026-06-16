@@ -12,6 +12,8 @@ import {
     runBridgeReadContentAsync,
 } from './bridge';
 import { openTextureViewer, initTextureViewer } from './textureViewer';
+import { openAudioViewer, initAudioViewer } from './audioViewer';
+import { openBarsViewer, initBarsViewer } from './barsViewer';
 import {
     ensurePythonEnvironment,
     getCachedPythonExecutable,
@@ -57,6 +59,7 @@ import { TkprojEditorProvider } from './tkprojEditor';
 import { TkvscEditorProvider } from './tkvscEditor';
 import { FontViewerProvider } from './fontViewer';
 import { InfoJsonEditorProvider } from './infoJsonEditor';
+import { BwavEditorProvider } from './bwavEditor';
 import { setExtensionPath } from './romfsIndex';
 import {
     hasBaseCanonicalPath,
@@ -748,6 +751,8 @@ export async function activate(context: vscode.ExtensionContext) {
     initAampExtensions(context.extensionPath);
     initCoreFsExtensions(context.extensionPath);
     initTextureViewer(context.extensionUri);
+    initAudioViewer(context.extensionUri);
+    initBarsViewer(context.extensionUri);
     setExtensionPath(context.extensionPath);
     setCanonicalIndexExtensionPath(context.extensionPath);
     setProjectCanonicalOverlayExtensionPath(context.extensionPath);
@@ -786,6 +791,7 @@ export async function activate(context: vscode.ExtensionContext) {
     registerDocumentLanguageModes(context);
     context.subscriptions.push(TkprojEditorProvider.register(context));
     context.subscriptions.push(TkvscEditorProvider.register(context));
+    context.subscriptions.push(BwavEditorProvider.register(context));
     
     const bridgePath = path.join(context.extensionPath, 'python', 'totk_bridge.py');
     const getPython = () => getCachedPythonExecutable() ?? '';
@@ -1253,6 +1259,47 @@ export async function activate(context: vscode.ExtensionContext) {
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
                 void vscode.window.showErrorMessage(`Texture preview error: ${msg}`);
+            }
+        }),
+    );
+
+
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('totk-editor.openBarsArchive', async (uri: vscode.Uri) => {
+            const python = getPython();
+            if (!python) {
+                void vscode.window.showErrorMessage('Python not configured.');
+                return;
+            }
+            try {
+                const diskArchive = getDiskArchivePath(uri.fsPath);
+                const filePath = getLocatorInsideDiskArchive(uri.fsPath, diskArchive);
+                const raw = await runBridgeReadAsync(
+                    python,
+                    bridgePath,
+                    ['list-bars', diskArchive, filePath],
+                    getBridgeEnv(),
+                );
+                
+                if (raw && (raw as any).entries) {
+                    const barsName = path.basename(uri.fsPath) || 'audio.bars';
+                    openBarsViewer(barsName, uri.toString(), (raw as any).entries, async (index: number, usePrefetch: boolean) => {
+                        const audioRaw = await runBridgeReadAsync(
+                            python,
+                            bridgePath,
+                            ['read-bars-audio', diskArchive, filePath, index.toString(), usePrefetch ? 'true' : 'false'],
+                            getBridgeEnv(),
+                        );
+                        return audioRaw as any;
+                    });
+                } else {
+                    const err = raw && (raw as any).error ? (raw as any).error : 'Unknown error';
+                    void vscode.window.showErrorMessage('Failed to read BARS archive: ' + err);
+                }
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                void vscode.window.showErrorMessage(`BARS preview error: ${msg}`);
             }
         }),
     );
