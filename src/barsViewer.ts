@@ -94,6 +94,13 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                     <div class="meta-row">Channels: <strong>${m.channel_count}</strong></div>
                     <div class="meta-row">Volume: <strong>${m.volume_db.toFixed(1)} dB</strong></div>
                     ${markers}
+                    <div class="meta-row" id="loop-label-${idx}" style="display: none;">Loop: <strong id="loop-label-text-${idx}"></strong></div>
+                </div>
+            `;
+        } else {
+            metaHtml = `
+                <div class="metadata-block">
+                    <div class="meta-row" id="loop-label-${idx}" style="display: none;">Loop: <strong id="loop-label-text-${idx}"></strong></div>
                 </div>
             `;
         }
@@ -124,7 +131,6 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                     </div>
                     <span class="time-display" id="time-total-${idx}">--:--</span>
                 </div>
-                <div class="loop-label" id="loop-label-${idx}" style="display: none;"></div>
             </div>
 
             ${metaHtml}
@@ -334,6 +340,12 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
         border-radius: 6px;
         border: 1px solid var(--player-border);
         margin-top: auto;
+    }
+    .meta-row.loop-row {
+        color: #f59e0b;
+    }
+    .meta-row.loop-row strong {
+        color: #f59e0b;
     }
     .meta-row strong {
         color: var(--player-text);
@@ -654,7 +666,9 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                             }
                             if (loopLabel) {
                                 loopLabel.style.display = 'block';
-                                loopLabel.textContent = \`Loop: \${formatTime(players[index].loopStart)} - \${formatTime(players[index].loopEnd)}\`;
+                                loopLabel.classList.add('loop-row');
+                                const textElement = document.getElementById('loop-label-text-' + index);
+                                if (textElement) textElement.textContent = \`\${formatTime(players[index].loopStart)} - \${formatTime(players[index].loopEnd)}\`;
                             }
                         }
                         
