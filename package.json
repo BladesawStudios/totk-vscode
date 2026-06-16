@@ -73,6 +73,16 @@
           }
         ],
         "priority": "default"
+      },
+      {
+        "viewType": "totk-editor.bwavViewer",
+        "displayName": "TOTK Audio Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.bwav"
+          }
+        ],
+        "priority": "default"
       }
     ],
     "iconThemes": [

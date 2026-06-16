@@ -37,7 +37,7 @@ export class DumpTreeItem extends vscode.TreeItem {
             if (isBntxTextureUri(resourceUri) || isTxtgFile(resourceUri.fsPath)) {
                 this.command = { command: 'totk-editor.openBntxTexture', title: 'View Texture', arguments: [resourceUri] };
             } else if (isBwavAudioFile(resourceUri.fsPath)) {
-                this.command = { command: 'totk-editor.openBwavAudio', title: 'Play Audio', arguments: [resourceUri] };
+                this.command = { command: 'vscode.open', title: 'Open', arguments: [resourceUri, { preview: true }] };
             } else if (isBarsAudioArchive(resourceUri.fsPath)) {
                 this.command = { command: 'totk-editor.openBarsArchive', title: 'Open BARS Archive', arguments: [resourceUri] };
             } else {

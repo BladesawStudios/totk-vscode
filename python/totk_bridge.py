@@ -5,7 +5,11 @@ import json
 import os
 import sys
 import tempfile
+import traceback
 from pathlib import Path
+
+import struct
+import bwav_io
 
 import oead
 from aamp_io import (
@@ -1045,6 +1049,35 @@ def main():
                     internal_path, editor_text, sarc, is_sarc_compressed, archive_path, romfs_path
                 )
                 print(json.dumps({"success": True}))
+
+            elif command == "read-bwav-audio":
+                internal_path = sys.argv[3]
+                
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    bwav_name = internal_path
+                else:
+                    with open(archive_path, "rb") as f:
+                        file_data = f.read()
+                    bwav_name = archive_path
+
+                # Check dummy clip
+                if len(file_data) > 0x12:
+                    block_count = struct.unpack_from("<H", file_data, 0x12)[0]
+                    if block_count == 0:
+                        raise ValueError("This BWAV is a dummy clip (0 blocks) and contains no audio data.")
+
+                # Decode to wav and extract loops
+                wav_path, loop_start, loop_end = bwav_io.read_bwav_to_temp_wav(file_data, bwav_name, romfs_path)
+                
+                res = {
+                    "wavPath": wav_path,
+                    "name": Path(bwav_name).name,
+                    "isPrefetch": False,
+                    "loopStart": loop_start,
+                    "loopEnd": loop_end
+                }
+                print(json.dumps(res))
 
     except Exception as e:
         print(json.dumps({"error": str(e), "traceback": traceback.format_exc()}))
