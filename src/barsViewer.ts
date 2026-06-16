@@ -415,7 +415,10 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
             p.startedAt = audioCtx.currentTime - p.pausedAt;
             p.isPlaying = true;
             
+            const currentSource = p.source;
             p.source.onended = () => {
+                if (p.source !== currentSource) return;
+                
                 // If it reached the actual end (not stopped manually)
                 if (p.isPlaying && (!p.isLooping || p.loopEnd === null)) {
                     p.isPlaying = false;
