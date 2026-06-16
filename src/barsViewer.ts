@@ -123,7 +123,6 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                         <div id="loop-end-marker-${idx}" class="loop-marker" style="display: none;"></div>
                     </div>
                     <span class="time-display" id="time-total-${idx}">--:--</span>
-                    <audio id="audio-${idx}" style="display: none;"></audio>
                 </div>
                 <div class="loop-label" id="loop-label-${idx}" style="display: none;"></div>
             </div>
@@ -364,6 +363,122 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
         let isFetching = false;
         
         const prefetchStates = {};
+        
+        // Web Audio API
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const players = {}; 
+        
+        function updateUI(idx) {
+            const p = players[idx];
+            const btn = document.getElementById('play-btn-' + idx);
+            if (!btn || !p) return;
+            const playIcon = btn.querySelector('.play-icon');
+            const pauseIcon = btn.querySelector('.pause-icon');
+            if (p.isPlaying) {
+                playIcon.style.display = 'none';
+                pauseIcon.style.display = 'inline';
+            } else {
+                playIcon.style.display = 'inline';
+                pauseIcon.style.display = 'none';
+                
+                if (p.pausedAt === 0) {
+                    const progress = document.getElementById('progress-' + idx);
+                    const timeCurrent = document.getElementById('time-current-' + idx);
+                    if (progress) progress.value = 0;
+                    if (timeCurrent) timeCurrent.textContent = formatTime(0);
+                }
+            }
+        }
+
+        function playAudio(idx) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const p = players[idx];
+            if (!p || !p.buffer) return;
+            if (p.isPlaying) return;
+
+            // Pause all others
+            Object.keys(players).forEach(otherIdx => {
+                if (otherIdx != idx && players[otherIdx].isPlaying) pauseAudio(otherIdx);
+            });
+
+            p.source = audioCtx.createBufferSource();
+            p.source.buffer = p.buffer;
+            if (p.isLooping && p.loopEnd !== null) {
+                p.source.loop = true;
+                p.source.loopStart = p.loopStart;
+                p.source.loopEnd = p.loopEnd;
+            }
+            p.source.connect(audioCtx.destination);
+            
+            p.source.start(0, p.pausedAt);
+            p.startedAt = audioCtx.currentTime - p.pausedAt;
+            p.isPlaying = true;
+            
+            p.source.onended = () => {
+                // If it reached the actual end (not stopped manually)
+                if (p.isPlaying && (!p.isLooping || p.loopEnd === null)) {
+                    p.isPlaying = false;
+                    p.pausedAt = 0;
+                    updateUI(idx);
+                }
+            };
+
+            updateUI(idx);
+        }
+
+        function pauseAudio(idx) {
+            const p = players[idx];
+            if (!p || !p.isPlaying) return;
+            
+            p.source.stop();
+            p.pausedAt = audioCtx.currentTime - p.startedAt;
+            
+            if (p.isLooping && p.loopEnd !== null && p.pausedAt >= p.loopEnd) {
+                const loopDur = p.loopEnd - p.loopStart;
+                while(p.pausedAt >= p.loopEnd) {
+                    p.pausedAt -= loopDur;
+                }
+            }
+
+            p.isPlaying = false;
+            updateUI(idx);
+        }
+
+        function seekAudio(idx, time) {
+            const p = players[idx];
+            if (!p) return;
+            
+            const wasPlaying = p.isPlaying;
+            if (wasPlaying) pauseAudio(idx);
+            p.pausedAt = time;
+            if (wasPlaying) playAudio(idx);
+        }
+        
+        function renderLoop() {
+            requestAnimationFrame(renderLoop);
+            Object.keys(players).forEach(idx => {
+                const p = players[idx];
+                if (!p.isPlaying) return;
+                
+                let currentTime = audioCtx.currentTime - p.startedAt;
+                if (p.isLooping && p.loopEnd !== null && currentTime >= p.loopEnd) {
+                    const loopDur = p.loopEnd - p.loopStart;
+                    const pastLoop = currentTime - p.loopStart;
+                    currentTime = p.loopStart + (pastLoop % loopDur);
+                } else if (currentTime > p.buffer.duration) {
+                     currentTime = p.buffer.duration;
+                }
+                
+                const progress = document.getElementById('progress-' + idx);
+                const timeCurrent = document.getElementById('time-current-' + idx);
+                if (!p.isSeeking && progress && timeCurrent) {
+                    progress.value = currentTime;
+                    timeCurrent.textContent = formatTime(currentTime);
+                }
+            });
+        }
+        requestAnimationFrame(renderLoop);
 
         function fetchNext() {
             if (fetchQueue.length === 0) {
@@ -393,10 +508,8 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                 prefetchStates[idx] = usePrefetch;
                 updateTags();
                 
-                const audio = document.getElementById('audio-' + idx);
-                audio.pause();
-                audio.removeAttribute('src');
-                audio.load();
+                if (players[idx] && players[idx].isPlaying) pauseAudio(idx);
+                delete players[idx];
                 
                 const btn = document.getElementById('play-btn-' + idx);
                 const progress = document.getElementById('progress-' + idx);
@@ -418,10 +531,6 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
                 }
                 if (timeTotal) timeTotal.textContent = '--:--';
                 if (timeCurrent) timeCurrent.textContent = '0:00';
-                
-                loopStart = null;
-                loopEnd = null;
-                isLooping = false;
                 
                 const repeatBtn = document.getElementById('repeat-btn-' + idx);
                 const markerStart = document.getElementById('loop-start-marker-' + idx);
@@ -448,127 +557,116 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
             }
 
             const btn = document.getElementById('play-btn-' + idx);
-            const audio = document.getElementById('audio-' + idx);
             const progress = document.getElementById('progress-' + idx);
             const timeCurrent = document.getElementById('time-current-' + idx);
-            const playIcon = btn.querySelector('.play-icon');
-            const pauseIcon = btn.querySelector('.pause-icon');
             const repeatBtn = document.getElementById('repeat-btn-' + idx);
 
-            let isSeeking = false;
-            let loopStart = null;
-            let loopEnd = null;
-            let isLooping = true;
-
             btn.addEventListener('click', () => {
-                if (audio.paused) {
-                    // Pause all other audios
-                    document.querySelectorAll('audio').forEach(a => {
-                        if (a !== audio && !a.paused) {
-                            a.pause();
-                        }
-                    });
-                    audio.play().catch(e => console.error("Error playing audio", e));
+                const p = players[idx];
+                if (!p) return;
+                if (!p.isPlaying) {
+                    playAudio(idx);
                 } else {
-                    audio.pause();
+                    pauseAudio(idx);
                 }
             });
 
             repeatBtn.addEventListener('click', () => {
-                isLooping = !isLooping;
-                repeatBtn.classList.toggle('active', isLooping);
-            });
-
-            audio.addEventListener('play', () => {
-                playIcon.style.display = 'none';
-                pauseIcon.style.display = 'inline';
-            });
-
-            audio.addEventListener('pause', () => {
-                playIcon.style.display = 'inline';
-                pauseIcon.style.display = 'none';
-            });
-
-            audio.addEventListener('timeupdate', () => {
-                if (isLooping && loopEnd !== null && audio.currentTime >= loopEnd) {
-                    audio.currentTime = loopStart;
-                }
-                if (!isSeeking) {
-                    progress.value = audio.currentTime;
-                    timeCurrent.textContent = formatTime(audio.currentTime);
-                }
+                const p = players[idx];
+                if (!p) return;
+                p.isLooping = !p.isLooping;
+                repeatBtn.classList.toggle('active', p.isLooping);
+                
+                const wasPlaying = p.isPlaying;
+                if (wasPlaying) pauseAudio(idx);
+                if (wasPlaying) playAudio(idx);
             });
 
             progress.addEventListener('input', () => {
-                isSeeking = true;
+                const p = players[idx];
+                if (p) p.isSeeking = true;
                 timeCurrent.textContent = formatTime(progress.value);
             });
 
             progress.addEventListener('change', () => {
-                isSeeking = false;
-                audio.currentTime = progress.value;
+                const p = players[idx];
+                if (p) {
+                    p.isSeeking = false;
+                    seekAudio(idx, parseFloat(progress.value));
+                }
             });
-            
-            audio.addEventListener('ended', () => {
-                playIcon.style.display = 'inline';
-                pauseIcon.style.display = 'none';
-                progress.value = 0;
-                timeCurrent.textContent = formatTime(0);
-            });
-            
-            // Expose properties so we can set them when loaded
-            audio._setLoopPoints = (start, end) => {
-                loopStart = start;
-                loopEnd = end;
-                isLooping = true;
-                repeatBtn.classList.add('active');
-                repeatBtn.style.display = 'flex';
-            };
         });
 
         window.addEventListener('message', event => {
             const message = event.data;
             if (message.type === 'audio-loaded') {
                 const { index, url, result } = message;
-                const audio = document.getElementById('audio-' + index);
                 const btn = document.getElementById('play-btn-' + index);
                 const progress = document.getElementById('progress-' + index);
                 const timeTotal = document.getElementById('time-total-' + index);
 
-                if (audio) {
-                    audio.src = url;
-                    audio.load();
-                    
-                    if (result.loopStart !== undefined && result.loopStart !== null && result.loopEnd !== undefined && result.loopEnd !== null) {
-                        audio._setLoopPoints(result.loopStart, result.loopEnd);
-                    }
-                    
-                    audio.addEventListener('loadedmetadata', () => {
-                        timeTotal.textContent = formatTime(audio.duration);
-                        progress.max = audio.duration;
-                        progress.disabled = false;
-                        btn.disabled = false;
-                        btn.title = "Play/Pause";
+                fetch(url)
+                    .then(response => response.arrayBuffer())
+                    .then(arrayBuffer => audioCtx.decodeAudioData(arrayBuffer))
+                    .then(audioBuffer => {
+                        players[index] = {
+                            buffer: audioBuffer,
+                            source: null,
+                            startedAt: 0,
+                            pausedAt: 0,
+                            isPlaying: false,
+                            loopStart: result.loopStart !== undefined ? result.loopStart : null,
+                            loopEnd: result.loopEnd !== undefined ? result.loopEnd : null,
+                            isLooping: result.loopStart !== undefined && result.loopStart !== null,
+                            isSeeking: false
+                        };
                         
-                        if (result.loopStart !== undefined && result.loopStart !== null) {
+                        if (timeTotal) timeTotal.textContent = formatTime(audioBuffer.duration);
+                        if (progress) {
+                            progress.max = audioBuffer.duration;
+                            progress.disabled = false;
+                        }
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.title = "Play/Pause";
+                        }
+                        
+                        if (players[index].isLooping) {
+                            const repeatBtn = document.getElementById('repeat-btn-' + index);
                             const markerStart = document.getElementById('loop-start-marker-' + index);
                             const markerEnd = document.getElementById('loop-end-marker-' + index);
                             const loopLabel = document.getElementById('loop-label-' + index);
                             
-                            markerStart.style.display = 'block';
-                            markerStart.style.left = (result.loopStart / audio.duration * 100) + '%';
-                            
-                            markerEnd.style.display = 'block';
-                            markerEnd.style.left = (result.loopEnd / audio.duration * 100) + '%';
-                            
-                            loopLabel.style.display = 'block';
-                            loopLabel.textContent = \`Loop: \${formatTime(result.loopStart)} - \${formatTime(result.loopEnd)}\`;
+                            if (repeatBtn) {
+                                repeatBtn.classList.add('active');
+                                repeatBtn.style.display = 'flex';
+                            }
+                            if (markerStart) {
+                                markerStart.style.display = 'block';
+                                markerStart.style.left = (players[index].loopStart / audioBuffer.duration * 100) + '%';
+                            }
+                            if (markerEnd) {
+                                markerEnd.style.display = 'block';
+                                markerEnd.style.left = (players[index].loopEnd / audioBuffer.duration * 100) + '%';
+                            }
+                            if (loopLabel) {
+                                loopLabel.style.display = 'block';
+                                loopLabel.textContent = \`Loop: \${formatTime(players[index].loopStart)} - \${formatTime(players[index].loopEnd)}\`;
+                            }
                         }
-                    }, { once: true });
-                }
-                
-                isFetching = false;
-                fetchNext();
+                        
+                        isFetching = false;
+                        fetchNext();
+                    })
+                    .catch(e => {
+                        console.error('Error decoding audio', e);
+                        if (btn) {
+                            btn.title = "Error decoding";
+                            btn.querySelector('.play-icon').textContent = '✕';
+                        }
+                        isFetching = false;
+                        fetchNext();
+                    });
             } else if (message.type === 'audio-error') {
                 const btn = document.getElementById('play-btn-' + message.index);
                 if (btn) {
