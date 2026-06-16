@@ -40,21 +40,21 @@ export function openBarsViewer(
     panel.webview.html = buildHtml(barsName, entries);
 
     panel.webview.onDidReceiveMessage(async (message) => {
-        if (message.type === 'play-entry') {
+        if (message.type === 'fetch-audio') {
             try {
                 const res = await fetchAudio(message.index);
                 if (res.wavPath) {
                     const uri = panel.webview.asWebviewUri(vscode.Uri.file(res.wavPath));
-                    panel.webview.postMessage({ type: 'play-audio', index: message.index, url: uri.toString() });
+                    panel.webview.postMessage({ type: 'audio-loaded', index: message.index, url: uri.toString() });
                 } else {
                     void vscode.window.showErrorMessage('Failed to decode BARS audio entry: ' + (res.error || 'Unknown error'));
                     // Reset UI loading state
-                    panel.webview.postMessage({ type: 'play-error', index: message.index });
+                    panel.webview.postMessage({ type: 'audio-error', index: message.index });
                 }
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
                 void vscode.window.showErrorMessage(`Error fetching audio: ${msg}`);
-                panel.webview.postMessage({ type: 'play-error', index: message.index });
+                panel.webview.postMessage({ type: 'audio-error', index: message.index });
             }
         }
     });
@@ -66,8 +66,14 @@ export function openBarsViewer(
 }
 
 function buildHtml(barsName: string, entries: BarsEntry[]): string {
+    const playableIndices: number[] = [];
+
     const entriesHtml = entries.map((e, idx) => {
         const canPlay = e.has_prefetch || e.has_romfs_bwav;
+        if (canPlay) {
+            playableIndices.push(idx);
+        }
+
         let metaHtml = '';
         if (e.metadata) {
             const m = e.metadata;
@@ -94,20 +100,25 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
 
         return `
         <div class="entry">
-            <div class="entry-info">
+            <div class="entry-header">
                 <div class="entry-name">${escapeHtml(e.name)}</div>
                 <div class="entry-meta">
                     ${e.has_prefetch ? '<span class="tag prefetch">Prefetch</span>' : ''}
                     ${e.has_romfs_bwav ? '<span class="tag romfs">RomFS</span>' : ''}
                 </div>
-                ${metaHtml}
             </div>
-            <button class="play-btn" data-index="${idx}" ${!canPlay ? 'disabled' : ''}>
-                ${canPlay ? '▶ Play' : 'Unavailable'}
-            </button>
-            <div class="audio-container" id="audio-container-${idx}" style="display: none;">
-                <audio controls id="audio-player-${idx}"></audio>
+            
+            <div class="custom-player" id="player-container-${idx}">
+                <button class="player-play-btn" id="play-btn-${idx}" data-index="${idx}" ${!canPlay ? 'disabled title="Unavailable"' : 'disabled title="Loading..."'}>
+                    ${canPlay ? '<span class="play-icon">▶</span><span class="pause-icon" style="display:none;">⏸</span>' : '✕'}
+                </button>
+                <span class="time-display" id="time-current-${idx}">0:00</span>
+                <input type="range" class="progress-bar" id="progress-${idx}" value="0" min="0" max="100" step="0.01" disabled>
+                <span class="time-display" id="time-total-${idx}">--:--</span>
+                <audio id="audio-${idx}" style="display: none;"></audio>
             </div>
+
+            ${metaHtml}
         </div>
         `;
     }).join('');
@@ -117,11 +128,18 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
 <head>
 <meta charset="UTF-8">
 <style>
+    :root {
+        --player-bg: var(--vscode-editorWidget-background, #252526);
+        --player-border: var(--vscode-panel-border, #444);
+        --player-accent: var(--vscode-button-background, #0e639c);
+        --player-accent-hover: var(--vscode-button-hoverBackground, #1177bb);
+        --player-text: var(--vscode-foreground, #ccc);
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
         font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
         font-size: 13px;
-        color: var(--vscode-foreground, #ccc);
+        color: var(--player-text);
         background: var(--vscode-editor-background, #1e1e1e);
         padding: 20px;
     }
@@ -133,32 +151,35 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
         word-break: break-all;
     }
     .entry-list {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+        gap: 16px;
     }
     .entry {
-        background: var(--vscode-editorWidget-background, #252526);
-        border: 1px solid var(--vscode-panel-border, #444);
-        padding: 12px 16px;
-        border-radius: 6px;
+        background: var(--player-bg);
+        border: 1px solid var(--player-border);
+        padding: 16px;
+        border-radius: 8px;
         display: flex;
-        align-items: center;
-        gap: 16px;
-        flex-wrap: wrap;
+        flex-direction: column;
+        gap: 14px;
     }
-    .entry-info {
-        flex: 1;
-        min-width: 200px;
+    .entry-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
     }
     .entry-name {
-        font-weight: 500;
-        margin-bottom: 4px;
+        font-weight: 600;
+        font-size: 14px;
         word-break: break-all;
     }
     .entry-meta {
         display: flex;
         gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
     }
     .tag {
         font-size: 10px;
@@ -166,55 +187,93 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
         border-radius: 4px;
         text-transform: uppercase;
         font-weight: 600;
+        white-space: nowrap;
     }
     .tag.prefetch { background: #3b82f640; color: #60a5fa; }
     .tag.romfs { background: #10b98140; color: #34d399; }
     
+    .custom-player {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--vscode-editor-background, #1e1e1e);
+        padding: 10px 14px;
+        border-radius: 6px;
+        border: 1px solid var(--player-border);
+    }
+    .player-play-btn {
+        background: var(--player-accent);
+        color: #fff;
+        border: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        flex-shrink: 0;
+        transition: background 0.1s;
+    }
+    .player-play-btn:hover:not(:disabled) {
+        background: var(--player-accent-hover);
+    }
+    .player-play-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        background: var(--player-border);
+    }
+    .time-display {
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground, #a0a0a0);
+        min-width: 36px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+    }
+    input[type=range].progress-bar {
+        flex: 1;
+        -webkit-appearance: none;
+        background: transparent;
+        cursor: pointer;
+        height: 16px;
+    }
+    input[type=range].progress-bar::-webkit-slider-runnable-track {
+        height: 4px;
+        background: var(--player-border);
+        border-radius: 2px;
+    }
+    input[type=range].progress-bar::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 12px;
+        width: 12px;
+        border-radius: 50%;
+        background: var(--player-accent);
+        margin-top: -4px;
+        transition: transform 0.1s;
+    }
+    input[type=range].progress-bar:hover::-webkit-slider-thumb:not(:disabled) {
+        transform: scale(1.2);
+    }
+    input[type=range].progress-bar:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+    
     .metadata-block {
-        margin-top: 10px;
         font-size: 11px;
         color: var(--vscode-descriptionForeground, #a0a0a0);
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 4px 12px;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 12px;
         background: var(--vscode-editor-background, #1e1e1e);
-        padding: 8px 12px;
-        border-radius: 4px;
-        border: 1px solid var(--vscode-panel-border, #444);
+        padding: 10px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--player-border);
+        margin-top: auto;
     }
     .meta-row strong {
-        color: var(--vscode-foreground, #ccc);
-    }
-    
-    .play-btn {
-        background: var(--vscode-button-background, #0e639c);
-        color: var(--vscode-button-foreground, #fff);
-        border: none;
-        padding: 6px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 600;
-        min-width: 80px;
-    }
-    .play-btn:hover:not(:disabled) {
-        background: var(--vscode-button-hoverBackground, #1177bb);
-    }
-    .play-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-    .play-btn.loading {
-        opacity: 0.7;
-        cursor: wait;
-    }
-    .audio-container {
-        width: 100%;
-        margin-top: 12px;
-    }
-    audio {
-        width: 100%;
-        outline: none;
-        height: 36px;
+        color: var(--player-text);
     }
 </style>
 </head>
@@ -227,54 +286,121 @@ function buildHtml(barsName: string, entries: BarsEntry[]): string {
     <script>
         const vscode = acquireVsCodeApi();
         
-        document.querySelectorAll('.play-btn').forEach(btn => {
+        function formatTime(seconds) {
+            if (isNaN(seconds) || !isFinite(seconds)) return '--:--';
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }
+
+        const playableIndices = ${JSON.stringify(playableIndices)};
+        let fetchQueue = [...playableIndices];
+        let isFetching = false;
+
+        function fetchNext() {
+            if (fetchQueue.length === 0) return;
+            isFetching = true;
+            const index = fetchQueue.shift();
+            vscode.postMessage({ type: 'fetch-audio', index });
+        }
+
+        // Initialize players
+        playableIndices.forEach(idx => {
+            const btn = document.getElementById('play-btn-' + idx);
+            const audio = document.getElementById('audio-' + idx);
+            const progress = document.getElementById('progress-' + idx);
+            const timeCurrent = document.getElementById('time-current-' + idx);
+            const playIcon = btn.querySelector('.play-icon');
+            const pauseIcon = btn.querySelector('.pause-icon');
+
+            let isSeeking = false;
+
             btn.addEventListener('click', () => {
-                const index = btn.getAttribute('data-index');
-                
-                // Pause all other audios
-                document.querySelectorAll('audio').forEach(a => {
-                    a.pause();
-                });
-                
-                const container = document.getElementById('audio-container-' + index);
-                const audio = document.getElementById('audio-player-' + index);
-                
-                if (audio.src && audio.src !== window.location.href) {
-                    audio.currentTime = 0;
-                    audio.play();
-                    container.style.display = 'block';
-                    return;
+                if (audio.paused) {
+                    // Pause all other audios
+                    document.querySelectorAll('audio').forEach(a => {
+                        if (a !== audio && !a.paused) {
+                            a.pause();
+                        }
+                    });
+                    audio.play().catch(e => console.error("Error playing audio", e));
+                } else {
+                    audio.pause();
                 }
-                
-                btn.classList.add('loading');
-                btn.textContent = 'Loading...';
-                
-                vscode.postMessage({ type: 'play-entry', index: parseInt(index, 10) });
+            });
+
+            audio.addEventListener('play', () => {
+                playIcon.style.display = 'none';
+                pauseIcon.style.display = 'inline';
+            });
+
+            audio.addEventListener('pause', () => {
+                playIcon.style.display = 'inline';
+                pauseIcon.style.display = 'none';
+            });
+
+            audio.addEventListener('timeupdate', () => {
+                if (!isSeeking) {
+                    progress.value = audio.currentTime;
+                    timeCurrent.textContent = formatTime(audio.currentTime);
+                }
+            });
+
+            progress.addEventListener('input', () => {
+                isSeeking = true;
+                timeCurrent.textContent = formatTime(progress.value);
+            });
+
+            progress.addEventListener('change', () => {
+                isSeeking = false;
+                audio.currentTime = progress.value;
+            });
+            
+            audio.addEventListener('ended', () => {
+                playIcon.style.display = 'inline';
+                pauseIcon.style.display = 'none';
+                progress.value = 0;
+                timeCurrent.textContent = formatTime(0);
             });
         });
 
         window.addEventListener('message', event => {
             const message = event.data;
-            if (message.type === 'play-audio' || message.type === 'play-error') {
-                const index = message.index;
-                const btn = document.querySelector(\`.play-btn[data-index="\${index}"]\`);
+            if (message.type === 'audio-loaded') {
+                const { index, url } = message;
+                const audio = document.getElementById('audio-' + index);
+                const btn = document.getElementById('play-btn-' + index);
+                const progress = document.getElementById('progress-' + index);
+                const timeTotal = document.getElementById('time-total-' + index);
+
+                if (audio) {
+                    audio.src = url;
+                    audio.load();
+                    
+                    audio.addEventListener('loadedmetadata', () => {
+                        timeTotal.textContent = formatTime(audio.duration);
+                        progress.max = audio.duration;
+                        progress.disabled = false;
+                        btn.disabled = false;
+                        btn.title = "Play/Pause";
+                    }, { once: true });
+                }
                 
+                isFetching = false;
+                fetchNext();
+            } else if (message.type === 'audio-error') {
+                const btn = document.getElementById('play-btn-' + message.index);
                 if (btn) {
-                    btn.classList.remove('loading');
-                    btn.textContent = '▶ Play';
+                    btn.title = "Error loading";
+                    btn.querySelector('.play-icon').textContent = '✕';
                 }
-                
-                if (message.type === 'play-audio') {
-                    const container = document.getElementById('audio-container-' + index);
-                    const audio = document.getElementById('audio-player-' + index);
-                    if (container && audio) {
-                        audio.src = message.url;
-                        container.style.display = 'block';
-                        audio.play();
-                    }
-                }
+                isFetching = false;
+                fetchNext();
             }
         });
+
+        // Start fetching process
+        fetchNext();
     </script>
 </body>
 </html>`;
