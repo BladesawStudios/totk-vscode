@@ -20,5 +20,5 @@
 	path = vendor/bphcl
 	url = https://github.com/TKVSC-Team/bphcl.git
 [submodule "external/oead"]
-	path = vendor/oead
+	path = external/oead
 	url = https://github.com/TKVSC-Team/oead
