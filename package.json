@@ -321,7 +321,7 @@
       },
       {
         "command": "totk-editor.addDumpToProject",
-        "title": "Add to Project…"
+        "title": "Add to Project\u2026"
       },
       {
         "command": "totk-editor.archiveAddToActiveOption",
@@ -329,11 +329,11 @@
       },
       {
         "command": "totk-editor.archiveAddToOption",
-        "title": "Add to Option…"
+        "title": "Add to Option\u2026"
       },
       {
         "command": "totk-editor.configureFilteringRules",
-        "title": "Blacklist (Filter Rule)…"
+        "title": "Blacklist (Filter Rule)\u2026"
       },
       {
         "command": "totk-editor.archiveDelete",
@@ -458,6 +458,10 @@
       {
         "command": "totk-editor.clearActiveOption",
         "title": "TKMM: Unset active option"
+      },
+      {
+        "command": "totk-editor.importTextureDds",
+        "title": "Import DDS (Replace Texture)..."
       }
     ],
     "viewsContainers": {
@@ -682,6 +686,11 @@
           "command": "totk-editor.configureFilteringRules",
           "when": "view == totk-editor.gameDump && (viewItem == dumpFile || viewItem == dumpVirtualFile || viewItem == dumpArchive)",
           "group": "8_filter@1"
+        },
+        {
+          "command": "totk-editor.importTextureDds",
+          "when": "view == totk-editor.archives && (viewItem == archiveVirtualFile || (viewItem == archiveFile && resourceExtname == .txtg))",
+          "group": "5_export@2"
         }
       ],
       "explorer/context": [

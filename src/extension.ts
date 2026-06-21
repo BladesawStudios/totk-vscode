@@ -10,6 +10,8 @@ import {
     runBridgeJsonAsync,
     runBridgeReadAsync,
     runBridgeReadContentAsync,
+    runBridgeReplaceBntxPayloadAsync,
+    runBridgeReplaceTxtgPayloadAsync,
 } from './bridge';
 import { openTextureViewer, initTextureViewer } from './textureViewer';
 import { openAudioViewer, initAudioViewer } from './audioViewer';
@@ -1253,7 +1255,9 @@ export async function activate(context: vscode.ExtensionContext) {
                         // Automatically refresh the texture viewer to show the applied changes
                         void vscode.commands.executeCommand('totk-editor.openBntxTexture', uri);
                     };
-                    openTextureViewer(texName, raw, diskArchive, filePath, onSaveCallback);
+                    const onImport = isReadOnly ? undefined : () => importDdsIntoTexture(uri);
+                    const onExport = () => exportFromArchiveSelection([uri]);
+                    openTextureViewer(texName, raw, diskArchive, filePath, onSaveCallback, onImport, onExport);
                 } else {
                     void vscode.window.showErrorMessage('Failed to load texture preview.');
                 }
@@ -1261,6 +1265,70 @@ export async function activate(context: vscode.ExtensionContext) {
                 const msg = e instanceof Error ? e.message : String(e);
                 void vscode.window.showErrorMessage(`Texture preview error: ${msg}`);
             }
+        }),
+    );
+
+    const importDdsIntoTexture = async (uri: vscode.Uri): Promise<void> => {
+        const python = getPython();
+        if (!python) {
+            await promptPythonSetup(context);
+            return;
+        }
+        const isReadOnly = uri.scheme === 'totk-dump' || uri.scheme === 'sarc-dump';
+        if (isReadOnly) {
+            void vscode.window.showWarningMessage('This texture is read-only and cannot be replaced.');
+            return;
+        }
+
+        const picked = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            canSelectFiles: true,
+            canSelectFolders: false,
+            title: 'Import DDS (replace texture)',
+            openLabel: 'Replace With This DDS',
+            filters: { DDS: ['dds'] },
+        });
+        const ddsPath = picked?.[0]?.fsPath;
+        if (!ddsPath) {
+            return;
+        }
+
+        try {
+            const diskArchive = getDiskArchivePath(uri.fsPath);
+            const filePath = getLocatorInsideDiskArchive(uri.fsPath, diskArchive);
+            const ddsBytes = await fs.promises.readFile(ddsPath);
+            const isTxtg = isTxtgFile(uri.fsPath);
+
+            if (isTxtg) {
+                await runBridgeReplaceTxtgPayloadAsync(
+                    python, bridgePath, diskArchive, filePath, ddsBytes, getBridgeEnv(),
+                );
+            } else {
+                await runBridgeReplaceBntxPayloadAsync(
+                    python, bridgePath, diskArchive, filePath, ddsBytes, getBridgeEnv(),
+                );
+            }
+
+            void vscode.window.showInformationMessage('Texture replaced from DDS.');
+            // Refresh the preview so the new image shows immediately.
+            void vscode.commands.executeCommand('totk-editor.openBntxTexture', uri);
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            void vscode.window.showErrorMessage(`DDS import failed: ${msg}`);
+        }
+    };
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('totk-editor.importTextureDds', async (uri: vscode.Uri) => {
+            if (!uri) {
+                const sel = getArchiveSelection();
+                uri = sel?.[0]?.resourceUri as vscode.Uri;
+            }
+            if (!uri) {
+                void vscode.window.showErrorMessage('No texture selected to replace.');
+                return;
+            }
+            await importDdsIntoTexture(uri);
         }),
     );
 

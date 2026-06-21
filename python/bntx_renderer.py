@@ -233,7 +233,7 @@ def _decode_pixels(
         decoded = _bc4_to_grayscale(t2d.decode_bc4(linear_data, width, height), pixel_count)
         return decoded, "RGBA"
     elif decoder_key == "bc5":
-        decoded = _bc5_to_normal(t2d.decode_bc5(linear_data, width, height), pixel_count)
+        decoded = _bc5_decode_raw(t2d.decode_bc5(linear_data, width, height), pixel_count)
         return decoded, "RGBA"
     elif decoder_key == "bc6":
         decoded = t2d.decode_bc6(linear_data, width, height)
@@ -259,17 +259,59 @@ def _bc4_to_grayscale(bgra: bytes, pixel_count: int) -> bytes:
     return bytes(out)
 
 
-def _bc5_to_normal(bgra: bytes, pixel_count: int) -> bytes:
-    """BC5 decodes to RG channels. Show as normal-map style RGB."""
+def _bc5_decode_raw(bgra: bytes, pixel_count: int) -> bytes:
+    """BC5 stores two channels. Return them as R=channel0, G=channel1, B=0, A=255.
+
+    Whether this is a normal map (where Z must be reconstructed) or a plain
+    two-channel texture (grayscale + mask, etc.) is decided later from the
+    channel-source metadata, so the raw channels are preserved here.
+    """
     n = min(pixel_count, len(bgra) // 4)
-    bgra[0 : n * 4 : 4]
+    out = bytearray(pixel_count * 4)
+    if n == 0:
+        return bytes(out)
     g = bgra[1 : n * 4 : 4]
     r = bgra[2 : n * 4 : 4]
-    out = bytearray(pixel_count * 4)
     out[0::4] = r
-    out[1::4] = g
-    out[2::4] = b"\xff" * n
-    out[3::4] = b"\xff" * n
+    out[1 : n * 4 : 4] = g
+    out[3::4] = b"\xff" * pixel_count
+    return bytes(out)
+
+
+def _bc5_reconstruct_normal(pixels: bytes, pixel_count: int) -> bytes:
+    """Reconstruct the Z (blue) channel of a tangent-space normal from R, G.
+
+    ``z = sqrt(1 - x^2 - y^2)`` with x, y derived from the red/green channels.
+    Input is the raw RGBA produced by ``_bc5_decode_raw`` (R=x, G=y).
+    """
+    n = min(pixel_count, len(pixels) // 4)
+    out = bytearray(pixels)
+    if n == 0:
+        return bytes(out)
+    r = pixels[0 : n * 4 : 4]
+    g = pixels[1 : n * 4 : 4]
+
+    try:
+        import numpy as np
+
+        rr = np.frombuffer(bytes(r), dtype=np.uint8).astype(np.float32)
+        gg = np.frombuffer(bytes(g), dtype=np.uint8).astype(np.float32)
+        x = rr / 127.5 - 1.0
+        y = gg / 127.5 - 1.0
+        z = np.sqrt(np.clip(1.0 - x * x - y * y, 0.0, 1.0))
+        b = np.clip((z + 1.0) * 127.5, 0.0, 255.0).astype(np.uint8).tobytes()
+    except Exception:
+        b = bytearray(n)
+        for i in range(n):
+            x = r[i] / 127.5 - 1.0
+            y = g[i] / 127.5 - 1.0
+            t = 1.0 - x * x - y * y
+            z = (t**0.5) if t > 0.0 else 0.0
+            b[i] = max(0, min(255, int((z + 1.0) * 127.5)))
+        b = bytes(b)
+
+    out[2 : n * 4 : 4] = b
+    out[3::4] = b"\xff" * pixel_count
     return bytes(out)
 
 
@@ -356,12 +398,24 @@ def _apply_channel_swizzle(
     ch_g: int,
     ch_b: int,
     ch_a: int,
+    decoder_key: str = "",
 ) -> tuple[bytes, str]:
     """Remap decoded pixels according to the BNTX channel source metadata.
 
     Channel values: 0=Zero, 1=One, 2=Red, 3=Green, 4=Blue, 5=Alpha.
     Standard mapping (R=2, G=3, B=4, A=5) is a no-op.
     """
+    # BC5 stores two channels. A tangent-space normal map has the signature
+    # R=Red, G=Green, B=One/Zero, A=One/Zero (the blue/alpha are constants because
+    # the game rebuilds Z in-shader); for those we reconstruct Z and display the
+    # normal map. Anything else (e.g. a grayscale icon with its mask in the second
+    # channel) is a real two-channel texture, so fall through and honour the
+    # channel metadata as usual.
+    if decoder_key == "bc5":
+        is_normal_map = ch_r == 2 and ch_g == 3 and ch_b in (0, 1) and ch_a in (0, 1)
+        if is_normal_map:
+            return _bc5_reconstruct_normal(pixels, width * height), "RGBA"
+
     if ch_r == 2 and ch_g == 3 and ch_b == 4 and ch_a == 5:
         return pixels, raw_mode
 
@@ -469,6 +523,7 @@ def render_texture_to_png(bntx_data: bytes, texture_name: str) -> str | None:
         tex.channel_g,
         tex.channel_b,
         tex.channel_a,
+        decoder_key,
     )
 
     try:

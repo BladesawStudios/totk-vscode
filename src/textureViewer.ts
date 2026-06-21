@@ -16,7 +16,9 @@ export function openTextureViewer(
     result: BntxTextureResult,
     diskArchive?: string,
     filePath?: string,
-    onSave?: (data: any) => Promise<void>
+    onSave?: (data: any) => Promise<void>,
+    onImport?: () => Promise<void>,
+    onExport?: () => Promise<void>
 ): void {
     const key = textureName;
     const existing = panels.get(key);
@@ -38,7 +40,7 @@ export function openTextureViewer(
         }
 
         existing.reveal();
-        existing.webview.html = buildHtml(result, existing.webview, !onSave);
+        existing.webview.html = buildHtml(result, existing.webview, !onSave, !!onImport, !!onExport);
         return;
     }
 
@@ -60,7 +62,7 @@ export function openTextureViewer(
         { enableScripts: true, retainContextWhenHidden: false, localResourceRoots: localRoots },
     );
 
-    panel.webview.html = buildHtml(result, panel.webview, !onSave);
+    panel.webview.html = buildHtml(result, panel.webview, !onSave, !!onImport, !!onExport);
     panels.set(key, panel);
     panel.onDidDispose(() => {
         panels.delete(key);
@@ -82,11 +84,25 @@ export function openTextureViewer(
                 const err = e instanceof Error ? e.message : String(e);
                 vscode.window.showErrorMessage(`Failed to save metadata: ${err}`);
             }
+        } else if (message.type === 'import-dds' && onImport) {
+            try {
+                await onImport();
+            } catch (e) {
+                const err = e instanceof Error ? e.message : String(e);
+                vscode.window.showErrorMessage(`DDS import failed: ${err}`);
+            }
+        } else if (message.type === 'export-dds' && onExport) {
+            try {
+                await onExport();
+            } catch (e) {
+                const err = e instanceof Error ? e.message : String(e);
+                vscode.window.showErrorMessage(`DDS export failed: ${err}`);
+            }
         }
     });
 }
 
-function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnly: boolean): string {
+function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnly: boolean, allowImport = false, allowExport = false): string {
     const meta = result.metadata;
     let imgSrc = '';
     if (result.pngPath) {
@@ -362,9 +378,11 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnl
             : '<div class="no-image">No preview</div>'}
     </div>
     <div class="props-panel">
-        ${!isReadOnly ? `<div style="margin-bottom: 12px; display: flex; justify-content: flex-end;">
-            <button class="save-btn" onclick="saveMetadata()">Save Changes</button>
-        </div>` : ''}
+        <div style="margin-bottom: 12px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;">
+            ${allowExport ? `<button class="save-btn" onclick="exportDds()">Export DDS</button>` : ''}
+            ${allowImport && !isReadOnly ? `<button class="save-btn" onclick="importDds()">Import DDS</button>` : ''}
+            ${!isReadOnly ? `<button class="save-btn" onclick="saveMetadata()">Save Changes</button>` : ''}
+        </div>
         ${metaSections}
         ${errorNote}
     </div>
@@ -418,6 +436,12 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnl
                 swizzle: parseInt(document.getElementById('metaSwizzle')?.value || "0", 10)
             };
             vscode.postMessage({ type: 'save-metadata', data });
+        }
+        function importDds() {
+            vscode.postMessage({ type: 'import-dds' });
+        }
+        function exportDds() {
+            vscode.postMessage({ type: 'export-dds' });
         }
     </script>
 </body>

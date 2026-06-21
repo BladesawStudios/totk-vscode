@@ -166,6 +166,83 @@ def _save_txtg_file_bytes(
         Path(archive_path).write_bytes(new_bytes)
 
 
+def _txtg_extract_linear_mips(txtg_bytes: bytes):
+    """Deswizzle every surface of a TXTG into linear per-mip data.
+
+    Returns ``(width, height, key, is_srgb, is_snorm, linear_mips)`` or None.
+    """
+    import struct as _struct
+
+    import dds_io
+    import texture_swizzle as tsw
+    from txtg_reader import _read_surface_data, _resolve_format, _u8, _u16
+
+    if not (len(txtg_bytes) >= 8 and txtg_bytes[4:8] == b"6PK0"):
+        return None
+
+    header_size = _u16(txtg_bytes, 0) or 0x50
+    width = _u16(txtg_bytes, 0x08)
+    height = _u16(txtg_bytes, 0x0A)
+    array_count = max(_u16(txtg_bytes, 0x0C), 1)
+    mip_count = max(_u8(txtg_bytes, 0x0E), 1)
+    format_id = _u16(txtg_bytes, 0x3C)
+    texture_setting2 = _struct.unpack_from("<I", txtg_bytes, 0x44)[0]
+
+    key = dds_io.txtg_format_to_key(format_id)
+    if key is None:
+        return None
+    _name, bpp, blk_w, blk_h, _dec = _resolve_format(format_id, texture_setting2)
+
+    surfaces = _read_surface_data(txtg_bytes, header_size, mip_count * array_count)
+    bh0 = tsw.block_height_mip0(tsw.div_round_up(height, blk_h))
+
+    linear_mips = []
+    for mip in range(mip_count):
+        mw = max(1, width >> mip)
+        mh = max(1, height >> mip)
+        bh = tsw.mip_block_height(tsw.div_round_up(mh, blk_h), bh0)
+        lin = tsw.deswizzle_mip(mw, mh, blk_w, blk_h, bpp, bh, surfaces[mip])
+        linear_mips.append(lin[: dds_io.mip_linear_size(mw, mh, key)])
+
+    is_srgb = format_id in (0x203, 0x303, 0x505, 0x109, 0x105)
+    return width, height, key, is_srgb, False, linear_mips
+
+
+def _export_texture_dds_bytes(
+    archive_path: str, internal_path: str, romfs_path: str, file_data: bytes, logical_path: str
+) -> bytes | None:
+    """Build a legacy-FourCC DDS for a BNTX or TXTG texture, or None if N/A."""
+    import dds_io
+
+    is_txtg = logical_path.lower().endswith(".txtg") or file_data[4:8] == b"6PK0"
+
+    if is_txtg:
+        extracted = _txtg_extract_linear_mips(file_data)
+        if extracted is None:
+            return None
+        width, height, key, is_srgb, is_snorm, linear_mips = extracted
+        return dds_io.build_dds(width, height, key, linear_mips, is_srgb, is_snorm)
+
+    bntx_ctx = _resolve_bntx_for_read(archive_path, internal_path, romfs_path)
+    if bntx_ctx is None:
+        return None
+    bntx_data, tex_name = bntx_ctx
+    from bntx_renderer import extract_texture_linear
+
+    extracted = extract_texture_linear(bntx_data, tex_name)
+    if extracted is None:
+        return None
+    width, height, decoder_key, linear, _mip_count, format_id = extracted
+    key = dds_io.bntx_format_to_key(format_id)
+    if key is None or not decoder_key.startswith("bc"):
+        return None
+    # extract_texture_linear returns mip 0; export it as a single-mip DDS.
+    mip0 = linear[: dds_io.mip_linear_size(width, height, key)]
+    is_srgb = (format_id & 0xFF) == 0x06
+    is_snorm = (format_id & 0xFF) == 0x02
+    return dds_io.build_dds(width, height, key, [mip0], is_srgb, is_snorm)
+
+
 def get_romfs_path():
     return os.environ.get("TOTK_EDITOR_ROMFS", "").strip()
 
@@ -983,56 +1060,17 @@ def main():
 
                             if target_ext == ".dds":
                                 native_dds_bytes = None
-                                if not is_txtg and bntx_data is not None and tex_name is not None:
-                                    from bntx_renderer import extract_texture_linear
-
-                                    extracted = extract_texture_linear(bntx_data, tex_name)
-                                    if extracted is not None:
-                                        (
-                                            tex_width,
-                                            tex_height,
-                                            decoder_key,
-                                            linear,
-                                            mip_count,
-                                            format_id,
-                                        ) = extracted
-                                        if decoder_key.startswith("bc"):
-                                            dxgi_map = {
-                                                0x1A: 72 if (format_id & 0xFF) == 0x06 else 71,
-                                                0x1B: 75 if (format_id & 0xFF) == 0x06 else 74,
-                                                0x1C: 78 if (format_id & 0xFF) == 0x06 else 77,
-                                                0x1D: 81 if (format_id & 0xFF) == 0x02 else 80,
-                                                0x1E: 84 if (format_id & 0xFF) == 0x02 else 83,
-                                                0x1F: 96 if (format_id & 0xFF) == 0x02 else 95,
-                                                0x20: 99 if (format_id & 0xFF) == 0x06 else 98,
-                                            }
-                                            dxgi_format = dxgi_map.get(format_id >> 8)
-                                            if dxgi_format is not None:
-                                                header = bytearray(148)
-                                                header[0:4] = b"DDS "
-                                                header[4:8] = (124).to_bytes(4, "little")
-                                                header[8:12] = (
-                                                    0x1 | 0x2 | 0x4 | 0x1000 | 0x80000
-                                                ).to_bytes(4, "little")
-                                                header[12:16] = tex_height.to_bytes(4, "little")
-                                                header[16:20] = tex_width.to_bytes(4, "little")
-                                                header[20:24] = len(linear).to_bytes(4, "little")
-                                                header[24:28] = (1).to_bytes(4, "little")
-                                                header[28:32] = (mip_count).to_bytes(4, "little")
-
-                                                header[76:80] = (32).to_bytes(4, "little")
-                                                header[80:84] = (0x4).to_bytes(4, "little")
-                                                header[84:88] = b"DX10"
-
-                                                header[108:112] = (0x1000).to_bytes(4, "little")
-
-                                                header[128:132] = dxgi_format.to_bytes(4, "little")
-                                                header[132:136] = (3).to_bytes(4, "little")
-                                                header[136:140] = (0).to_bytes(4, "little")
-                                                header[140:144] = (1).to_bytes(4, "little")
-                                                header[144:148] = (0).to_bytes(4, "little")
-
-                                                native_dds_bytes = bytes(header) + linear
+                                try:
+                                    native_dds_bytes = _export_texture_dds_bytes(
+                                        archive_path,
+                                        internal_path,
+                                        romfs_path,
+                                        file_data,
+                                        logical_path,
+                                    )
+                                except Exception:
+                                    traceback.print_exc()
+                                    native_dds_bytes = None
 
                                 if native_dds_bytes is not None:
                                     with open(cvt_path, "wb") as f:
@@ -1224,6 +1262,51 @@ def main():
                     archive_path, logical_path, editor.to_bytes(), is_zstd, romfs_path
                 )
                 print(json.dumps({"success": True}))
+
+            elif command == "replace-bntx-payload":
+                internal_path = sys.argv[3]
+                encoded = sys.stdin.read()
+                dds_bytes = base64.b64decode(encoded) if encoded else b""
+
+                ctx = _resolve_bntx_for_read(archive_path, internal_path, romfs_path)
+                if ctx is None:
+                    raise ValueError("Could not resolve BNTX texture for replacement.")
+                _bntx_data, tex_name = ctx
+                bntx_bytes, bntx_path, _, is_zstd, _ = _get_bntx_file_bytes(
+                    archive_path, internal_path, romfs_path
+                )
+
+                editor = BntxEditor(bntx_bytes)
+                info = editor.import_dds(tex_name, dds_bytes)
+                _save_bntx_file_bytes(
+                    archive_path, bntx_path, editor.to_bytes(), is_zstd, romfs_path
+                )
+                print(json.dumps({"success": True, **info}))
+
+            elif command == "replace-txtg-payload":
+                internal_path = sys.argv[3]
+                encoded = sys.stdin.read()
+                dds_bytes = base64.b64decode(encoded) if encoded else b""
+
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    logical_path = internal_path
+                else:
+                    file_data = Path(archive_path).read_bytes()
+                    logical_path = archive_path
+
+                try:
+                    payload, _, is_zstd = decompress_container(file_data, logical_path, romfs_path)
+                except Exception:
+                    payload = file_data
+                    is_zstd = False
+
+                editor = TxtgEditor(payload)
+                info = editor.import_dds(dds_bytes)
+                _save_txtg_file_bytes(
+                    archive_path, logical_path, editor.to_bytes(), is_zstd, romfs_path
+                )
+                print(json.dumps({"success": True, **info}))
 
             elif command == "rename-entry":
                 old_path = sys.argv[3]

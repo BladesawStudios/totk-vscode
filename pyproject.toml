@@ -9,6 +9,7 @@ dependencies = [
     "mmh3>=4.0.0",
     "Pillow>=10.0.0",
     "texture2ddecoder>=1.0.4",
+    "py-tegra-swizzle>=0.4.0",
     "PyYAML>=6.0"
 ]
 

@@ -9,6 +9,7 @@ from bntx_renderer import (
     _deswizzle_block_linear,
     _deswizzle_pitch_linear,
 )
+from texture_swizzle import block_height_mip0, deswizzle_mip, div_round_up
 
 _TXTG_MAGIC = b"6PK0"
 
@@ -197,29 +198,40 @@ def read_txtg_texture_result(txtg_data: bytes, texture_name: str) -> dict:
         render_width = width // 2 if is_astc_8x8 else width
         render_height = height // 2 if is_astc_8x8 else height
 
+        # The Switch derives the swizzle block height from the surface height, so
+        # compute it deterministically instead of guessing from texture_setting4.
+        # The retail files also store the mip 0 surface truncated of its trailing
+        # padding, so the deswizzle must tolerate a short input (deswizzle_mip
+        # zero-pads up to the canonical size).
+        det_bh0 = block_height_mip0(div_round_up(render_height, blk_h))
+
         decode_inputs: list[tuple[str, bytes, int]] = []
-        for bh in _iter_block_height_candidates(texture_setting4):
-            try:
-                linear = _deswizzle_block_linear(
-                    render_width,
-                    render_height,
-                    blk_w,
-                    blk_h,
-                    bpp,
-                    bh,
-                    image_data,
-                )
-                decode_inputs.append((f"block-linear(bh={bh})", linear, bh))
-            except Exception:
-                pass
         try:
-            linear_pitch = _deswizzle_pitch_linear(
-                render_width, render_height, blk_w, blk_h, bpp, image_data
+            linear = deswizzle_mip(
+                render_width, render_height, blk_w, blk_h, bpp, det_bh0, image_data
             )
-            decode_inputs.append(("pitch-linear", linear_pitch, block_height_log2))
+            decode_inputs.append((f"block-linear(bh={det_bh0})", linear, det_bh0.bit_length() - 1))
         except Exception:
             pass
-        decode_inputs.append(("direct", image_data, block_height_log2))
+
+        # Defensive fallbacks only if the deterministic path cannot decode.
+        if not decode_inputs:
+            for bh in _iter_block_height_candidates(texture_setting4):
+                try:
+                    linear = _deswizzle_block_linear(
+                        render_width, render_height, blk_w, blk_h, bpp, bh, image_data
+                    )
+                    decode_inputs.append((f"block-linear(bh={bh})", linear, bh))
+                except Exception:
+                    pass
+            try:
+                linear_pitch = _deswizzle_pitch_linear(
+                    render_width, render_height, blk_w, blk_h, bpp, image_data
+                )
+                decode_inputs.append(("pitch-linear", linear_pitch, block_height_log2))
+            except Exception:
+                pass
+            decode_inputs.append(("direct", image_data, block_height_log2))
 
         best_candidate: tuple[float, bytes, int, str] | None = None
         for label, payload, bh_used in decode_inputs:
@@ -249,6 +261,7 @@ def read_txtg_texture_result(txtg_data: bytes, texture_name: str) -> dict:
                     ch_g,
                     ch_b,
                     ch_a,
+                    decoder_key,
                 )
                 score = _image_quality_score(pixels, render_width, render_height, raw_mode)
                 if best_candidate is None or score < best_candidate[0]:
