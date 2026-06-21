@@ -1,6 +1,6 @@
 [project]
 name = "totk-vscode-python"
-version = "0.0.1b2"
+version = "0.0.2b3"
 description = "Python scripts for TOTK VSCode extension"
 requires-python = "~=3.12"
 dependencies = [
@@ -39,6 +39,7 @@ select = [
 ignore = [
     "E501",  # line too long, handled by formatter
     "E402",  # Module level import not at top of file
+    "F821",  # Undefined Name
 ]
 
 [tool.ruff.format]

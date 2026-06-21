@@ -1,3 +1,0 @@
-# Making Your First Mod - Simple Attribute Edit
-
-I've been creating mods for Tears of the Kingdom (TOTK) since it first launched in 2023. In the TOTK Modding Hub Discord server, new users will often ask for recommendations on what makes a good first project. My response is always that they should either make a basic texture edit or a basic attribute edit. In this tutorial, I'll be walking through the steps on making a basic attribute edit mod.

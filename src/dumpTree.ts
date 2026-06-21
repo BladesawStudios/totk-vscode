@@ -2,10 +2,11 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { addDumpEntryToProject, pickProjectRoot } from './addToProject';
-import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile } from './archives';
+import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile, isBwavAudioFile, isBarsAudioArchive } from './archives';
 import type { ArchiveTreeProvider } from './archiveTree';
 import { resolveRomfsPath } from './romfs';
 import { invalidateRomfsIndex, queryRomfsIndex } from './romfsIndex';
+import { getActiveTkmmOption, askForTkmmOption } from './tkmmOptions';
 
 export const DUMP_SCHEME = 'totk-dump';
 const GAME_DUMP_SEARCH_VIEW_ID = 'totk-editor.gameDumpSearch';
@@ -33,15 +34,25 @@ export class DumpTreeItem extends vscode.TreeItem {
         this.contextValue = contextValue;
 
         if (collapsibleState === vscode.TreeItemCollapsibleState.None) {
-            this.command = (isBntxTextureUri(resourceUri) || isTxtgFile(resourceUri.fsPath))
-                ? { command: 'totk-editor.openBntxTexture', title: 'View Texture', arguments: [resourceUri] }
-                : { command: 'vscode.open', title: 'Open', arguments: [resourceUri, { preview: true }] };
+            if (isBntxTextureUri(resourceUri) || isTxtgFile(resourceUri.fsPath)) {
+                this.command = { command: 'totk-editor.openBntxTexture', title: 'View Texture', arguments: [resourceUri] };
+            } else if (isBwavAudioFile(resourceUri.fsPath)) {
+                this.command = { command: 'vscode.open', title: 'Open', arguments: [resourceUri, { preview: true }] };
+            } else if (isBarsAudioArchive(resourceUri.fsPath)) {
+                this.command = { command: 'totk-editor.openBarsArchive', title: 'Open BARS Archive', arguments: [resourceUri] };
+            } else {
+                this.command = { command: 'vscode.open', title: 'Open', arguments: [resourceUri, { preview: true }] };
+            }
         }
 
         if (isArchiveFile(entryName)) {
             this.iconPath = new vscode.ThemeIcon('package');
         } else if ((isBntxTextureUri(resourceUri) || isTxtgFile(resourceUri.fsPath)) && extensionUri) {
             this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'texture.svg');
+        } else if (isBwavAudioFile(resourceUri.fsPath) && extensionUri) {
+            this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'bwav.svg');
+        } else if (isBarsAudioArchive(resourceUri.fsPath) && extensionUri) {
+            this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'bars.svg');
         } else if (contextValue === 'dumpDir') {
             this.iconPath = new vscode.ThemeIcon('folder');
         }
@@ -566,7 +577,7 @@ export function registerGameDumpTree(
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {
-            if (event.affectsConfiguration('totk-editor.romfsPath')) {
+            if (event.affectsConfiguration('TKVSC.romfsPath')) {
                 provider.onRomfsPathChanged();
             }
         }),
@@ -617,6 +628,8 @@ export function registerGameDumpTree(
                     return;
                 }
 
+                const activeTkmmOption = getActiveTkmmOption(context, projectRoot);
+
                 let copiedCount = 0;
                 for (const entry of entries) {
                     const copied = await addDumpEntryToProject(
@@ -624,6 +637,7 @@ export function registerGameDumpTree(
                         projectRoot,
                         undefined,
                         { suppressSuccessMessage: entries.length > 1 },
+                        activeTkmmOption
                     );
                     if (copied) {
                         copiedCount++;
@@ -666,6 +680,13 @@ export function registerGameDumpTree(
                     return;
                 }
 
+                const optionResult = await askForTkmmOption(projectRoot);
+                if (!optionResult || optionResult === 'BACK') {
+                    return;
+                }
+
+                const tkmmOption = optionResult === 'BASE_PROJECT' ? undefined : optionResult;
+
                 let copiedCount = 0;
                 for (const entry of entries) {
                     const copied = await addDumpEntryToProject(
@@ -673,6 +694,7 @@ export function registerGameDumpTree(
                         projectRoot,
                         undefined,
                         { suppressSuccessMessage: entries.length > 1 },
+                        tkmmOption
                     );
                     if (copied) {
                         copiedCount++;

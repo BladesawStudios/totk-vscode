@@ -33,6 +33,9 @@
     },
     "_totk_tkvsc": {
       "iconPath": "./tkvsc.svg"
+    },
+    "_totk_font": {
+      "iconPath": "./font.svg"
     }
   },
   "folderNames": {
@@ -150,7 +153,9 @@
     "bshop.zs": "_totk_aamp",
     "txtg": "_totk_texture",
     "txtg.zs": "_totk_texture",
-    "tkvsc": "_totk_tkvsc"
+    "tkvsc": "_totk_tkvsc",
+    "bfttf": "_totk_font",
+    "bfotf": "_totk_font"
   },
   "fileNames": {
     ".tkproj": "_totk_tkproj",
@@ -161,6 +166,7 @@
     "bgyml": "_totk_bgyml",
     "msbt": "_totk_msbt",
     "totk-xlnk": "_totk_xlnk",
-    "totk-tkvsc": "_totk_tkvsc"
+    "totk-tkvsc": "_totk_tkvsc",
+    "totk-font": "_totk_font"
   }
 }

@@ -123,6 +123,7 @@ export function resolveProjectDestination(
     copySource: string,
     projectRoot: string,
     romfsRoot: string,
+    tkmmOption?: { group: string; option: string },
 ): string {
     const project = normalizePath(projectRoot);
     const source = normalizePath(copySource);
@@ -132,19 +133,69 @@ export function resolveProjectDestination(
         throw new Error('Selected file is not inside the configured game dump or project.');
     }
 
-    if (isWithinRoot(project, source)) {
+    if (!tkmmOption && isWithinRoot(project, source)) {
         return path.join(project, path.relative(project, source));
     }
 
-    const relFromGameRomfs = path.relative(gameRomfs, source);
+    let relPath = '';
+    let isExefs = false;
+    let foundFolder = false;
+
+    if (isWithinRoot(gameRomfs, source)) {
+        relPath = path.relative(gameRomfs, source);
+        if (path.basename(gameRomfs).toLowerCase() === 'exefs') {
+            isExefs = true;
+        }
+        foundFolder = true;
+    } else {
+        // Source is in the project (or a different dump structure). Find its relative path.
+        const projectRel = path.relative(project, source);
+        const parts = projectRel.split(path.sep);
+        if (parts.length >= 4 && parts[0]?.toLowerCase() === 'options') {
+            const folder = parts[3]?.toLowerCase();
+            if (folder === 'romfs' || folder === 'exefs') {
+                isExefs = folder === 'exefs';
+                parts.splice(0, 4); // Strip options/Group/Option/romfs
+                relPath = parts.join(path.sep);
+                foundFolder = true;
+            }
+        }
+        
+        if (!foundFolder && parts.length > 0) {
+            const folder = parts[0]?.toLowerCase();
+            if (folder === 'romfs' || folder === 'exefs') {
+                isExefs = folder === 'exefs';
+                parts.splice(0, 1);
+                relPath = parts.join(path.sep);
+                foundFolder = true;
+            }
+        }
+        
+        if (!foundFolder) {
+            // It's not in a standard romfs/exefs folder, just use its project-relative path
+            relPath = projectRel;
+        }
+    }
+
+    if (tkmmOption) {
+        const targetSubdir = isExefs ? 'exefs' : 'romfs';
+        if (!relPath.startsWith('romfs') && !relPath.startsWith('exefs') && !foundFolder) {
+            // It's a root-level file like info.json, place it at the root of the option
+            return path.join(project, 'options', tkmmOption.group, tkmmOption.option, relPath);
+        }
+        return path.join(project, 'options', tkmmOption.group, tkmmOption.option, targetSubdir, relPath);
+    }
+
     const projectRomfs = resolveProjectRomfsMount(project, gameRomfs);
-    return path.join(projectRomfs, relFromGameRomfs);
+    const baseDir = isExefs ? path.join(path.dirname(projectRomfs), 'exefs') : projectRomfs;
+    return path.join(baseDir, relPath);
 }
 
 export function resolveAddToCopyPaths(
     sourceFsPath: string,
     projectRoot: string,
     romfsRoot: string,
+    tkmmOption?: { group: string; option: string },
 ): { source: string; destination: string } {
     const source = normalizePath(sourceFsPath);
     const copySource = isPathInsideArchive(source)
@@ -153,6 +204,28 @@ export function resolveAddToCopyPaths(
 
     return {
         source: copySource,
-        destination: resolveProjectDestination(copySource, projectRoot, romfsRoot),
+        destination: resolveProjectDestination(copySource, projectRoot, romfsRoot, tkmmOption),
     };
+}
+
+/** 
+ * Returns all isolated mod roots within a given workspace folder.
+ * This includes the workspace root itself and all TKMM options (options/<Group>/<Option>).
+ */
+export function getProjectModRoots(projectRoot: string): string[] {
+    const project = normalizePath(projectRoot);
+    const roots: string[] = [project];
+    const optionsDir = path.join(project, 'options');
+    
+    if (fs.existsSync(optionsDir) && isDirectory(optionsDir)) {
+        const groups = listSubdirectories(optionsDir);
+        for (const group of groups) {
+            const options = listSubdirectories(group);
+            for (const option of options) {
+                roots.push(normalizePath(option));
+            }
+        }
+    }
+    
+    return roots;
 }

@@ -47,13 +47,12 @@ def find_xlink_tool() -> str:
         raise FileNotFoundError(f"TOTK_XLINK_TOOL is not a file: {override}")
 
     candidates = _platform_tool_names()
-    search_dirs = [
-        _SCRIPT_DIR / "vendor" / "xlink2",
-        _SCRIPT_DIR.parent / "vendor" / "xlink2",
-    ]
-    for d in search_dirs:
+    from vendor_sys import get_vendor_path
+
+    vendor_dir = get_vendor_path("xlink2")
+    if vendor_dir:
         for name in candidates:
-            p = d / name
+            p = vendor_dir / name
             if p.is_file():
                 p.chmod(p.stat().st_mode | 0o111)
                 return str(p)

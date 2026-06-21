@@ -3,11 +3,13 @@ import contextlib
 import io
 import json
 import os
+import struct
 import sys
 import tempfile
 import traceback
 from pathlib import Path
 
+import bwav_io
 import oead
 from aamp_io import (
     is_aamp_binary,
@@ -106,8 +108,13 @@ def _read_txtg_texture_result(file_data: bytes, texture_name: str, logical_path:
 
 
 def export_archive_file_to_temp(archive_path: str, internal_path: str, romfs_path: str = "") -> str:
-    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
-    file_name = Path(internal_path).name or "file.bin"
+    if not internal_path:
+        file_data = Path(archive_path).read_bytes()
+        file_name = Path(archive_path).name or "file.bin"
+    else:
+        file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+        file_name = Path(internal_path).name or "file.bin"
+
     safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in file_name)
     fd, tmp_path = tempfile.mkstemp(prefix="totk-tool-", suffix=f"-{safe_name}")
     with os.fdopen(fd, "wb") as out:
@@ -181,28 +188,96 @@ def save_sarc(archive_path, sarc_bytes, is_sarc_compressed):
         f.write(sarc_bytes)
 
 
+def _patch_python_byml():
+    import byml.byml as b
+
+    if not hasattr(b.Byml, "_orig_parse_node"):
+        orig_parse = b.Byml._parse_node
+
+        def my_parse(self, nt, off):
+            if nt == 0xA2:
+                return self._parse_binary_node(self._read_u32(off))
+            return orig_parse(self, nt, off)
+
+        b.Byml._orig_parse_node = orig_parse
+        b.Byml._parse_node = my_parse
+
+    if not hasattr(b.Writer, "_orig_to_byml_type"):
+        orig_to_type = b.Writer._to_byml_type
+
+        def my_to_type(self, data):
+            if isinstance(data, bytes):
+                return 0xA2
+            return orig_to_type(self, data)
+
+        b.Writer._orig_to_byml_type = orig_to_type
+        b.Writer._to_byml_type = my_to_type
+    return b
+
+
 def read_byml_content(file_data, logical_path="", romfs_path=""):
     file_data, _, _ = decompress_container(file_data, logical_path, romfs_path)
     if len(file_data) == 0:
         return "{}\n"
 
-    if not (file_data.startswith(b"YB") or file_data.startswith(b"BY")):
+    if not file_data.startswith(b"YB") and not file_data.startswith(b"BY"):
         return f"<Unknown BYML Magic: {file_data[:4]}>"
 
-    is_little = file_data.startswith(b"YB")
-
+    byml_doc = None
     try:
         byml_doc = oead.byml.from_binary(file_data)
     except Exception as e:
         if "version" in str(e).lower():
-            mutable = bytearray(file_data)
-            if is_little:
-                mutable[2:4] = (4).to_bytes(2, "little")
-            else:
-                mutable[2:4] = (4).to_bytes(2, "big")
-            byml_doc = oead.byml.from_binary(bytes(mutable))
-        else:
-            raise e
+            patched_data = bytearray(file_data)
+            if patched_data.startswith(b"BY"):
+                patched_data[2:4] = b"\x00\x04"
+            elif patched_data.startswith(b"YB"):
+                patched_data[2:4] = b"\x04\x00"
+            try:
+                byml_doc = oead.byml.from_binary(bytes(patched_data))
+            except Exception:
+                pass
+
+    if byml_doc is None:
+        try:
+            b = _patch_python_byml()
+            py_doc = b.Byml(file_data).parse()
+
+            # Check for PtclBin
+            if "PtclBin" in py_doc and isinstance(py_doc["PtclBin"], bytes):
+                from ptcl_io import ptclbin_to_json
+
+                ptcl_json = ptclbin_to_json(py_doc["PtclBin"])
+                del py_doc["PtclBin"]
+                py_doc["PTCL_JSON"] = ptcl_json
+
+            # Convert py_doc back to oead format for text dumping.
+            # Actually, python byml produces pure python dicts, which oead.byml.to_text doesn't mind!
+            # Wait, oead.byml functions require oead types (like oead.byml.Hash).
+            def py_to_oead(node):
+                if isinstance(node, dict):
+                    return oead.byml.Hash({k: py_to_oead(v) for k, v in node.items()})
+                elif isinstance(node, list):
+                    return oead.byml.Array([py_to_oead(x) for x in node])
+                elif isinstance(node, b.Int):
+                    return oead.S32(node)
+                elif isinstance(node, b.UInt):
+                    return oead.U32(node)
+                elif isinstance(node, b.Float):
+                    return oead.F32(node)
+                elif isinstance(node, b.Int64):
+                    return oead.S64(node)
+                elif isinstance(node, b.UInt64):
+                    return oead.U64(node)
+                elif isinstance(node, b.Double):
+                    return oead.F64(node)
+                elif isinstance(node, bytes):
+                    return oead.Bytes(node)
+                return node
+
+            byml_doc = py_to_oead(py_doc)
+        except Exception as e2:
+            return f"# Error: Unsupported BYML version or node type\n# Detail: {str(e2)}\n"
 
     file_name = Path(logical_path).name.lower()
     if file_name.startswith("tag.product.") and "rstbl" in file_name:
@@ -259,10 +334,61 @@ def write_byml_bytes(orig_file_data, new_yaml, logical_path="", romfs_path=""):
 
     file_name = Path(logical_path).name.lower()
     if file_name.startswith("tag.product.") and "rstbl" in file_name:
-        new_byml_bytes = tag_product_from_editor_text(new_yaml, big_endian, version)
-        return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
+        import yaml
+
+        try:
+            json_data = yaml.safe_load(new_yaml)
+            is_tag_product_fmt = isinstance(json_data.get("PathList"), dict)
+        except Exception:
+            is_tag_product_fmt = False
+
+        if is_tag_product_fmt:
+            new_byml_bytes = tag_product_from_editor_text(new_yaml, big_endian, version)
+            return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
 
     byml_doc = oead.byml.from_text(normalize_byml_u64_literals(new_yaml))
+
+    # Check if we need to restore PTCL data and write using python byml
+    if "PTCL_JSON" in byml_doc:
+        import byml.byml as b
+
+        def oead_to_py(node):
+            if isinstance(node, oead.byml.Hash):
+                return {k: oead_to_py(v) for k, v in node.items()}
+            elif isinstance(node, oead.byml.Array):
+                return [oead_to_py(x) for x in node]
+            elif isinstance(node, oead.S32):
+                return b.Int(node)
+            elif isinstance(node, oead.U32):
+                return b.UInt(node)
+            elif isinstance(node, oead.F32):
+                return b.Float(node)
+            elif isinstance(node, oead.S64):
+                return b.Int64(node)
+            elif isinstance(node, oead.U64):
+                return b.UInt64(node)
+            elif isinstance(node, oead.F64):
+                return b.Double(node)
+            elif isinstance(node, memoryview):
+                return bytes(node)
+            return node
+
+        py_doc = oead_to_py(byml_doc)
+        ptcl_json = py_doc.pop("PTCL_JSON")
+
+        # Get original PtclBin
+        b_mod = _patch_python_byml()
+        orig_doc = b_mod.Byml(orig_file_data).parse()
+        orig_ptcl_bin = orig_doc.get("PtclBin", b"")
+
+        from ptcl_io import json_to_ptclbin
+
+        new_ptcl_bin = json_to_ptclbin(orig_ptcl_bin, ptcl_json)
+        py_doc["PtclBin"] = new_ptcl_bin
+
+        writer = b_mod.Writer(py_doc, be=big_endian, version=version)
+        new_byml_bytes = writer.get_bytes()
+        return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
 
     try:
         new_byml_bytes = oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)
@@ -419,9 +545,6 @@ def write_file_content(
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
     elif kind == "msbt":
-        path_check = (archive_path + "/" + logical_path).lower()
-        if not any(lang in path_check for lang in ["usen", "euen", "gben"]):
-            raise ValueError("Saving non-English MSBT files is not supported at this time.")
         orig = get_original_bytes()
         new_bytes = write_msbt_bytes(orig, editor_text, logical_path, romfs_path)
         writer = oead.SarcWriter.from_sarc(sarc)
@@ -494,9 +617,6 @@ def main():
                     )
                 )
             elif kind == "msbt":
-                path_check = file_path.lower()
-                if not any(lang in path_check for lang in ["usen", "euen", "gben"]):
-                    raise ValueError("Saving non-English MSBT files is not supported at this time.")
                 Path(file_path).write_bytes(
                     write_msbt_bytes(
                         Path(file_path).read_bytes(), editor_text, file_path, romfs_path
@@ -713,6 +833,68 @@ def main():
                     texture_name = Path(archive_path).name or "texture"
                 print(json.dumps(_read_txtg_texture_result(file_data, texture_name, logical_path)))
 
+            elif command == "read-bwav":
+                internal_path = sys.argv[3] if len(sys.argv) > 3 else ""
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    logical_path = internal_path
+                else:
+                    file_data = Path(archive_path).read_bytes()
+                    logical_path = archive_path
+                from bwav_io import read_bwav_to_temp_wav
+
+                try:
+                    wav_path = read_bwav_to_temp_wav(file_data, logical_path, romfs_path)
+                    print(json.dumps({"wavPath": wav_path}))
+                except Exception as e:
+                    print(json.dumps({"error": str(e)}))
+
+            elif command == "list-bars":
+                internal_path = sys.argv[3] if len(sys.argv) > 3 else ""
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    logical_path = internal_path
+                else:
+                    file_data = Path(archive_path).read_bytes()
+                    logical_path = archive_path
+                from bars_io import list_bars_entries
+
+                try:
+                    entries = list_bars_entries(file_data, logical_path, romfs_path)
+                    print(json.dumps({"entries": entries}))
+                except Exception as e:
+                    print(json.dumps({"error": str(e)}))
+
+            elif command == "read-bars-audio":
+                internal_path = sys.argv[3] if len(sys.argv) > 3 else ""
+                entry_index = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+                force_prefetch = sys.argv[5] == "true" if len(sys.argv) > 5 else False
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    logical_path = internal_path
+                else:
+                    file_data = Path(archive_path).read_bytes()
+                    logical_path = archive_path
+                from bars_io import read_bars_entry_audio
+
+                try:
+                    res = read_bars_entry_audio(
+                        file_data, entry_index, logical_path, romfs_path, force_prefetch
+                    )
+                    print(
+                        json.dumps(
+                            {
+                                "wavPath": res.wav_path,
+                                "name": res.name,
+                                "isPrefetch": res.is_prefetch,
+                                "loopStart": res.loop_start,
+                                "loopEnd": res.loop_end,
+                            }
+                        )
+                    )
+                except Exception as e:
+                    print(json.dumps({"error": str(e)}))
+
             elif command == "export-temp":
                 internal_path = sys.argv[3]
                 print(
@@ -724,6 +906,184 @@ def main():
                         }
                     )
                 )
+
+            elif command == "export-converted":
+                internal_path = sys.argv[3]
+                target_ext = sys.argv[4].lower()
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    logical_path = internal_path
+                else:
+                    file_data = Path(archive_path).read_bytes()
+                    logical_path = archive_path
+
+                kind = _file_kind(logical_path, file_data, romfs_path)
+
+                out_path = export_archive_file_to_temp(archive_path, internal_path, romfs_path)
+
+                if target_ext in [".png", ".jpg", ".jpeg", ".bmp", ".tga", ".dds"]:
+                    png_path = None
+                    is_txtg = (
+                        kind == "txtg"
+                        or logical_path.lower().endswith(".txtg")
+                        or file_data[4:8] == b"6PK0"
+                    )
+
+                    bntx_data = None
+                    tex_name = None
+
+                    if is_txtg:
+                        from txtg_reader import read_txtg_texture_result
+
+                        tex_name = Path(logical_path).name or "texture"
+                        res = read_txtg_texture_result(file_data, tex_name)
+                        png_path = res.get("pngPath")
+                    else:
+                        bntx_ctx = _resolve_bntx_for_read(archive_path, internal_path, romfs_path)
+                        if bntx_ctx is not None:
+                            bntx_data, tex_name = bntx_ctx
+                            from bntx_renderer import render_texture_to_png
+
+                            png_path = render_texture_to_png(bntx_data, tex_name)
+
+                    if png_path:
+                        try:
+                            from PIL import Image
+
+                            img = Image.open(png_path)
+                            fd, cvt_path = tempfile.mkstemp(prefix="totk-cvt-", suffix=target_ext)
+                            os.close(fd)
+
+                            if target_ext == ".dds":
+                                native_dds_bytes = None
+                                if not is_txtg and bntx_data is not None and tex_name is not None:
+                                    from bntx_renderer import extract_texture_linear
+
+                                    extracted = extract_texture_linear(bntx_data, tex_name)
+                                    if extracted is not None:
+                                        (
+                                            tex_width,
+                                            tex_height,
+                                            decoder_key,
+                                            linear,
+                                            mip_count,
+                                            format_id,
+                                        ) = extracted
+                                        if decoder_key.startswith("bc"):
+                                            dxgi_map = {
+                                                0x1A: 72 if (format_id & 0xFF) == 0x06 else 71,
+                                                0x1B: 75 if (format_id & 0xFF) == 0x06 else 74,
+                                                0x1C: 78 if (format_id & 0xFF) == 0x06 else 77,
+                                                0x1D: 81 if (format_id & 0xFF) == 0x02 else 80,
+                                                0x1E: 84 if (format_id & 0xFF) == 0x02 else 83,
+                                                0x1F: 96 if (format_id & 0xFF) == 0x02 else 95,
+                                                0x20: 99 if (format_id & 0xFF) == 0x06 else 98,
+                                            }
+                                            dxgi_format = dxgi_map.get(format_id >> 8)
+                                            if dxgi_format is not None:
+                                                header = bytearray(148)
+                                                header[0:4] = b"DDS "
+                                                header[4:8] = (124).to_bytes(4, "little")
+                                                header[8:12] = (
+                                                    0x1 | 0x2 | 0x4 | 0x1000 | 0x80000
+                                                ).to_bytes(4, "little")
+                                                header[12:16] = tex_height.to_bytes(4, "little")
+                                                header[16:20] = tex_width.to_bytes(4, "little")
+                                                header[20:24] = len(linear).to_bytes(4, "little")
+                                                header[24:28] = (1).to_bytes(4, "little")
+                                                header[28:32] = (mip_count).to_bytes(4, "little")
+
+                                                header[76:80] = (32).to_bytes(4, "little")
+                                                header[80:84] = (0x4).to_bytes(4, "little")
+                                                header[84:88] = b"DX10"
+
+                                                header[108:112] = (0x1000).to_bytes(4, "little")
+
+                                                header[128:132] = dxgi_format.to_bytes(4, "little")
+                                                header[132:136] = (3).to_bytes(4, "little")
+                                                header[136:140] = (0).to_bytes(4, "little")
+                                                header[140:144] = (1).to_bytes(4, "little")
+                                                header[144:148] = (0).to_bytes(4, "little")
+
+                                                native_dds_bytes = bytes(header) + linear
+
+                                if native_dds_bytes is not None:
+                                    with open(cvt_path, "wb") as f:
+                                        f.write(native_dds_bytes)
+                                else:
+                                    img = img.convert("RGBA")
+                                    width, height = img.size
+                                    pixels = img.tobytes("raw", "RGBA")
+                                    header = bytearray(128)
+                                    header[0:4] = b"DDS "
+                                    header[4:8] = (124).to_bytes(4, "little")
+                                    header[8:12] = (0x100F).to_bytes(4, "little")
+                                    header[12:16] = height.to_bytes(4, "little")
+                                    header[16:20] = width.to_bytes(4, "little")
+                                    header[20:24] = (width * 4).to_bytes(4, "little")
+                                    header[24:28] = (1).to_bytes(4, "little")
+                                    header[28:32] = (1).to_bytes(4, "little")
+                                    header[76:80] = (32).to_bytes(4, "little")
+                                    header[80:84] = (0x41).to_bytes(4, "little")
+                                    header[88:92] = (32).to_bytes(4, "little")
+                                    header[92:96] = (0x000000FF).to_bytes(4, "little")
+                                    header[96:100] = (0x0000FF00).to_bytes(4, "little")
+                                    header[100:104] = (0x00FF0000).to_bytes(4, "little")
+                                    header[104:108] = (0xFF000000).to_bytes(4, "little")
+                                    header[108:112] = (0x1000).to_bytes(4, "little")
+                                    with open(cvt_path, "wb") as f:
+                                        f.write(header)
+                                        f.write(pixels)
+                            else:
+                                if target_ext in [".jpg", ".jpeg"] and img.mode in ("RGBA", "P"):
+                                    img = img.convert("RGB")
+                                img.save(cvt_path)
+
+                            img.close()
+                            os.unlink(png_path)
+                            if os.path.exists(out_path):
+                                os.unlink(out_path)
+                            out_path = cvt_path
+                        except Exception:
+                            traceback.print_exc()
+                            out_path = png_path
+
+                elif target_ext in [".yaml", ".yml"]:
+                    if kind == "byml" or kind == "bgyml":
+                        yaml_text = read_byml_content(file_data, internal_path, romfs_path)
+                        fd, yaml_path = tempfile.mkstemp(prefix="totk-cvt-", suffix=target_ext)
+                        os.close(fd)
+                        Path(yaml_path).write_text(yaml_text, encoding="utf-8")
+                        os.unlink(out_path)
+                        out_path = yaml_path
+                    elif kind == "aamp":
+                        from aamp_io import read_aamp_content
+
+                        yaml_text = read_aamp_content(file_data, internal_path, romfs_path)
+                        fd, yaml_path = tempfile.mkstemp(prefix="totk-cvt-", suffix=target_ext)
+                        os.close(fd)
+                        Path(yaml_path).write_text(yaml_text, encoding="utf-8")
+                        os.unlink(out_path)
+                        out_path = yaml_path
+
+                elif target_ext in [".json", ".txt"] and kind == "msbt":
+                    from msbt_editor_format import to_editor_text
+
+                    res_json = _read_msbt_payload(file_data, internal_path, romfs_path)
+                    labels = res_json.get("metadata", {}).get("labels", {})
+
+                    if target_ext == ".json":
+                        output_text = json.dumps(labels, indent=2, ensure_ascii=False)
+                    else:
+                        output_text = to_editor_text(labels)
+
+                    fd, txt_path = tempfile.mkstemp(prefix="totk-cvt-", suffix=target_ext)
+                    os.close(fd)
+                    Path(txt_path).write_text(output_text, encoding="utf-8")
+                    os.unlink(out_path)
+                    out_path = txt_path
+
+                print(json.dumps({"path": out_path}))
 
             elif command == "write-raw":
                 internal_path = sys.argv[3]
@@ -852,6 +1212,39 @@ def main():
                     internal_path, editor_text, sarc, is_sarc_compressed, archive_path, romfs_path
                 )
                 print(json.dumps({"success": True}))
+
+            elif command == "read-bwav-audio":
+                internal_path = sys.argv[3]
+
+                if internal_path:
+                    file_data = read_archive_file_bytes(archive_path, internal_path, romfs_path)
+                    bwav_name = internal_path
+                else:
+                    with open(archive_path, "rb") as f:
+                        file_data = f.read()
+                    bwav_name = archive_path
+
+                # Check dummy clip
+                if len(file_data) > 0x12:
+                    block_count = struct.unpack_from("<H", file_data, 0x12)[0]
+                    if block_count == 0:
+                        raise ValueError(
+                            "This BWAV is a dummy clip (0 blocks) and contains no audio data."
+                        )
+
+                # Decode to wav and extract loops
+                wav_path, loop_start, loop_end = bwav_io.read_bwav_to_temp_wav(
+                    file_data, bwav_name, romfs_path
+                )
+
+                res = {
+                    "wavPath": wav_path,
+                    "name": Path(bwav_name).name,
+                    "isPrefetch": False,
+                    "loopStart": loop_start,
+                    "loopEnd": loop_end,
+                }
+                print(json.dumps(res))
 
     except Exception as e:
         print(json.dumps({"error": str(e), "traceback": traceback.format_exc()}))

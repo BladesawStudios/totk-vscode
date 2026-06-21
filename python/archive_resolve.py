@@ -12,6 +12,49 @@ _BNTX_SEGMENT = re.compile(r"\.bntx(\.zs)?$", re.IGNORECASE)
 _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 
 
+def decrypt_bfttf(data: bytes) -> bytes:
+    if len(data) <= 8:
+        return data
+    magic = data[:4]
+    if magic == b"\xd9\x9b\x87\x1a":
+        base_key = 2785117442
+    elif magic == b"\x36\xf8\x1a\x1e":
+        base_key = 1231165446
+    elif magic == b"\xf3\x68\xde\xc1":
+        base_key = 2364726489
+    else:
+        return data
+
+    first_chunk = int.from_bytes(data[8:12], byteorder="big")
+    possible_magics = [
+        0x4F54544F,
+        0x00010000,
+        0x774F4646,
+        0x774F4632,
+        0x74727565,
+        0x74746366,
+    ]
+
+    file_size_val = len(data) - 8
+    derived_key = base_key ^ file_size_val
+    if (first_chunk ^ derived_key) in possible_magics:
+        key_val = derived_key
+    elif (first_chunk ^ base_key) in possible_magics:
+        key_val = base_key
+    else:
+        key_val = base_key
+        for pm in possible_magics:
+            if (first_chunk ^ pm) ^ base_key < 0x0FFFFFFF:
+                key_val = first_chunk ^ pm
+                break
+
+    out = bytearray(len(data) - 8)
+    key_bytes = key_val.to_bytes(4, byteorder="big")
+    for i in range(8, len(data)):
+        out[i - 8] = data[i] ^ key_bytes[i % 4]
+    return bytes(out)
+
+
 def _is_archive_name(name: str) -> bool:
     return bool(_ARCHIVE_SEGMENT.search(name.replace("\\", "/")))
 
@@ -303,7 +346,10 @@ def read_archive_file_bytes(disk_archive_path: str, file_path: str, romfs_path: 
         return read_texture_data(bntx_data, remainder)
 
     sarc, lookup, _, _ = resolve_sarc_view(disk_archive_path, file_path, romfs_path)
-    return _get_file_bytes(sarc, lookup)
+    file_bytes = _get_file_bytes(sarc, lookup)
+    if file_path.lower().endswith((".bfotf", ".bfttf")):
+        file_bytes = decrypt_bfttf(file_bytes)
+    return file_bytes
 
 
 def _reject_bntx_mutation(disk_archive_path: str, operation: str, target_path: str = "") -> None:

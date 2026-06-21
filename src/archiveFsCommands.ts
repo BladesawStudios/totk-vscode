@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { toSarcUri, type ArchiveTreeItem } from './archiveTree';
@@ -5,6 +6,8 @@ import { isAampExtension } from './aampExtensions';
 import { isPathInsideArchive, isArchiveFile, getDiskArchivePath, isArchiveFileName, isBntxTextureUri, isTxtgFile } from './archives';
 import { getDumpSelection, type DumpTreeItem } from './dumpTree';
 import { resolveRomfsPath } from './romfs';
+import { addDumpEntryToProject, resolveRomfsForProject } from './addToProject';
+import { getActiveTkmmOption, askForTkmmOption } from './tkmmOptions';
 
 let archiveTreeView: vscode.TreeView<ArchiveTreeItem> | undefined;
 
@@ -150,7 +153,10 @@ function isDiskMutableItem(item: ArchiveTreeItem): boolean {
         item.contextValue === 'archivePackage' ||
         item.contextValue === 'archiveDir' ||
         item.contextValue === 'archiveVirtualDir' ||
-        item.contextValue === 'archiveRoot'
+        item.contextValue === 'archiveRoot' ||
+        item.contextValue === 'tkmmOptionsRoot' ||
+        item.contextValue === 'tkmmOptionGroup' ||
+        item.contextValue === 'tkmmOption'
     );
 }
 
@@ -338,6 +344,11 @@ async function copyEntries(
                         toFileUri(target),
                         { overwrite: false },
                     );
+                    try {
+                        await fs.promises.chmod(target.fsPath, 0o666);
+                    } catch (e) {
+                        // Ignore chmod errors
+                    }
                 } else {
                     const stat = await vscode.workspace.fs.stat(source.resourceUri);
                     const isDirectory = stat.type === vscode.FileType.Directory && !isArchiveFile(source.resourceUri.fsPath);
@@ -642,11 +653,20 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                 if (!entry?.resourceUri || !isDiskMutableItem(entry)) {
                     return;
                 }
+                if (entry.entryName.toLowerCase().endsWith('.tkproj')) {
+                    void vscode.window.showErrorMessage('Project files must be named exactly ".tkproj" and cannot be renamed.');
+                    return;
+                }
                 const newName = await vscode.window.showInputBox({
                     prompt: 'New name',
                     value: entry.entryName,
-                    validateInput: (value) =>
-                        value.trim() ? undefined : 'Name cannot be empty',
+                    validateInput: (value) => {
+                        if (!value.trim()) {return 'Name cannot be empty';}
+                        if (value.toLowerCase().endsWith('.tkproj') && value.toLowerCase() !== '.tkproj') {
+                            return 'Project file must be named exactly ".tkproj"';
+                        }
+                        return undefined;
+                    }
                 });
                 if (!newName || newName === entry.entryName) {
                     return;
@@ -654,14 +674,34 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                 const sourceUri = entry.resourceUri;
                 const target = vscode.Uri.joinPath(parentDirectoryUri(sourceUri), newName);
                 try {
+                    const updateInfoJson = async (folderUri: vscode.Uri, name: string) => {
+                        if (entry.contextValue === 'tkmmOptionGroup' || entry.contextValue === 'tkmmOption') {
+                            const infoUri = vscode.Uri.joinPath(folderUri, 'info.json');
+                            try {
+                                const infoContent = await vscode.workspace.fs.readFile(infoUri);
+                                const infoData = JSON.parse(new TextDecoder().decode(infoContent));
+                                if (infoData.Name !== undefined) {
+                                    infoData.Name = name;
+                                    await vscode.workspace.fs.writeFile(infoUri, new Uint8Array(new TextEncoder().encode(JSON.stringify(infoData))));
+                                }
+                            } catch (e) {
+                                // ignore
+                            }
+                        }
+                    };
+
                     await vscode.workspace.fs.rename(sourceUri, target, { overwrite: false });
+                    await updateInfoJson(target, newName);
+
                     historyManager.push({
                         description: `Rename ${entry.entryName} to ${newName}`,
                         undo: async () => {
                             await vscode.workspace.fs.rename(target, sourceUri, { overwrite: false });
+                            await updateInfoJson(sourceUri, entry.entryName);
                         },
                         redo: async () => {
                             await vscode.workspace.fs.rename(sourceUri, target, { overwrite: false });
+                            await updateInfoJson(target, newName);
                         },
                     });
                     refreshArchives();
@@ -683,8 +723,13 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                 }
                 const name = await vscode.window.showInputBox({
                     prompt: 'New file name',
-                    validateInput: (value) =>
-                        value.trim() ? undefined : 'Name cannot be empty',
+                    validateInput: (value) => {
+                        if (!value.trim()) {return 'Name cannot be empty';}
+                        if (value.toLowerCase().endsWith('.tkproj') && value.toLowerCase() !== '.tkproj') {
+                            return 'Project file must be named exactly ".tkproj"';
+                        }
+                        return undefined;
+                    }
                 });
                 if (!name) {
                     return;
@@ -706,7 +751,7 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                         },
                     });
                     refreshArchives();
-                    await vscode.window.showTextDocument(target);
+                    await vscode.commands.executeCommand('vscode.open', target);
                 } catch (error) {
                     const message = error instanceof Error ? error.message : String(error);
                     void vscode.window.showErrorMessage(`Create file failed: ${message}`);
@@ -1247,6 +1292,96 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
             },
         ),
     );
+
+    const doArchiveAddToOption = async (item: ArchiveTreeItem | undefined, useActive: boolean) => {
+        const items = selectedItems(item);
+        if (items.length === 0) {
+            return;
+        }
+
+        const firstItem = items[0]!;
+        const diskArchive = getDiskArchivePath(firstItem.resourceUri.fsPath);
+
+        let projectRoot = diskArchive;
+        let foundRoot = false;
+        let current = diskArchive;
+        while (current) {
+            try {
+                if (fs.existsSync(path.join(current, 'options')) || fs.existsSync(path.join(current, '.tkproj')) || fs.existsSync(path.join(current, 'romfs')) || fs.existsSync(path.join(current, 'exefs'))) {
+                    projectRoot = current;
+                    foundRoot = true;
+                    break;
+                }
+            } catch {
+                // Ignore permissions errors etc.
+            }
+            const parent = path.dirname(current);
+            if (parent === current) {break;}
+            current = parent;
+        }
+
+        if (!foundRoot) {
+            void vscode.window.showErrorMessage('Add to Option requires the project to be a valid mod folder (must contain romfs, exefs, or .tkproj).');
+            return;
+        }
+
+        const romfsRoot = resolveRomfsForProject(projectRoot);
+
+        let tkmmOption: { group: string; option: string } | undefined;
+        if (useActive) {
+            tkmmOption = getActiveTkmmOption(context, projectRoot);
+            if (!tkmmOption) {
+                void vscode.window.showWarningMessage('No active option selected. Select an active option first.');
+                return;
+            }
+        } else {
+            const result = await askForTkmmOption(projectRoot);
+            if (!result || result === 'BACK') {
+                return; // Cancelled
+            }
+            if (result !== 'BASE_PROJECT') {
+                tkmmOption = result;
+            } else {
+                void vscode.window.showWarningMessage('Cannot add to base project from this menu.');
+                return;
+            }
+        }
+
+        if (!tkmmOption) {
+            return;
+        }
+
+        let addedCount = 0;
+        await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: `Adding ${items.length} items to Option...`,
+                cancellable: false,
+            },
+            async () => {
+                for (const entry of items) {
+                    const success = await addDumpEntryToProject(
+                        entry.resourceUri.fsPath,
+                        projectRoot,
+                        romfsRoot,
+                        { suppressSuccessMessage: true },
+                        tkmmOption
+                    );
+                    if (success) {addedCount++;}
+                }
+            }
+        );
+
+        if (addedCount > 0) {
+            void vscode.window.showInformationMessage(`Added ${addedCount} item(s) to option ${tkmmOption.group}/${tkmmOption.option}.`);
+            refreshArchives();
+        }
+    };
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('totk-editor.archiveAddToOption', (item?: ArchiveTreeItem) => doArchiveAddToOption(item, false)),
+        vscode.commands.registerCommand('totk-editor.archiveAddToActiveOption', (item?: ArchiveTreeItem) => doArchiveAddToOption(item, true))
+    );
 }
 
 export class ArchiveTreeDragDrop
@@ -1284,14 +1419,34 @@ export class ArchiveTreeDragDrop
             return;
         }
         const uris = transfer.value as string[];
-        const sources = uris.map((uriString) => {
+        const sources: ArchiveTreeItem[] = [];
+        
+        for (const uriString of uris) {
             const uri = vscode.Uri.parse(uriString);
-            return {
+            const srcFsPath = uri.fsPath.toLowerCase();
+            const destFsPath = folderUri.fsPath.toLowerCase();
+            
+            // Prevent dropping onto itself or its own parent (accidental drag)
+            if (srcFsPath === destFsPath || path.dirname(srcFsPath) === destFsPath) {
+                continue;
+            }
+            
+            // Prevent dropping a folder into its own subdirectory
+            if (destFsPath.startsWith(srcFsPath + path.sep) || destFsPath.startsWith(srcFsPath + '/')) {
+                void vscode.window.showErrorMessage(`Cannot move an item into its own subdirectory.`);
+                continue;
+            }
+            
+            sources.push({
                 resourceUri: uri,
                 entryName: path.basename(uri.fsPath),
                 contextValue: 'archiveFile',
-            } as ArchiveTreeItem;
-        });
+            } as ArchiveTreeItem);
+        }
+
+        if (sources.length === 0) {
+            return;
+        }
         try {
             const targets = await copyEntries(sources, folderUri, true);
             const moves = sources.map((source, index) => ({

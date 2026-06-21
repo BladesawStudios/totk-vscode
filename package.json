@@ -4,7 +4,7 @@
   "publisher": "TKVSC-Team",
   "displayName": "TKVSC",
   "description": "Canonically Amazing",
-  "version": "0.0.1-beta.2",
+  "version": "0.0.2-beta.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/TKVSC-Team/totk-vscode"
@@ -42,11 +42,44 @@
         "priority": "default"
       },
       {
+        "viewType": "totk-editor.infoJsonEditor",
+        "displayName": "TKMM Option Editor",
+        "selector": [
+          {
+            "filenamePattern": "**/options/**/info.json"
+          }
+        ],
+        "priority": "default"
+      },
+      {
         "viewType": "totk-editor.tkvscEditor",
         "displayName": "TKVSC Config Editor",
         "selector": [
           {
             "filenamePattern": ".tkvsc"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "totk-editor.fontViewer",
+        "displayName": "TOTK Font Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.bfttf"
+          },
+          {
+            "filenamePattern": "*.bfotf"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "totk-editor.bwavViewer",
+        "displayName": "TOTK Audio Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.bwav"
           }
         ],
         "priority": "default"
@@ -173,6 +206,20 @@
         }
       },
       {
+        "id": "totk-font",
+        "extensions": [
+          ".bfttf",
+          ".bfotf"
+        ],
+        "aliases": [
+          "TOTK Font"
+        ],
+        "icon": {
+          "light": "./icons/font.svg",
+          "dark": "./icons/font.svg"
+        }
+      },
+      {
         "id": "pchtxt",
         "extensions": [
           ".pchtxt"
@@ -208,33 +255,48 @@
     "commands": [
       {
         "command": "totk-editor.openPack",
-        "title": "TOTK: Open Archive (.pack, .sarc, .genvb, .blarc, .bfarc, .bntx)",
+        "title": "TKVSC: Open Archive (.pack, .sarc, .genvb, .blarc, .bfarc, .bntx)",
         "icon": "$(package)"
       },
       {
         "command": "totk-editor.addWorkspaceToArchives",
-        "title": "TOTK: Add workspace folder to Projects",
+        "title": "TKVSC: Add workspace folder to Projects",
         "icon": "$(repo-create)"
       },
       {
+        "command": "totk-editor.createProject",
+        "title": "TKVSC: Create New Project",
+        "icon": "$(new-folder)"
+      },
+      {
         "command": "totk-editor.addProjectFolders",
-        "title": "TOTK: Add Projects via File Explorer",
+        "title": "TKVSC: Add Projects via File Explorer",
         "icon": "$(folder-opened)"
       },
       {
+        "command": "totk-editor.importTKMMProjects",
+        "title": "TKVSC: Import TKMM Projects",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "totk-editor.refreshArchives",
-        "title": "TOTK: Refresh Projects",
+        "title": "TKVSC: Refresh Projects",
         "icon": "$(refresh)"
       },
       {
         "command": "totk-editor.canonicalSyncOn",
-        "title": "Enable Canonical Sync",
-        "icon": "./icons/outline-view-active.svg"
+        "title": "Canonical Sync: Enabled",
+        "icon": "./icons/canon_active.svg"
       },
       {
         "command": "totk-editor.canonicalSyncOff",
-        "title": "Enable Canonical Sync",
-        "icon": "./icons/outline-view-inactive.svg"
+        "title": "Canonical Sync: Disabled",
+        "icon": "./icons/canon_inactive.svg"
+      },
+      {
+        "command": "totk-editor.setLogicalProjectRoot",
+        "title": "Set Project Root",
+        "icon": "$(star-empty)"
       },
       {
         "command": "totk-editor.removeArchiveRoot",
@@ -242,12 +304,12 @@
       },
       {
         "command": "totk-editor.refreshGameDump",
-        "title": "TOTK: Refresh Game Dump",
+        "title": "TKVSC: Refresh Game Dump",
         "icon": "$(refresh)"
       },
       {
         "command": "totk-editor.openRomfsSettings",
-        "title": "TOTK: Set Game Dump Path"
+        "title": "TKVSC: Set Game Dump Path"
       },
       {
         "command": "totk-editor.setActiveProject",
@@ -260,6 +322,14 @@
       {
         "command": "totk-editor.addDumpToProject",
         "title": "Add to Project…"
+      },
+      {
+        "command": "totk-editor.archiveAddToActiveOption",
+        "title": "Add to Active Option"
+      },
+      {
+        "command": "totk-editor.archiveAddToOption",
+        "title": "Add to Option…"
       },
       {
         "command": "totk-editor.configureFilteringRules",
@@ -310,44 +380,52 @@
         "title": "Export..."
       },
       {
+        "command": "totk-editor.explorerExport",
+        "title": "Export..."
+      },
+      {
         "command": "totk-editor.exportYaml",
-        "title": "TOTK: Export Current File to YAML"
+        "title": "TKVSC: Export Current File to YAML"
       },
       {
         "command": "totk-editor.openEditableFile",
-        "title": "TOTK: Open File (Supported Formats)"
+        "title": "TKVSC: Open File (Supported Formats)"
+      },
+      {
+        "command": "totk-editor.runSetup",
+        "title": "TKVSC: Run First-Time Setup (RomFS, Projects, TKMM)"
       },
       {
         "command": "totk-editor.setupPython",
-        "title": "TOTK: Set Up Python Environment"
+        "title": "TKVSC: Set Up Python Environment"
       },
       {
         "command": "totk-editor.pickPython",
-        "title": "TOTK: Select Python (from detected installs)"
+        "title": "TKVSC: Select Python (from detected installs)"
       },
       {
         "command": "totk-editor.browsePython",
-        "title": "TOTK: Browse for python.exe (must be Python 3.12)"
+        "title": "TKVSC: Browse for python.exe (must be Python 3.12)"
       },
       {
         "command": "totk-editor.rebuildRomfsIndex",
-        "title": "TOTK: Rebuild Game Dump Search Index"
+        "title": "TKVSC: Rebuild Game Dump Search Index"
       },
       {
         "command": "totk-editor.rebuildCanonicalPathIndex",
-        "title": "TOTK: Rebuild Canonical Path Index"
+        "title": "TKVSC: Rebuild Canonical Path Index"
       },
       {
         "command": "totk-editor.useTotkIcons",
-        "title": "TOTK: File Icon Theme Help"
+        "title": "TKVSC: File Icon Theme Help"
       },
       {
         "command": "totk-editor.externalTools.open",
-        "title": "TOTK: Open with Associated External Tool"
+        "title": "TKVSC: Open with Associated External Tool"
       },
       {
         "command": "totk-editor.externalTools.choose",
-        "title": "TOTK: Choose External Tool for Current File"
+        "title": "TKVSC: Choose External Tool for Current File"
       },
       {
         "command": "totk-editor.archiveImportFile",
@@ -364,6 +442,22 @@
       {
         "command": "totk-editor.archiveReplaceFolder",
         "title": "Replace Folder..."
+      },
+      {
+        "command": "totk-editor.createOptionGroup",
+        "title": "TKMM: Create Option Group"
+      },
+      {
+        "command": "totk-editor.createOption",
+        "title": "TKMM: Create Option"
+      },
+      {
+        "command": "totk-editor.setActiveOption",
+        "title": "TKMM: Set as Active Option"
+      },
+      {
+        "command": "totk-editor.clearActiveOption",
+        "title": "TKMM: Unset active option"
       }
     ],
     "viewsContainers": {
@@ -384,7 +478,7 @@
       "totk-editor": [
         {
           "id": "totk-editor.archives",
-          "name": "Project Folders"
+          "name": ""
         }
       ],
       "totk-editor-dump": [
@@ -404,7 +498,7 @@
     "viewsWelcome": [
       {
         "view": "totk-editor.archives",
-        "contents": "Browse `.pack`, `.sarc`, `.genvb`, `.blarc`, `.bfarc`, and `.bntx` as expandable trees in the **TOTK Archives** sidebar tab.\n\n[Add Projects via File Explorer](command:totk-editor.addProjectFolders)"
+        "contents": "You don't currently have any Project Folders, please create or add one using the buttons below.\n\n[Create New Project](command:totk-editor.createProject)\n[Add Projects via File Explorer](command:totk-editor.addProjectFolders)"
       },
       {
         "view": "totk-editor.gameDump",
@@ -421,6 +515,11 @@
         {
           "command": "totk-editor.canonicalSyncOff",
           "when": "view == totk-editor.archives && !config.totk-editor.enableCanonicalSavePropagation",
+          "group": "navigation"
+        },
+        {
+          "command": "totk-editor.createProject",
+          "when": "view == totk-editor.archives",
           "group": "navigation"
         },
         {
@@ -450,6 +549,11 @@
           "when": "view == totk-editor.archives && viewItem == archiveRoot"
         },
         {
+          "command": "totk-editor.setLogicalProjectRoot",
+          "when": "view == totk-editor.archives && viewItem == archiveProjectDir",
+          "group": "1_active@1"
+        },
+        {
           "command": "totk-editor.setActiveProject",
           "when": "view == totk-editor.archives && viewItem == archiveRoot",
           "group": "1_active"
@@ -475,13 +579,38 @@
           "group": "1_create@4"
         },
         {
+          "command": "totk-editor.createOptionGroup",
+          "when": "view == totk-editor.archives && (viewItem == archiveRoot || viewItem == tkmmOptionsRoot)",
+          "group": "1_create@5"
+        },
+        {
+          "command": "totk-editor.createOption",
+          "when": "view == totk-editor.archives && viewItem == tkmmOptionGroup",
+          "group": "1_create@6"
+        },
+        {
+          "command": "totk-editor.setActiveOption",
+          "when": "view == totk-editor.archives && viewItem == tkmmOption",
+          "group": "1_active@2"
+        },
+        {
+          "command": "totk-editor.setActiveOption",
+          "when": "view == totk-editor.archives && viewItem == tkmmOption",
+          "group": "1_active@2"
+        },
+        {
+          "command": "totk-editor.clearActiveOption",
+          "when": "view == totk-editor.archives && (viewItem == archiveRoot || viewItem == archiveProjectDir || viewItem == archiveProjectDirActive || viewItem == tkmmOptionActive)",
+          "group": "1_active@3"
+        },
+        {
           "command": "totk-editor.archiveRename",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir)",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
           "group": "7_modification@1"
         },
         {
           "command": "totk-editor.archiveDelete",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir)",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
           "group": "7_modification@2"
         },
         {
@@ -516,13 +645,23 @@
         },
         {
           "command": "totk-editor.archiveExport",
-          "when": "view == totk-editor.archives && viewItem == archiveVirtualFile",
+          "when": "view == totk-editor.archives && (viewItem == archiveVirtualFile || viewItem == archiveFile || viewItem == archivePackage)",
           "group": "5_export@1"
         },
         {
           "command": "totk-editor.dumpExport",
-          "when": "view == totk-editor.gameDump && viewItem == dumpVirtualFile",
+          "when": "view == totk-editor.gameDump && (viewItem == dumpVirtualFile || viewItem == dumpFile || viewItem == dumpArchive)",
           "group": "5_export@1"
+        },
+        {
+          "command": "totk-editor.archiveAddToActiveOption",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir)",
+          "group": "2_add@1"
+        },
+        {
+          "command": "totk-editor.archiveAddToOption",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir)",
+          "group": "2_add@2"
         },
         {
           "command": "totk-editor.addDumpToActiveProject",
@@ -550,6 +689,11 @@
           "command": "totk-editor.archivePaste",
           "when": "totk-editor.archiveClipboardNotEmpty",
           "group": "9_cutcopypaste"
+        },
+        {
+          "command": "totk-editor.explorerExport",
+          "when": "resourceExtname == .txtg || resourceExtname == .bntx || resourceExtname == .bftex || resourceExtname == .byml || resourceExtname == .bgyml || resourceExtname == .bfmdl || resourceExtname == .bfska",
+          "group": "5_export@1"
         }
       ]
     },
@@ -606,46 +750,59 @@
       }
     ],
     "configuration": {
-      "title": "TOTK Editor",
+      "title": "TKVSC",
       "properties": {
-        "totk-editor.logLevel": {
+        "TKVSC.logLevel": {
           "type": "string",
-          "enum": ["Debug", "Info", "Warning", "Error"],
+          "enum": [
+            "Debug",
+            "Info",
+            "Warning",
+            "Error"
+          ],
           "default": "Info",
           "markdownDescription": "Determine the verbosity of logs written to the Output Channel."
         },
-        "totk-editor.enableToastNotifications": {
+        "TKVSC.enableToastNotifications": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Enable pop-up toast notifications in VS Code for Warnings and Errors."
         },
-        "totk-editor.pythonPath": {
+        "TKVSC.pythonPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Full path to **python.exe** (Python 3.10+). Use this when `python3` works in CMD but the extension says Python was not found - Cursor/VS Code often start with a shorter PATH than your terminal. Run **TOTK: Browse for python.exe** or **TOTK: Select Python** to set this automatically."
+          "markdownDescription": "Full path to **python.exe** (Python 3.10+). Use this when `python3` works in CMD but the extension says Python was not found - Run **TKVSC: Browse for python.exe** or **TKVSC: Select Python** to set this automatically."
         },
-        "totk-editor.romfsPath": {
+        "TKVSC.projectsPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Default path where new projects will be created."
+        },
+        "TKVSC.romfsPath": {
           "type": "string",
           "default": "",
           "markdownDescription": "Path to your extracted game **RomFS** (game dump) folder. Must contain `Pack/ZsDic.pack.zs`. **Required** to open or save any `.zs` file (`.pack.zs`, `.byml.zs`, `.bcett.byml.zs`, etc.)."
         },
-        "totk-editor.createRomfsOnImport": {
+        "TKVSC.createRomfsOnImport": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "Automatically create a `romfs` folder when importing a project if there is no `romfs` or `exefs` folder next to the `.tkproj`."
         },
-        "totk-editor.tagProductFormat": {
+        "TKVSC.tagProductFormat": {
           "type": "string",
-          "enum": ["json", "yaml"],
+          "enum": [
+            "json",
+            "yaml"
+          ],
           "default": "yaml",
           "markdownDescription": "Format to use for displaying Tag.Product.rstbl.byml files (JSON or YAML)."
         },
-        "totk-editor.bymlInlineContainerMaxCount": {
+        "TKVSC.bymlInlineContainerMaxCount": {
           "type": "integer",
           "default": 1,
           "markdownDescription": "The maximum number of child nodes allowed in a list/array or map/hash for it to still be formatted as an inline container (e.g. `[1]` or `{a: 1}`)."
         },
-        "totk-editor.extraAampExtensions": {
+        "TKVSC.extraAampExtensions": {
           "type": "array",
           "items": {
             "type": "string"
@@ -653,21 +810,20 @@
           "default": [],
           "markdownDescription": "Additional file extensions (without dot) treated as **AAMP** parameter files, e.g. `bcustom`. See `aamp-extensions.json` in the extension folder for the built-in list."
         },
-        "totk-editor.enableCanonicalSavePropagation": {
+        "TKVSC.enableCanonicalSavePropagation": {
           "type": "boolean",
           "default": true,
           "markdownDescription": "When enabled, saving a file inside an archive updates all matching canonical-path instances across project archives. Missing matching archives are copied from the configured game dump first."
         },
-        "totk-editor.canonicalSyncBlacklistPrefixes": {
+        "TKVSC.canonicalSyncBlacklistPrefixes": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "default": [
-          ],
+          "default": [],
           "markdownDescription": "Canonical path folder prefixes excluded from synchronized save propagation. Matching is case-insensitive and checks full canonical path prefixes. This is NOT the RomFS path!"
         },
-        "totk-editor.canonicalSyncArchiveTypeBlacklist": {
+        "TKVSC.canonicalSyncArchiveTypeBlacklist": {
           "type": "array",
           "items": {
             "type": "string"
@@ -678,7 +834,7 @@
           ],
           "markdownDescription": "Archive file extensions that disable canonical synchronized edits for paths inside those archive types (for example nested `.sarc`/`.blarc`). Matching is case-insensitive."
         },
-        "totk-editor.canonicalSyncFileExtensionBlacklist": {
+        "TKVSC.canonicalSyncFileExtensionBlacklist": {
           "type": "array",
           "items": {
             "type": "string"
@@ -802,8 +958,8 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run check-types && npm run lint && node esbuild.js --production",
-    "package:vsix": "npm run package && vsce package --out out/",
-    "build": "npm run package && vsce package --out out/",
+    "package:vsix": "npm run package && node -e \"require('fs').mkdirSync('out', { recursive: true }); require('child_process').execSync('npx vsce package --out out/totk-vscode-' + process.env.npm_package_version + '.vsix', { stdio: 'inherit' })\"",
+    "build": "npm run package && node -e \"require('fs').mkdirSync('out', { recursive: true }); require('child_process').execSync('npx vsce package --out out/totk-vscode-' + process.env.npm_package_version + '.vsix', { stdio: 'inherit' })\"",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
@@ -815,18 +971,20 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "^25.9.1",
+    "@types/node": "^25.9.3",
+    "@types/opentype.js": "^1.3.10",
     "@types/vscode": "^1.120.0",
     "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "^3.9.1",
-    "esbuild": "^0.28.0",
-    "eslint": "^10.4.1",
+    "@vscode/test-electron": "^3.0.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.5.0",
     "npm-run-all": "^4.1.5",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.60.0"
+    "typescript-eslint": "^8.61.1"
   },
   "dependencies": {
+    "opentype.js": "^2.0.0",
     "sql.js": "^1.14.1"
   }
 }

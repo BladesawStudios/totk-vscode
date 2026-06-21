@@ -6,13 +6,23 @@ env:
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - '**.md'
+      - 'graphics/**'
+      - 'docs/**'
+      - 'LICENSE'
   pull_request:
     branches: [ "main" ]
+    paths-ignore:
+      - '**.md'
+      - 'graphics/**'
+      - 'docs/**'
+      - 'LICENSE'
 
 jobs:
-  build-and-test:
+  lint-ts:
+    name: Lint TypeScript
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
@@ -23,19 +33,16 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Setup Python
-        uses: actions/setup-python@v6.2.0
+      - name: Cache Node.js modules
+        id: cache-node
+        uses: actions/cache@v4
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
 
       - name: Install Node dependencies
+        if: steps.cache-node.outputs.cache-hit != 'true'
         run: npm ci
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ".[dev]"
 
       - name: Run TypeScript Linter
         run: npm run lint
@@ -43,14 +50,147 @@ jobs:
       - name: Run TypeScript Type Check
         run: npm run check-types
 
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Cache Python Virtual Environment
+        id: cache-python
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-python-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install Python dependencies
+        if: steps.cache-python.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install ".[dev]"
+
       - name: Run Python Ruff Linter
-        run: ruff check .
+        run: .venv/bin/ruff check .
 
       - name: Run Python Ruff Formatter Check
-        run: ruff format --check .
+        run: .venv/bin/ruff format --check .
+
+  test:
+    name: Test Extension
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Cache Node.js modules
+        id: cache-node
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Node dependencies
+        if: steps.cache-node.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Setup Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Cache Python Virtual Environment
+        id: cache-python
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-python-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install Python dependencies
+        if: steps.cache-python.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install ".[dev]"
+
+      - name: Cache VS Code Test Downloads
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: ${{ runner.os }}-vscode-test-${{ hashFiles('package.json', '.vscode-test.mjs') }}
 
       - name: Run Extension Tests
         run: xvfb-run -a npm test
+
+  build:
+    name: Build VSIX
+    runs-on: ubuntu-latest
+    needs: [lint-ts, lint-python, test]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Cache Node.js modules
+        id: cache-node
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Node dependencies
+        if: steps.cache-node.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Setup Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Cache Python Virtual Environment
+        id: cache-python
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-python-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install Python dependencies
+        if: steps.cache-python.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install ".[dev]"
+
+      - name: Inject Commit Hash into Version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          jq ".version += \"-$SHORT_SHA\"" package.json > package.json.tmp && mv package.json.tmp package.json
 
       - name: Package VSIX
         run: npm run package:vsix
@@ -58,5 +198,5 @@ jobs:
       - name: Upload VSIX Artifact
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: totk-vscode-extension
-          path: "*.vsix"
+          name: tkvsc-vsix
+          path: "out/*.vsix"

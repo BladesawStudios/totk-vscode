@@ -27,6 +27,8 @@ Our core design philosophy creating this extension is **centralization of toolin
 
 **TKVSC** GameBanana page: https://gamebanana.com/tools/22893
 
+**Game Dump Guide** (required): https://gamebanana.com/tuts/19858
+
 ## DISCLAIMER
 **WE ARE NOT RESPONSIBLE IF YOUR MOD BREAKS. THIS TOOL IS IN ACTIVE BETA AND THINGS WILL BREAK. MAKE FREQUENT BACKUPS**
 
@@ -46,6 +48,8 @@ Preview and edit subfiles of SARC and BNTX archives
 - ASB (Changes automatically applied to corresponding BAEV)
 - BAEV (Changes automatically applied to corresponding ASB)
 - XLINK
+- PCHTXT
+- TKMM Config Files
 
 ---
 
@@ -89,13 +93,15 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 - Audio Support (BARS, BWAV.)
 - Actor Tooling (Automating the process as much as possible.)
 - Full romfs file content string searching
+- New project creation
 - <sub></sup>PTCL/Effect support is being researched but not confirmed. This is uncharted territory.</sup></sub>
 
 ## Setup
 
 ### Requirements
-* [Python 3.12](https://www.python.org/downloads/release/python-31213/)
-* Node.js
+* [Python 3.12](https://www.python.org/downloads/release/python-31210/)
+* [Microsoft C++ Redis](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
+* Node.js (if building extension from source)
 * Python 3.12-venv (on Linux)
 * Valid TOTK dump
 
@@ -106,13 +112,13 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 
 ### Python troubleshooting
 
-**`python3` works in CMD but the extension cannot find Python?** Cursor and VS Code are often launched without your full user PATH (unlike a terminal you opened yourself). Fix:
+**`python3` works in CMD but the extension cannot find Python?** VSCode is often launched without your full user PATH (unlike a terminal you opened yourself). Fix:
 
-1. **TOTK: Select Python (from detected installs)** - scans `where python3`, common install folders, and `py`.
-2. **TOTK: Browse for python.exe** - point at the real interpreter (e.g. `%LocalAppData%\Programs\Python\Python312\python.exe`).
-3. Or set **TOTK Editor → Python Path** to that full path, then **TOTK: Set Up Python Environment** again.
+1. **TKVSC: Select Python (from detected installs)** - scans `where python3`, common install folders, and `py`.
+2. **TKVSC: Browse for python.exe** - point at the real interpreter (e.g. `%LocalAppData%\Programs\Python\Python312\python.exe`).
+3. Or set **TKVSC → Python Path** to that full path, then **TKVSC: Set Up Python Environment** again.
 
-If setup fails, run **TOTK: Set Up Python Environment** from the Command Palette.
+If setup fails, run **TKVSC: Set Up Python Environment** from the Command Palette.
 
 ## Build Instructions
 
@@ -140,14 +146,15 @@ See: [CONTRIBUTING.md](./.github/CONTRIBUTING.md)
 **Clonephaze** - [GitHub Template Refactor](https://github.com/TKVSC-Team/totk-vscode/pull/62)
 
 ### Third-Parties
-**dt13245**: [ASB fork](https://github.com/TKVSC-Team/asb), [AINB fork](https://github.com/TKVSC-Team/AINB), and [XLink2](https://github.com/dt-12345/xlink2) binaries integrated into codebase\
+**dt13245**: [ASB fork](https://github.com/TKVSC-Team/asb), [AINB fork](https://github.com/TKVSC-Team/AINB), and [XLink2](https://github.com/dt-12345/xlink2) (legacy version) binaries integrated into codebase\
+**P1gyy**: [pymsbt fork](https://github.com/TKVSC-Team/pymsbt) integrated into codebase\
+**AeonSake**: [MSBT Editor](https://gitlab.com/AeonSake/msbt-editor) - TotK Config included\
+**LordBubbles**: [TKMM](https://tkmm.org/) - Assistance with implementing TKMM compatibility\
 **KillzXGaming**: [Switch Toolbox](https://github.com/KillzXGaming/Switch-Toolbox) - image handling referenced\
 **Arch Leaders**: [NX Editor](https://github.com/NX-Editor/NxEditor) - text formatting referenced\
-**SolidLink**: [Totkbits](https://github.com/SolidLink95/TotkBits) - Tag.Product and text formatting referenced\
-**AeonSake**: [MSBT Editor](https://gitlab.com/AeonSake/msbt-editor) - TotK Config included\
-**P1gyy**: [pymsbt fork](https://github.com/TKVSC-Team/pymsbt) integrated into codebase
+**SolidLink**: [Totkbits](https://github.com/SolidLink95/TotkBits) - Tag.Product & text formatting referenced, bphcl & ptcl implementation used\
 
 ## Help and Community
 
-- [Discord Server](https://discord.gg/BbVXenRFVc)
+- [Discord Server](https://discord.gg/vwPnX2uB8s )
 <!--- [Documentation]()--->

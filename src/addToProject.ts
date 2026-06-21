@@ -45,20 +45,21 @@ export async function addDumpEntryToProject(
     projectRoot: string,
     romfsRoot?: string,
     options?: { suppressSuccessMessage?: boolean },
+    tkmmOption?: { group: string; option: string },
 ): Promise<boolean> {
     const dumpRoot = romfsRoot?.trim()
         ? normalizePath(romfsRoot)
         : resolveRomfsPath() || resolveRomfsForProject(projectRoot);
     if (!dumpRoot) {
         void vscode.window.showErrorMessage(
-            'TOTK Editor: Set **totk-editor.romfsPath** to your game dump folder first.',
+            'TKVSC: Set **totk-editor.romfsPath** to your game dump folder first.',
         );
         return false;
     }
 
     let copyPaths: { source: string; destination: string };
     try {
-        copyPaths = resolveAddToCopyPaths(sourceFsPath, projectRoot, dumpRoot);
+        copyPaths = resolveAddToCopyPaths(sourceFsPath, projectRoot, dumpRoot, tkmmOption);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         void vscode.window.showErrorMessage(`Add to project: ${message}`);
@@ -72,6 +73,11 @@ export async function addDumpEntryToProject(
     try {
         await ensureParentDirectory(copyPaths.destination);
         await fs.promises.copyFile(copyPaths.source, copyPaths.destination);
+        try {
+            await fs.promises.chmod(copyPaths.destination, 0o666);
+        } catch (e) {
+            // Ignore chmod errors
+        }
         if (!options?.suppressSuccessMessage) {
             void vscode.window.showInformationMessage(
                 `Added to project: ${path.relative(normalizePath(projectRoot), copyPaths.destination)}`,

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Canon_Inactive_" data-name="Canon (Inactive)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <style>
+      .cls-1 {
+        stroke-linejoin: round;
+      }
+
+      .cls-1, .cls-2 {
+        fill: none;
+        stroke: #595a5a;
+        stroke-width: 2px;
+      }
+
+      .cls-2 {
+        stroke-miterlimit: 10;
+      }
+    </style>
+  </defs>
+  <rect class="cls-2" x="4" y="3.5" width="17" height="6" rx="2" ry="2"/>
+  <rect class="cls-2" x="17" y="12.5" width="11" height="6" rx="2" ry="2"/>
+  <rect class="cls-2" x="17" y="22.5" width="11" height="6" rx="2" ry="2"/>
+  <polyline class="cls-1" points="17 15.5 11 15.5 11 10 11 25.5 17 25.5"/>
+</svg>

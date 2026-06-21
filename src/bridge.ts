@@ -133,6 +133,38 @@ export interface BntxMiscInfo {
     sampleCount: number;
 }
 
+export interface BridgeResult {
+    success?: boolean;
+    error?: string;
+    [key: string]: any;
+}
+
+export interface BwavAudioResult extends BridgeResult {
+    wavPath?: string;
+}
+
+export interface BarsEntry {
+    name: string;
+    name_hash: number;
+    amta_offset: number;
+    bwav_offset: number;
+    has_prefetch: boolean;
+    has_romfs_bwav: boolean;
+    metadata?: any;
+}
+
+export interface BarsListResult extends BridgeResult {
+    entries?: BarsEntry[];
+}
+
+export interface BarsAudioResult extends BridgeResult {
+    wavPath?: string;
+    name?: string;
+    isPrefetch?: boolean;
+    loopStart?: number;
+    loopEnd?: number;
+}
+
 export interface BntxTextureResult {
     bntxTexture: true;
     error?: string;

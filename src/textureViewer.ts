@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const panels = new Map<string, vscode.WebviewPanel>();
+const panelTempFiles = new Map<string, string>();
 let extensionUri: vscode.Uri | undefined;
 
 export function initTextureViewer(extUri: vscode.Uri): void {
@@ -19,10 +20,30 @@ export function openTextureViewer(
 ): void {
     const key = textureName;
     const existing = panels.get(key);
+    
     if (existing) {
+        // We are replacing the content of an existing panel.
+        // Clean up the previous temp file so it doesn't leak.
+        const oldTempFile = panelTempFiles.get(key);
+        if (oldTempFile && oldTempFile !== result.pngPath) {
+            try {
+                fs.unlinkSync(oldTempFile);
+            } catch { }
+        }
+        
+        if (result.pngPath) {
+            panelTempFiles.set(key, result.pngPath);
+        } else {
+            panelTempFiles.delete(key);
+        }
+
         existing.reveal();
-        existing.webview.html = buildHtml(result, existing.webview);
+        existing.webview.html = buildHtml(result, existing.webview, !onSave);
         return;
+    }
+
+    if (result.pngPath) {
+        panelTempFiles.set(key, result.pngPath);
     }
 
     const localRoots = extensionUri
@@ -39,14 +60,16 @@ export function openTextureViewer(
         { enableScripts: true, retainContextWhenHidden: false, localResourceRoots: localRoots },
     );
 
-    panel.webview.html = buildHtml(result, panel.webview);
+    panel.webview.html = buildHtml(result, panel.webview, !onSave);
     panels.set(key, panel);
     panel.onDidDispose(() => {
         panels.delete(key);
-        if (result.pngPath) {
+        const currentTempFile = panelTempFiles.get(key);
+        if (currentTempFile) {
             try {
-                fs.unlinkSync(result.pngPath);
+                fs.unlinkSync(currentTempFile);
             } catch { }
+            panelTempFiles.delete(key);
         }
     });
 
@@ -63,7 +86,7 @@ export function openTextureViewer(
     });
 }
 
-function buildHtml(result: BntxTextureResult, webview: vscode.Webview): string {
+function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnly: boolean): string {
     const meta = result.metadata;
     let imgSrc = '';
     if (result.pngPath) {
@@ -84,13 +107,13 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview): string {
     const scaledH = Math.round(texH * scale);
 
     const channelsSection = meta?.channels
-        ? buildSection('Channels', buildChannelRows(meta.channels))
+        ? buildSection('Channels', buildChannelRows(meta.channels, isReadOnly))
         : '';
     const imageInfoSection = meta?.imageInfo
-        ? buildSection('Image Info', buildImageInfoRows(meta.imageInfo))
+        ? buildSection('Image Info', buildImageInfoRows(meta.imageInfo, isReadOnly))
         : '';
     const miscSection = meta?.misc
-        ? buildSection('Misc', buildMiscRows(meta.misc))
+        ? buildSection('Misc', buildMiscRows(meta.misc, isReadOnly))
         : '';
     const metaSections = meta
         ? `${channelsSection}${imageInfoSection}${miscSection}`
@@ -121,6 +144,7 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview): string {
         flex: 0 0 auto;
         display: flex;
         flex-direction: column;
+        align-items: flex-start;
         gap: 0;
     }
     .image-toolbar {
@@ -157,6 +181,8 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview): string {
         border: 1px solid var(--vscode-panel-border, #444);
         display: inline-flex;
     }
+    .checker-bg.bg-dark { background: #111; }
+    .checker-bg.bg-light { background: #eee; }
     .image-panel img {
         image-rendering: pixelated;
     }
@@ -304,6 +330,9 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview): string {
             <button class="size-toggle" id="sizeBtn" onclick="toggleSize()" title="Toggle size">
                 <img src="${resizeIconUri}" alt="resize" width="16" height="16" />
             </button>
+            <button class="size-toggle" onclick="toggleBg()" title="Toggle background" style="font-size:14px; font-weight:bold;">
+                B
+            </button>
             <span class="size-label" id="sizeLabel">${scaledW}\u00d7${scaledH}</span>
         </div>` : ''}
         ${imgSrc
@@ -333,9 +362,9 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview): string {
             : '<div class="no-image">No preview</div>'}
     </div>
     <div class="props-panel">
-        <div style="margin-bottom: 12px; display: flex; justify-content: flex-end;">
+        ${!isReadOnly ? `<div style="margin-bottom: 12px; display: flex; justify-content: flex-end;">
             <button class="save-btn" onclick="saveMetadata()">Save Changes</button>
-        </div>
+        </div>` : ''}
         ${metaSections}
         ${errorNote}
     </div>
@@ -368,6 +397,15 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview): string {
                 label.textContent = 'Original (${texW}\u00d7${texH})';
             }
         }
+        let bgState = 0; // 0=checker, 1=dark, 2=light
+        function toggleBg() {
+            bgState = (bgState + 1) % 3;
+            document.querySelectorAll('.checker-bg').forEach(el => {
+                el.classList.remove('bg-dark', 'bg-light');
+                if (bgState === 1) el.classList.add('bg-dark');
+                else if (bgState === 2) el.classList.add('bg-light');
+            });
+        }
         function saveMetadata() {
             const data = {
                 red: document.getElementById('chRed')?.value,
@@ -397,9 +435,12 @@ function buildSection(title: string, rows: string): string {
     </div>`;
 }
 
-function buildChannelRows(ch: BntxChannelInfo): string {
+function buildChannelRows(ch: BntxChannelInfo, isReadOnly: boolean): string {
     const opts = ['Red', 'Green', 'Blue', 'Alpha', 'Zero', 'One'];
     const select = (id: string, current: string) => {
+        if (isReadOnly) {
+            return escapeHtml(current);
+        }
         const options = opts.map(o => `<option value="${o}" ${current === o ? 'selected' : ''}>${o}</option>`).join('');
         return `<select id="${id}" class="meta-input">${options}</select>`;
     };
@@ -411,7 +452,7 @@ function buildChannelRows(ch: BntxChannelInfo): string {
     ].join('');
 }
 
-function buildImageInfoRows(info: BntxImageInfo): string {
+function buildImageInfoRows(info: BntxImageInfo, isReadOnly: boolean): string {
     const srgbChecked = info.useSRGB === 'True' ? 'checked' : '';
     
     return [
@@ -419,17 +460,17 @@ function buildImageInfoRows(info: BntxImageInfo): string {
         row('Height', String(info.height)),
         row('Mip Count', String(info.mipCount)),
         row('Format', info.format),
-        row('Use SRGB', `<input type="checkbox" id="useSRGB" ${srgbChecked} />`),
-        row('Name', `<input type="text" id="metaName" class="meta-input" value="${escapeHtml(info.name)}" />`),
-        row('Path', `<input type="text" id="metaPath" class="meta-input" value="${escapeHtml(info.path ?? '')}" />`),
+        row('Use SRGB', isReadOnly ? (info.useSRGB === 'True' ? 'Yes' : 'No') : `<input type="checkbox" id="useSRGB" ${srgbChecked} />`),
+        row('Name', isReadOnly ? escapeHtml(info.name) : `<input type="text" id="metaName" class="meta-input" value="${escapeHtml(info.name)}" />`),
+        row('Path', isReadOnly ? escapeHtml(info.path ?? '') : `<input type="text" id="metaPath" class="meta-input" value="${escapeHtml(info.path ?? '')}" />`),
     ].join('');
 }
 
-function buildMiscRows(misc: BntxMiscInfo): string {
+function buildMiscRows(misc: BntxMiscInfo, isReadOnly: boolean): string {
     return [
         row('Depth', String(misc.depth)),
         row('Tile Mode', misc.tileMode),
-        row('Swizzle', `<input type="number" id="metaSwizzle" class="meta-input" value="${misc.swizzle}" />`),
+        row('Swizzle', isReadOnly ? String(misc.swizzle) : `<input type="number" id="metaSwizzle" class="meta-input" value="${misc.swizzle}" />`),
         row('Alignment', String(misc.alignment)),
         row('Pitch', String(misc.pitch)),
         row('Dims', misc.dims),
