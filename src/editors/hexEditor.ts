@@ -327,11 +327,6 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 logger.info(`[HexEditor] base64 encoded length: ${base64Data.length} chars — setting webview HTML`);
                 pendingInitData = { base64Data, totalSize: data.length };
                 const html = buildHtml(resolvedName, data.length, isReadOnly, panel.webview, patterns);
-                try {
-                    fs.writeFileSync(path.join(extensionUri.fsPath, 'debug_webview.html'), html, 'utf8');
-                } catch (e) {
-                    logger.info(`[HexEditor] Failed to write debug HTML: ${e}`);
-                }
                 panel.webview.html = html;
                 if (webviewReady) {
                     panel.webview.postMessage({ type: 'init', ...pendingInitData });
