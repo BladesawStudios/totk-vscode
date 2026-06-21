@@ -319,6 +319,11 @@ export function registerExternalToolSupport(
                             command: 'totk-editor.externalTools.choose',
                             arguments: [document.uri],
                         }),
+                        new vscode.CodeLens(range, {
+                            title: 'Open in Integrated Hex Editor',
+                            command: 'totk-editor.openHexEditor',
+                            arguments: [document.uri],
+                        }),
                     ];
                 },
             },

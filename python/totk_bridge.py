@@ -642,6 +642,144 @@ def main():
                 raise ValueError(f"Cannot write file type: {file_path}")
             print(json.dumps({"success": True}))
 
+        elif command == "decompress-file":
+            input_path = sys.argv[2]
+            logical_path = sys.argv[3] if len(sys.argv) > 3 else input_path
+            file_data = Path(input_path).read_bytes()
+            decompressed, _, _ = decompress_container(file_data, logical_path, romfs_path)
+            fd, tmp_path = tempfile.mkstemp(prefix="totk-decomp-", suffix="-" + Path(logical_path).name.replace(".zs", ""))
+            with os.fdopen(fd, "wb") as out:
+                out.write(decompressed)
+            print(json.dumps({"path": tmp_path}))
+
+        elif command == "compress-file":
+            input_path = sys.argv[2]
+            logical_path = sys.argv[3] if len(sys.argv) > 3 else input_path
+            file_data = Path(input_path).read_bytes()
+            compressed = compress_container(file_data, logical_path, romfs_path, was_zstd=True, was_yaz0=False)
+            fd, tmp_path = tempfile.mkstemp(prefix="totk-comp-", suffix="-" + Path(logical_path).name)
+            with os.fdopen(fd, "wb") as out:
+                out.write(compressed)
+            print(json.dumps({"path": tmp_path}))
+
+        elif command == "evaluate-hexpat":
+            input_path = sys.argv[2]
+            file_data = Path(input_path).read_bytes()
+            hexpat_code = sys.stdin.read()
+
+            hexpyt_src = os.path.abspath(os.path.join(
+                os.path.dirname(os.path.dirname(__file__)), "vendor", "hexpyt", "src"))
+            if hexpyt_src not in sys.path:
+                sys.path.insert(0, hexpyt_src)
+
+
+            try:
+                from compiler import compile_text
+                import primitives
+            except ImportError as e:
+                print(json.dumps({"error": f"Failed to load hexpat compiler: {e}"}))
+                sys.exit(0)
+
+            try:
+                python_code = compile_text(hexpat_code)
+            except Exception as e:
+                print(json.dumps({"error": f"Hexpat compile error: {e}"}))
+                sys.exit(0)
+
+            with open(r"C:\Users\dmone\Desktop\hexpat_generated.py", "w") as f:
+                f.write(python_code)
+
+            local_env = {
+                "byts": file_data,
+                "primitives": primitives,
+            }
+            for k in dir(primitives):
+                if not k.startswith("_"):
+                    local_env[k] = getattr(primitives, k)
+
+            primitives.std.mem.byts = file_data
+
+            import threading
+            exec_error = None
+            def run_exec():
+                nonlocal exec_error
+                import sys
+                old_limit = sys.getrecursionlimit()
+                sys.setrecursionlimit(5000)
+                try:
+                    primitives.std.mem.byts = file_data
+                    exec(python_code, local_env, local_env)
+                except Exception as e:
+                    exec_error = e
+                finally:
+                    sys.setrecursionlimit(old_limit)
+
+            threading.stack_size(32 * 1024 * 1024)  # 32 MB
+            t = threading.Thread(target=run_exec)
+            t.start()
+            t.join()
+
+            if exec_error is not None:
+                print(json.dumps({"error": f"Hexpat exec error: {type(exec_error).__name__} - {str(exec_error)}"}))
+                sys.exit(0)
+
+            ast_nodes = []
+
+            def dump_ast(obj, name, visited=None, depth=0):
+                if depth > 100:
+                    return {"name": name, "type": "MaxDepthReached", "start_offset": 0, "size": 0, "children": []}
+                if visited is None:
+                    visited = set()
+                if id(obj) in visited:
+                    return None
+                visited.add(id(obj))
+
+                if isinstance(obj, list):
+                    if len(obj) == 0: return None
+                    if not isinstance(obj[0], primitives.Struct): return None
+                    start = int(obj[0].address())
+                    end = int(obj[-1].dollar())
+                    node = {
+                        "name": name,
+                        "type": "Array",
+                        "start_offset": start,
+                        "size": end - start,
+                        "children": []
+                    }
+                    for i, item in enumerate(obj):
+                        child = dump_ast(item, f"[{i}]", visited, depth + 1)
+                        if child:
+                            node["children"].append(child)
+                    return node
+                elif isinstance(obj, primitives.Struct):
+                    node = {
+                        "name": name,
+                        "type": obj.__class__.__name__,
+                        "start_offset": int(obj.address()),
+                        "size": int(obj.size()),
+                        "children": []
+                    }
+                    if hasattr(obj, "value"):
+                        try:
+                            node["value"] = str(obj.value())
+                        except Exception:
+                            pass
+                    for k, v in obj.__dict__.items():
+                        if not k.startswith("_") and k != "value":
+                            child = dump_ast(v, k, visited, depth + 1)
+                            if child:
+                                node["children"].append(child)
+                    return node
+                return None
+
+            for k, v in local_env.items():
+                if isinstance(v, primitives.Struct) and not k.startswith("_") and type(v) != type:
+                    node = dump_ast(v, k)
+                    if node:
+                        ast_nodes.append(node)
+
+            print(json.dumps({"ast": ast_nodes}))
+
         else:
             archive_path = sys.argv[2]
 
