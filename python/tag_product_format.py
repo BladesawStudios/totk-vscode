@@ -5,7 +5,7 @@ import oead
 import yaml
 
 
-def to_editor_text(byml_doc: oead.byml.Hash) -> str:
+def to_editor_text(byml_doc: oead.byml.Dictionary) -> str:
     path_list = byml_doc["PathList"] if "PathList" in byml_doc else []
     tag_list = [str(x) for x in (byml_doc["TagList"] if "TagList" in byml_doc else [])]
 
@@ -81,7 +81,7 @@ def from_editor_text(editor_text: str, big_endian: bool, version: int) -> bytes:
         "TagList": cached_tag_list,
     }
 
-    byml_doc = oead.byml.Hash(byml_dict)
+    byml_doc = oead.byml.Dictionary(byml_dict)
     new_byml_bytes = oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)
 
     return new_byml_bytes

@@ -329,11 +329,9 @@ def read_byml_content(file_data, logical_path="", romfs_path=""):
                 py_doc["PTCL_JSON"] = ptcl_json
 
             # Convert py_doc back to oead format for text dumping.
-            # Actually, python byml produces pure python dicts, which oead.byml.to_text doesn't mind!
-            # Wait, oead.byml functions require oead types (like oead.byml.Hash).
             def py_to_oead(node):
                 if isinstance(node, dict):
-                    return oead.byml.Hash({k: py_to_oead(v) for k, v in node.items()})
+                    return oead.byml.Dictionary({k: py_to_oead(v) for k, v in node.items()})
                 elif isinstance(node, list):
                     return oead.byml.Array([py_to_oead(x) for x in node])
                 elif isinstance(node, b.Int):
@@ -430,7 +428,7 @@ def write_byml_bytes(orig_file_data, new_yaml, logical_path="", romfs_path=""):
         import byml.byml as b
 
         def oead_to_py(node):
-            if isinstance(node, oead.byml.Hash):
+            if isinstance(node, oead.byml.Dictionary):
                 return {k: oead_to_py(v) for k, v in node.items()}
             elif isinstance(node, oead.byml.Array):
                 return [oead_to_py(x) for x in node]

@@ -64,46 +64,54 @@ def _is_scalar(value) -> bool:
     return isinstance(value, SCALAR_TYPES)
 
 
+def _iter_array(node: oead.byml.Array):
+    """Iterate BYML arrays without triggering oead fork bugs on empty arrays."""
+    if len(node) == 0:
+        return
+    yield from node
+
+
 def _can_inline(node) -> bool:
     if isinstance(node, str) and "\n" in node:
         return False
-    if isinstance(node, (oead.byml.Hash, oead.byml.Array)):
+    if isinstance(node, (oead.byml.Dictionary, oead.byml.Array)):
         if len(node) > _MAX_COUNT:
             return False
-        if isinstance(node, oead.byml.Hash):
+        if isinstance(node, oead.byml.Dictionary):
             for key in node:
                 if not _can_inline(node[key]):
                     return False
             return True
-        else:
-            for item in node:
-                if not _can_inline(item):
-                    return False
-            return True
+        for item in _iter_array(node):
+            if not _can_inline(item):
+                return False
+        return True
     return True
 
 
 def _serialize_inline(node) -> str:
-    if isinstance(node, oead.byml.Hash):
+    if isinstance(node, oead.byml.Dictionary):
         entries = []
         for key in node:
             val_str = _serialize_inline(node[key])
             entries.append(f"{key}: {val_str}")
         return "{" + ", ".join(entries) + "}"
     elif isinstance(node, oead.byml.Array):
-        elements = [_serialize_inline(item) for item in node]
+        if len(node) == 0:
+            return "[]"
+        elements = [_serialize_inline(item) for item in _iter_array(node)]
         return "[" + ", ".join(elements) + "]"
     else:
         return _fmt_scalar(node, 0)
 
 
-def _serialize_hash_entries(node: oead.byml.Hash, indent: int) -> list[str]:
+def _serialize_hash_entries(node: oead.byml.Dictionary, indent: int) -> list[str]:
     sp = "  " * indent
     lines: list[str] = []
 
     for key in node:
         value = node[key]
-        if isinstance(value, (oead.byml.Hash, oead.byml.Array)):
+        if isinstance(value, (oead.byml.Dictionary, oead.byml.Array)):
             if _can_inline(value):
                 lines.append(f"{sp}{key}: {_serialize_inline(value)}")
             else:
@@ -115,7 +123,7 @@ def _serialize_hash_entries(node: oead.byml.Hash, indent: int) -> list[str]:
     return lines
 
 
-def _serialize_array_item_hash(item: oead.byml.Hash, indent: int) -> list[str]:
+def _serialize_array_item_hash(item: oead.byml.Dictionary, indent: int) -> list[str]:
     sp = "  " * indent
     keys = list(item.keys())
 
@@ -126,7 +134,7 @@ def _serialize_array_item_hash(item: oead.byml.Hash, indent: int) -> list[str]:
     first_key = keys[0]
     first_value = item[first_key]
 
-    if isinstance(first_value, (oead.byml.Hash, oead.byml.Array)):
+    if isinstance(first_value, (oead.byml.Dictionary, oead.byml.Array)):
         if _can_inline(first_value):
             lines.append(f"{sp}- {first_key}: {_serialize_inline(first_value)}")
         else:
@@ -137,7 +145,7 @@ def _serialize_array_item_hash(item: oead.byml.Hash, indent: int) -> list[str]:
 
     for key in keys[1:]:
         value = item[key]
-        if isinstance(value, (oead.byml.Hash, oead.byml.Array)):
+        if isinstance(value, (oead.byml.Dictionary, oead.byml.Array)):
             if _can_inline(value):
                 lines.append(f"{sp}  {key}: {_serialize_inline(value)}")
             else:
@@ -149,12 +157,12 @@ def _serialize_array_item_hash(item: oead.byml.Hash, indent: int) -> list[str]:
     return lines
 
 
-def _serialize_single_key_hash_item(item: oead.byml.Hash, key: str, indent: int) -> list[str]:
+def _serialize_single_key_hash_item(item: oead.byml.Dictionary, key: str, indent: int) -> list[str]:
     sp = "  " * indent
     value = item[key]
     lines: list[str] = []
 
-    if isinstance(value, (oead.byml.Hash, oead.byml.Array)):
+    if isinstance(value, (oead.byml.Dictionary, oead.byml.Array)):
         if _can_inline(value):
             lines.append(f"{sp}- {key}: {_serialize_inline(value)}")
         else:
@@ -169,7 +177,7 @@ def _serialize_single_key_hash_item(item: oead.byml.Hash, key: str, indent: int)
     return lines
 
 
-def _serialize_flat_hash_item(item: oead.byml.Hash, indent: int) -> list[str]:
+def _serialize_flat_hash_item(item: oead.byml.Dictionary, indent: int) -> list[str]:
     sp = "  " * indent
     keys = list(item.keys())
     lines: list[str] = []
@@ -183,20 +191,22 @@ def _serialize_flat_hash_item(item: oead.byml.Hash, indent: int) -> list[str]:
 
 
 def _serialize(node, indent: int = 0) -> list[str]:
-    if isinstance(node, (oead.byml.Hash, oead.byml.Array)):
+    if isinstance(node, (oead.byml.Dictionary, oead.byml.Array)):
         if _can_inline(node):
             sp = "  " * indent
             return [f"{sp}{_serialize_inline(node)}"]
 
-    if isinstance(node, oead.byml.Hash):
+    if isinstance(node, oead.byml.Dictionary):
         return _serialize_hash_entries(node, indent)
 
     if isinstance(node, oead.byml.Array):
         sp = "  " * indent
+        if len(node) == 0:
+            return [f"{sp}[]"]
         lines: list[str] = []
 
-        for item in node:
-            if isinstance(item, oead.byml.Hash):
+        for item in _iter_array(node):
+            if isinstance(item, oead.byml.Dictionary):
                 if _can_inline(item):
                     lines.append(f"{sp}- {_serialize_inline(item)}")
                 else:
