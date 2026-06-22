@@ -8,7 +8,7 @@ import { logger } from './logger';
 
 const VENV_DIR_NAME = 'python-env';
 const DEPS_MARKER = '.deps-installed';
-const MIN_PYTHON = [3, 10] as const;
+const MIN_PYTHON = [3, 13] as const;
 
 export type PythonLauncher = {
     executable: string;
@@ -186,9 +186,8 @@ function discoverInstalledPythonExecutables(): string[] {
     };
 
     for (const exe of resolveNamesViaShell([
-        'python3.12',
-        'python3.11',
-        'python3.10',
+        'python3.14',
+        'python3.13',
         'python3',
         'python',
         'py',
@@ -247,11 +246,11 @@ export function getSystemPythonCandidates(): PythonLauncher[] {
     if (process.platform === 'win32') {
         const pyPath = resolveNamesViaShell(['py'])[0];
         if (pyPath) {
-            for (const ver of ['-3.12', '-3.11', '-3.10', '-3']) {
+            for (const ver of ['-3.14', '-3.13', '-3']) {
                 add({ executable: pyPath, prefixArgs: [ver] });
             }
         } else {
-            for (const ver of ['-3.12', '-3.11', '-3.10', '-3']) {
+            for (const ver of ['-3.14', '-3.13', '-3']) {
                 add({ executable: 'py', prefixArgs: [ver] });
             }
         }
@@ -261,7 +260,7 @@ export function getSystemPythonCandidates(): PythonLauncher[] {
         add({ executable: exe, prefixArgs: [] });
     }
 
-    for (const name of ['python3.12', 'python3.11', 'python3.10', 'python3', 'python']) {
+    for (const name of ['python3.14', 'python3.13', 'python3', 'python']) {
         add({ executable: name, prefixArgs: [] });
     }
 
@@ -286,7 +285,7 @@ export function findSystemPython(): PythonLauncher | undefined {
                 logger.info(`Candidate selected: ${launcher.executable} (Version: ${version[0]}.${version[1]})`);
                 return launcher;
             } else {
-                logger.debug(`Candidate version ${version[0]}.${version[1]} is older than minimum supported version 3.10.`);
+                logger.debug(`Candidate version ${version[0]}.${version[1]} is older than minimum supported version 3.13.`);
             }
         } else {
             logger.debug(`Could not parse version for candidate: ${launcher.executable}`);
@@ -336,7 +335,7 @@ export async function configurePythonPath(
 
 export async function browseForPython(context: vscode.ExtensionContext): Promise<void> {
     const selection = await vscode.window.showOpenDialog({
-        title: 'Select python.exe (Python 3.10+)',
+        title: 'Select python.exe (Python 3.13+)',
         filters: process.platform === 'win32' ? { Python: ['exe'] } : undefined,
         canSelectMany: false,
     });
@@ -353,7 +352,7 @@ export async function pickDetectedPython(context: vscode.ExtensionContext): Prom
 
     if (supported.length === 0) {
         const failed = detected.length
-            ? 'Found Python installs, but none are version 3.10 or newer.'
+            ? 'Found Python installs, but none are version 3.13 or newer.'
             : 'No working Python installs were found. Use Browse if python3 works in CMD but not here.';
         void vscode.window.showErrorMessage(`TKVSC: ${failed}`);
         await browseForPython(context);
@@ -405,7 +404,7 @@ function installRequirements(venvPython: string, extensionPath: string): void {
         timeout: 300_000,
     });
     logger.info(`Installing packages from extension at path: ${extensionPath}`);
-    execFileSync(venvPython, ['-m', 'pip', 'install', extensionPath], {
+    execFileSync(venvPython, ['-m', 'pip', 'install', '--find-links', 'https://github.com/TKVSC-Team/oead/releases/expanded_assets/v1.4.2', extensionPath], {
         stdio: 'pipe',
         timeout: 600_000,
     });
@@ -452,7 +451,7 @@ async function bootstrapPython(context: vscode.ExtensionContext): Promise<string
     logger.info('Looking for system Python installations...');
     const basePython = findSystemPython();
     if (!basePython) {
-        logger.error('No supported system Python 3.10+ installation found. Cannot boot virtual environment.');
+        logger.error('No supported system Python 3.13+ installation found. Cannot boot virtual environment.');
         return undefined;
     }
     logger.info(`Supported base system Python found: ${basePython.executable} (args: ${basePython.prefixArgs.join(' ')})`);
@@ -533,7 +532,7 @@ export function ensurePythonEnvironment(
 
 export async function promptPythonSetup(context: vscode.ExtensionContext): Promise<void> {
     const choice = await vscode.window.showErrorMessage(
-        'TKVSC could not find Python 3.10+. VSCode often uses a different PATH than CMD - set the full path to python.exe, or pick from detected installs.',
+        'TKVSC could not find Python 3.13+. VSCode often uses a different PATH than CMD - set the full path to python.exe, or pick from detected installs.',
         'Pick Python',
         'Browse for python.exe',
         'Retry Setup',

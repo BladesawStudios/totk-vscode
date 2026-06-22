@@ -2,9 +2,9 @@
 name = "totk-vscode-python"
 version = "0.0.3b1"
 description = "Python scripts for TOTK VSCode extension"
-requires-python = "~=3.12"
+requires-python = ">=3.13"
 dependencies = [
-    "oead>=1.2.9.post4",
+    "oead>=1.4.2",
     "zstandard>=0.22.0",
     "mmh3>=4.0.0",
     "Pillow>=10.0.0",

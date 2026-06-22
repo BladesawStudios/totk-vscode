@@ -312,17 +312,8 @@ def read_byml_content(file_data, logical_path="", romfs_path=""):
     byml_doc = None
     try:
         byml_doc = oead.byml.from_binary(file_data)
-    except Exception as e:
-        if "version" in str(e).lower():
-            patched_data = bytearray(file_data)
-            if patched_data.startswith(b"BY"):
-                patched_data[2:4] = b"\x00\x04"
-            elif patched_data.startswith(b"YB"):
-                patched_data[2:4] = b"\x04\x00"
-            try:
-                byml_doc = oead.byml.from_binary(bytes(patched_data))
-            except Exception:
-                pass
+    except Exception:
+        pass
 
     if byml_doc is None:
         try:
@@ -476,20 +467,7 @@ def write_byml_bytes(orig_file_data, new_yaml, logical_path="", romfs_path=""):
         new_byml_bytes = writer.get_bytes()
         return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
 
-    try:
-        new_byml_bytes = oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)
-    except Exception as e:
-        if "version" in str(e).lower():
-            new_byml_bytes = bytearray(
-                oead.byml.to_binary(byml_doc, big_endian=big_endian, version=4)
-            )
-            if big_endian:
-                new_byml_bytes[2:4] = version.to_bytes(2, "big")
-            else:
-                new_byml_bytes[2:4] = version.to_bytes(2, "little")
-            new_byml_bytes = bytes(new_byml_bytes)
-        else:
-            raise e
+    new_byml_bytes = oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)
 
     return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
 

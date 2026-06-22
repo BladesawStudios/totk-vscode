@@ -82,19 +82,6 @@ def from_editor_text(editor_text: str, big_endian: bool, version: int) -> bytes:
     }
 
     byml_doc = oead.byml.Hash(byml_dict)
-    try:
-        new_byml_bytes = oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)
-    except Exception as e:
-        if "version" in str(e).lower():
-            new_byml_bytes = bytearray(
-                oead.byml.to_binary(byml_doc, big_endian=big_endian, version=4)
-            )
-            if big_endian:
-                new_byml_bytes[2:4] = version.to_bytes(2, "big")
-            else:
-                new_byml_bytes[2:4] = version.to_bytes(2, "little")
-            new_byml_bytes = bytes(new_byml_bytes)
-        else:
-            raise e
+    new_byml_bytes = oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)
 
     return new_byml_bytes
