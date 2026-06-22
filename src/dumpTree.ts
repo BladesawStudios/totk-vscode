@@ -320,43 +320,37 @@ class GameDumpSearchViewProvider implements vscode.WebviewViewProvider {
             this.treeProvider.getArchiveFilterQuery()
         );
 
-        webviewView.webview.onDidReceiveMessage((message: { type: string; query?: string; archiveQuery?: string }) => {
-            if (message.type === 'setQuery' || message.type === 'setArchiveQuery') {
+        webviewView.webview.onDidReceiveMessage((message: { type: string; query?: string; archivesOnly?: boolean }) => {
+            if (message.type === 'setQuery' || message.type === 'setArchivesOnly') {
                 if (this.debounceHandle) {
                     clearTimeout(this.debounceHandle);
                 }
                 this.debounceHandle = setTimeout(() => {
-                    if (message.query !== undefined) {
-                        this.treeProvider.setFilterQuery(message.query);
-                    }
-                    if (message.archiveQuery !== undefined) {
-                        this.treeProvider.setArchiveFilterQuery(message.archiveQuery);
+                    const q = message.query ?? '';
+                    const archivesOnly = message.archivesOnly ?? true;
+
+                    if (archivesOnly) {
+                        this.treeProvider.setFilterQuery('');
+                        this.treeProvider.setArchiveFilterQuery(q);
+                    } else {
+                        this.treeProvider.setFilterQuery(q);
+                        this.treeProvider.setArchiveFilterQuery('');
                     }
                 }, 120);
             }
             if (message.type === 'clear') {
                 this.treeProvider.clearFilterQuery();
-                this.postQuery('');
-            }
-            if (message.type === 'clearArchive') {
                 this.treeProvider.clearArchiveFilterQuery();
-                this.postArchiveQuery('');
+                this.postQuery('', true);
             }
         });
     }
 
-    postQuery(query: string): void {
+    postQuery(query: string, archivesOnly: boolean): void {
         if (!this.view) {
             return;
         }
-        void this.view.webview.postMessage({ type: 'setQuery', query });
-    }
-
-    postArchiveQuery(query: string): void {
-        if (!this.view) {
-            return;
-        }
-        void this.view.webview.postMessage({ type: 'setArchiveQuery', query });
+        void this.view.webview.postMessage({ type: 'setQuery', query, archivesOnly });
     }
 
     postStatus(status: string): void {
@@ -367,8 +361,10 @@ class GameDumpSearchViewProvider implements vscode.WebviewViewProvider {
     }
 
     private buildHtml(initialQuery: string, initialArchiveQuery: string): string {
-        const escaped = escapeHtml(initialQuery);
-        const escapedArchive = escapeHtml(initialArchiveQuery);
+        const queryVal = initialQuery || initialArchiveQuery;
+        const escaped = escapeHtml(queryVal);
+        const isInitial = !initialQuery && !initialArchiveQuery;
+        const archivesOnly = isInitial ? true : !!initialArchiveQuery;
         return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -395,8 +391,9 @@ class GameDumpSearchViewProvider implements vscode.WebviewViewProvider {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        margin-top: 8px;
     }
-    input {
+    input[type="text"] {
         flex: 1;
         height: 24px;
         border-radius: 4px;
@@ -406,7 +403,7 @@ class GameDumpSearchViewProvider implements vscode.WebviewViewProvider {
         padding: 0 8px;
         outline: none;
     }
-    input:focus {
+    input[type="text"]:focus {
         border-color: var(--vscode-focusBorder);
     }
     button {
@@ -422,6 +419,55 @@ class GameDumpSearchViewProvider implements vscode.WebviewViewProvider {
     button:hover {
         background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
     }
+    /* Switch styles */
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 28px;
+        height: 16px;
+        flex-shrink: 0;
+    }
+    .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: var(--vscode-input-background);
+        border: 1px solid var(--vscode-settings-checkboxBorder, var(--vscode-input-border, transparent));
+        transition: .2s;
+        border-radius: 16px;
+    }
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 10px;
+        width: 10px;
+        left: 2px;
+        bottom: 2px;
+        background-color: var(--vscode-foreground);
+        transition: .2s;
+        border-radius: 50%;
+    }
+    input:checked + .slider {
+        background-color: var(--vscode-button-background);
+        border-color: var(--vscode-button-background);
+    }
+    input:checked + .slider:before {
+        transform: translateX(12px);
+        background-color: var(--vscode-button-foreground);
+    }
+    .switch-label {
+        cursor: pointer;
+        user-select: none;
+        color: var(--vscode-foreground);
+    }
 </style>
 </head>
 <body>
@@ -429,44 +475,40 @@ class GameDumpSearchViewProvider implements vscode.WebviewViewProvider {
         <input id="q" type="text" value="${escaped}" placeholder="Filter game dump..." />
         <button id="clear" title="Clear">✕</button>
     </div>
-    <div class="row">
-        <input id="aq" type="text" value="${escapedArchive}" placeholder="Filter archives..." />
-        <button id="clearArchive" title="Clear">✕</button>
+    <div class="row" style="margin-top: 6px; padding: 0 2px;">
+        <label class="switch" title="Search only within archives">
+            <input type="checkbox" id="archivesOnly" ${archivesOnly ? 'checked' : ''} />
+            <span class="slider"></span>
+        </label>
+        <label for="archivesOnly" class="switch-label">Search within archives?</label>
     </div>
     <div id="status" class="status"></div>
     <script>
         const vscode = acquireVsCodeApi();
         const input = document.getElementById('q');
         const clear = document.getElementById('clear');
-        const archiveInput = document.getElementById('aq');
-        const clearArchive = document.getElementById('clearArchive');
+        const archivesOnlyCb = document.getElementById('archivesOnly');
         const status = document.getElementById('status');
 
         input.addEventListener('input', () => {
-            vscode.postMessage({ type: 'setQuery', query: input.value });
+            vscode.postMessage({ type: 'setQuery', query: input.value, archivesOnly: archivesOnlyCb.checked });
         });
+        
+        archivesOnlyCb.addEventListener('change', () => {
+            vscode.postMessage({ type: 'setArchivesOnly', query: input.value, archivesOnly: archivesOnlyCb.checked });
+        });
+
         clear.addEventListener('click', () => {
             input.value = '';
             vscode.postMessage({ type: 'clear' });
             input.focus();
         });
 
-        archiveInput.addEventListener('input', () => {
-            vscode.postMessage({ type: 'setArchiveQuery', archiveQuery: archiveInput.value });
-        });
-        clearArchive.addEventListener('click', () => {
-            archiveInput.value = '';
-            vscode.postMessage({ type: 'clearArchive' });
-            archiveInput.focus();
-        });
-
         window.addEventListener('message', (event) => {
             const msg = event.data;
             if (msg?.type === 'setQuery') {
-                input.value = msg.query ?? '';
-            }
-            if (msg?.type === 'setArchiveQuery') {
-                archiveInput.value = msg.query ?? '';
+                if (msg.query !== undefined) input.value = msg.query;
+                if (msg.archivesOnly !== undefined) archivesOnlyCb.checked = msg.archivesOnly;
             }
             if (msg?.type === 'setStatus') {
                 status.textContent = msg.status ?? '';
