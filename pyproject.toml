@@ -4,7 +4,7 @@ version = "0.0.3b1"
 description = "Python scripts for TOTK VSCode extension"
 requires-python = ">=3.13"
 dependencies = [
-    "oead>=1.4.2",
+    "tkvsc-oead>=1.4.3",
     "zstandard>=0.22.0",
     "mmh3>=4.0.0",
     "Pillow>=10.0.0",

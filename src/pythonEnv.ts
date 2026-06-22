@@ -404,7 +404,7 @@ function installRequirements(venvPython: string, extensionPath: string): void {
         timeout: 300_000,
     });
     logger.info(`Installing packages from extension at path: ${extensionPath}`);
-    execFileSync(venvPython, ['-m', 'pip', 'install', '--find-links', 'https://github.com/TKVSC-Team/oead/releases/expanded_assets/v1.4.3', extensionPath], {
+    execFileSync(venvPython, ['-m', 'pip', 'install', extensionPath], {
         stdio: 'pipe',
         timeout: 600_000,
     });
