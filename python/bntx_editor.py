@@ -180,6 +180,19 @@ class BntxEditor:
 
         dds = dds_io.parse_dds(dds_bytes)
 
+        # Small uncompressed formats are exported as editable RGBA8, so collapse
+        # an RGBA8 DDS back to the texture's native layout before writing.
+        if cur_key in dds_io._SMALL_RGBA8_EXPAND and dds.key == "rgba8":
+            native = [
+                dds_io.collapse_rgba8(
+                    cur_key, m, max(1, dds.width >> i) * max(1, dds.height >> i)
+                )
+                for i, m in enumerate(dds.mips)
+            ]
+            dds = dds_io.DdsImage(
+                dds.width, dds.height, len(native), cur_key, False, False, native
+            )
+
         if dds.key != cur_key:
             raise BntxImportError(
                 f"Format mismatch: texture is {cur_key.upper()} but DDS is {dds.key.upper()}. "

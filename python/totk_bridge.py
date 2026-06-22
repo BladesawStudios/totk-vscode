@@ -188,10 +188,15 @@ def _txtg_extract_linear_mips(txtg_bytes: bytes):
     format_id = _u16(txtg_bytes, 0x3C)
     texture_setting2 = _struct.unpack_from("<I", txtg_bytes, 0x44)[0]
 
-    key = dds_io.txtg_format_to_key(format_id)
-    if key is None:
-        return None
     _name, bpp, blk_w, blk_h, _dec = _resolve_format(format_id, texture_setting2)
+    if _dec == "astc":
+        key = f"astc{blk_w}x{blk_h}"
+    elif _dec in dds_io._BLOCK_INFO:
+        key = _dec
+    else:
+        key = dds_io.txtg_format_to_key(format_id)
+    if key is None or key not in dds_io._BLOCK_INFO:
+        return None
 
     surfaces = _read_surface_data(txtg_bytes, header_size, mip_count * array_count)
     bh0 = tsw.block_height_mip0(tsw.div_round_up(height, blk_h))
@@ -234,10 +239,14 @@ def _export_texture_dds_bytes(
         return None
     width, height, decoder_key, linear, _mip_count, format_id = extracted
     key = dds_io.bntx_format_to_key(format_id)
-    if key is None or not decoder_key.startswith("bc"):
+    if key is None or key not in dds_io._BLOCK_INFO:
         return None
     # extract_texture_linear returns mip 0; export it as a single-mip DDS.
     mip0 = linear[: dds_io.mip_linear_size(width, height, key)]
+    if key in dds_io._SMALL_RGBA8_EXPAND:
+        # Export as an editable RGBA8 DDS; import collapses it back.
+        rgba = dds_io.expand_to_rgba8(key, mip0, width * height)
+        return dds_io.build_dds(width, height, "rgba8", [rgba])
     is_srgb = (format_id & 0xFF) == 0x06
     is_snorm = (format_id & 0xFF) == 0x02
     return dds_io.build_dds(width, height, key, [mip0], is_srgb, is_snorm)

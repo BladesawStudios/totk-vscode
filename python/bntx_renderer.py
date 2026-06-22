@@ -22,7 +22,7 @@ _FORMAT_TABLE: dict[int, tuple[str, int, int, int, str]] = {
     0x09: ("R8G8_UNORM", 2, 1, 1, "rg8"),
     0x0B: ("R8G8B8A8", 4, 1, 1, "rgba8"),
     0x0C: ("B8G8R8A8", 4, 1, 1, "bgra8"),
-    0x0E: ("R10G10B10A2", 4, 1, 1, "rgba8"),
+    0x0E: ("R10G10B10A2", 4, 1, 1, "rgb10a2"),
     0x1A: ("BC1", 8, 4, 4, "bc1"),
     0x1B: ("BC2", 16, 4, 4, "bc3"),
     0x1C: ("BC3", 16, 4, 4, "bc3"),
@@ -217,6 +217,38 @@ def _decode_pixels(
 
     if decoder_key == "rgb565":
         return linear_data[: pixel_count * 2], "BGR;16"
+
+    if decoder_key == "rgba4":
+        import numpy as np
+
+        n = min(pixel_count, len(linear_data) // 2)
+        v = np.frombuffer(linear_data[: n * 2], dtype="<u2").astype(np.uint16)
+        out = np.zeros((pixel_count, 4), np.uint8)
+        a4 = (v >> 12) & 0xF
+        r4 = (v >> 8) & 0xF
+        g4 = (v >> 4) & 0xF
+        b4 = v & 0xF
+        out[:n, 0] = ((r4 << 4) | r4).astype(np.uint8)
+        out[:n, 1] = ((g4 << 4) | g4).astype(np.uint8)
+        out[:n, 2] = ((b4 << 4) | b4).astype(np.uint8)
+        out[:n, 3] = ((a4 << 4) | a4).astype(np.uint8)
+        return out.tobytes(), "RGBA"
+
+    if decoder_key == "rgb10a2":
+        import numpy as np
+
+        n = min(pixel_count, len(linear_data) // 4)
+        v = np.frombuffer(linear_data[: n * 4], dtype="<u4").astype(np.uint32)
+        out = np.zeros((pixel_count, 4), np.uint8)
+        r10 = v & 0x3FF
+        g10 = (v >> 10) & 0x3FF
+        b10 = (v >> 20) & 0x3FF
+        a2 = (v >> 30) & 0x3
+        out[:n, 0] = (r10 >> 2).astype(np.uint8)
+        out[:n, 1] = (g10 >> 2).astype(np.uint8)
+        out[:n, 2] = (b10 >> 2).astype(np.uint8)
+        out[:n, 3] = (a2 * 85).astype(np.uint8)
+        return out.tobytes(), "RGBA"
 
     try:
         import texture2ddecoder as t2d
