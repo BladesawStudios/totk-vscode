@@ -180,14 +180,10 @@ class BntxEditor:
         # an RGBA8 DDS back to the texture's native layout before writing.
         if cur_key in dds_io._SMALL_RGBA8_EXPAND and dds.key == "rgba8":
             native = [
-                dds_io.collapse_rgba8(
-                    cur_key, m, max(1, dds.width >> i) * max(1, dds.height >> i)
-                )
+                dds_io.collapse_rgba8(cur_key, m, max(1, dds.width >> i) * max(1, dds.height >> i))
                 for i, m in enumerate(dds.mips)
             ]
-            dds = dds_io.DdsImage(
-                dds.width, dds.height, len(native), cur_key, False, False, native
-            )
+            dds = dds_io.DdsImage(dds.width, dds.height, len(native), cur_key, False, False, native)
 
         if dds.key != cur_key:
             raise BntxImportError(

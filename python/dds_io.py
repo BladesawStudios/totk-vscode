@@ -26,8 +26,20 @@ from dataclasses import dataclass
 #  starting at 133, so UNORM = 134 + 4*index and SRGB = UNORM + 1.
 # ---------------------------------------------------------------------------
 _ASTC_BLOCKS = [
-    (4, 4), (5, 4), (5, 5), (6, 5), (6, 6), (8, 5), (8, 6), (8, 8),
-    (10, 5), (10, 6), (10, 8), (10, 10), (12, 10), (12, 12),
+    (4, 4),
+    (5, 4),
+    (5, 5),
+    (6, 5),
+    (6, 6),
+    (8, 5),
+    (8, 6),
+    (8, 8),
+    (10, 5),
+    (10, 6),
+    (10, 8),
+    (10, 10),
+    (12, 10),
+    (12, 12),
 ]
 
 
@@ -205,9 +217,7 @@ def parse_dds(data: bytes) -> DdsImage:
         a = struct.unpack_from("<I", data, 104)[0]
         matched = _match_uncompressed(rgb_bits, r, g, b, a)
         if matched is None:
-            raise ValueError(
-                f"Unsupported uncompressed DDS ({rgb_bits}bpp, R=0x{r:X} A=0x{a:X})."
-            )
+            raise ValueError(f"Unsupported uncompressed DDS ({rgb_bits}bpp, R=0x{r:X} A=0x{a:X}).")
         key = matched
     else:
         raise ValueError(f"Unrecognised DDS pixel format (fourcc={fourcc!r}).")
