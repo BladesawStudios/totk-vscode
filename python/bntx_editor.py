@@ -147,12 +147,11 @@ class BntxEditor:
     # -- DDS import ----------------------------------------------------------
 
     def import_dds(self, name: str, dds_bytes: bytes):
-        """Replace a texture's image data from a DDS file, in place.
+        """Replace a texture's image data from a DDS file.
 
-        The DDS must match the target texture's compression format family and
-        dimensions. The image data is re-swizzled and written over the existing
-        block-linear data, leaving the BNTX structure (string pool, relocation
-        table, pointers) untouched so the file stays valid.
+        The DDS must match the target texture's compression format family.
+        Dimensions and mip count may differ from the original; larger imports
+        relocate image data to the end of the file.
         """
         import dds_io
         import texture_swizzle as tsw
@@ -163,9 +162,6 @@ class BntxEditor:
         d = ptr + 0x10
 
         cur_format = self._read_fmt("I", d + self._OFF_FORMAT)
-        cur_width = self._read_fmt("i", d + self._OFF_WIDTH)
-        cur_height = self._read_fmt("i", d + self._OFF_HEIGHT)
-        cur_mip_count = self._read_fmt("H", d + self._OFF_MIP_COUNT)
         cur_image_size = self._read_fmt("I", d + self._OFF_IMAGE_SIZE)
         cur_alignment = self._read_fmt("I", d + self._OFF_ALIGNMENT) or 512
         tile_mode = self._read_fmt("H", d + self._OFF_TILE_MODE)
@@ -198,42 +194,50 @@ class BntxEditor:
                 f"Format mismatch: texture is {cur_key.upper()} but DDS is {dds.key.upper()}. "
                 f"Re-export the DDS as {cur_key.upper()}."
             )
-        if dds.width != cur_width or dds.height != cur_height:
-            raise BntxImportError(
-                f"Size mismatch: texture is {cur_width}x{cur_height} but DDS is "
-                f"{dds.width}x{dds.height}. Resize the DDS to match."
-            )
 
         bpb, blk_w, blk_h = dds.block_info
 
-        # Use as many mips as fit in the existing data region (no structural growth).
-        max_mips = min(dds.mip_count, cur_mip_count)
-        combined, _offsets, bh_log2, image_size = tsw.swizzle_surface_mipmaps(
+        max_mips = dds.mip_count
+        combined, offsets, bh_log2, image_size = tsw.swizzle_surface_mipmaps(
             dds.width, dds.height, blk_w, blk_h, bpb, max_mips, dds.mips[:max_mips], cur_alignment
         )
 
         data_base = self._data_base(d)
         if data_base <= 0 or data_base + cur_image_size > len(self._data):
             raise BntxImportError("Texture image data is outside the file bounds.")
-        if len(combined) > cur_image_size:
-            raise BntxImportError(
-                "Imported data is larger than the original texture region; "
-                "replacing with more mip levels than the original is not supported."
-            )
 
-        # Overwrite in place and zero any trailing slack so stale bytes do not leak.
-        self._data[data_base : data_base + len(combined)] = combined
-        if len(combined) < cur_image_size:
-            self._data[data_base + len(combined) : data_base + cur_image_size] = b"\x00" * (
-                cur_image_size - len(combined)
-            )
-
-        # Refresh the (already-relocated) mip pointer values for the mips we wrote.
         ptr_array = self._mip_ptr_array_addr(d)
-        for i in range(max_mips):
-            self._write_fmt("q", ptr_array + i * 8, data_base + _offsets[i])
 
+        if len(combined) <= cur_image_size:
+            # Overwrite in place and zero any trailing slack so stale bytes do not leak.
+            self._data[data_base : data_base + len(combined)] = combined
+            if len(combined) < cur_image_size:
+                self._data[data_base + len(combined) : data_base + cur_image_size] = b"\x00" * (
+                    cur_image_size - len(combined)
+                )
+            write_base = data_base
+            stored_image_size = image_size
+        else:
+            # Larger mip chain: relocate image data to the end of the file.
+            align = cur_alignment or 512
+            write_base = len(self._data)
+            pad = (align - (write_base % align)) % align
+            if pad:
+                self._data.extend(b"\x00" * pad)
+                write_base = len(self._data)
+            self._data.extend(combined)
+            if image_size > len(combined):
+                self._data.extend(b"\x00" * (image_size - len(combined)))
+            stored_image_size = image_size
+            self.file_size = len(self._data)
+
+        for i in range(max_mips):
+            self._write_fmt("q", ptr_array + i * 8, write_base + offsets[i])
+
+        self._write_fmt("i", d + self._OFF_WIDTH, dds.width)
+        self._write_fmt("i", d + self._OFF_HEIGHT, dds.height)
         self._write_fmt("H", d + self._OFF_MIP_COUNT, max_mips)
+        self._write_fmt("I", d + self._OFF_IMAGE_SIZE, stored_image_size)
 
         # Preserve the existing block-height layout bits, refresh the low 3 bits.
         layout = self._read_fmt("I", d + self._OFF_LAYOUT)

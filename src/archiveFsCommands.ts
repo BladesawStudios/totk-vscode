@@ -1168,7 +1168,7 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                 }
                 const targetUri = entry.resourceUri;
                 if (isBntxOrTexToGo(targetUri)) {
-                    void vscode.window.showWarningMessage('Replace is not supported for BNTX or TexToGo files.');
+                    await vscode.commands.executeCommand('totk-editor.importTextureDds', targetUri);
                     return;
                 }
 

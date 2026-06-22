@@ -3,8 +3,15 @@ import type { BntxTextureResult, BntxChannelInfo, BntxImageInfo, BntxMiscInfo } 
 import * as fs from 'fs';
 import * as path from 'path';
 
+interface PanelCallbacks {
+    onSave?: (data: any) => Promise<void>;
+    onImport?: () => Promise<void>;
+    onExport?: () => Promise<void>;
+}
+
 const panels = new Map<string, vscode.WebviewPanel>();
 const panelTempFiles = new Map<string, string>();
+const panelCallbacks = new Map<string, PanelCallbacks>();
 let extensionUri: vscode.Uri | undefined;
 
 export function initTextureViewer(extUri: vscode.Uri): void {
@@ -18,11 +25,14 @@ export function openTextureViewer(
     filePath?: string,
     onSave?: (data: any) => Promise<void>,
     onImport?: () => Promise<void>,
-    onExport?: () => Promise<void>
+    onExport?: () => Promise<void>,
+    panelKey?: string,
 ): void {
-    const key = textureName;
+    const key = panelKey ?? textureName;
+    panelCallbacks.set(key, { onSave, onImport, onExport });
+
     const existing = panels.get(key);
-    
+
     if (existing) {
         // We are replacing the content of an existing panel.
         // Clean up the previous temp file so it doesn't leak.
@@ -32,7 +42,7 @@ export function openTextureViewer(
                 fs.unlinkSync(oldTempFile);
             } catch { }
         }
-        
+
         if (result.pngPath) {
             panelTempFiles.set(key, result.pngPath);
         } else {
@@ -66,6 +76,7 @@ export function openTextureViewer(
     panels.set(key, panel);
     panel.onDidDispose(() => {
         panels.delete(key);
+        panelCallbacks.delete(key);
         const currentTempFile = panelTempFiles.get(key);
         if (currentTempFile) {
             try {
@@ -76,24 +87,25 @@ export function openTextureViewer(
     });
 
     panel.webview.onDidReceiveMessage(async (message) => {
-        if (message.type === 'save-metadata' && onSave) {
+        const callbacks = panelCallbacks.get(key);
+        if (message.type === 'save-metadata' && callbacks?.onSave) {
             try {
-                await onSave(message.data);
+                await callbacks.onSave(message.data);
                 vscode.window.showInformationMessage('Texture metadata saved successfully!');
             } catch (e) {
                 const err = e instanceof Error ? e.message : String(e);
                 vscode.window.showErrorMessage(`Failed to save metadata: ${err}`);
             }
-        } else if (message.type === 'import-dds' && onImport) {
+        } else if (message.type === 'import-dds' && callbacks?.onImport) {
             try {
-                await onImport();
+                await callbacks.onImport();
             } catch (e) {
                 const err = e instanceof Error ? e.message : String(e);
                 vscode.window.showErrorMessage(`DDS import failed: ${err}`);
             }
-        } else if (message.type === 'export-dds' && onExport) {
+        } else if (message.type === 'export-dds' && callbacks?.onExport) {
             try {
-                await onExport();
+                await callbacks.onExport();
             } catch (e) {
                 const err = e instanceof Error ? e.message : String(e);
                 vscode.window.showErrorMessage(`DDS export failed: ${err}`);
@@ -379,8 +391,8 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnl
     </div>
     <div class="props-panel">
         <div style="margin-bottom: 12px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;">
-            ${allowExport ? `<button class="save-btn" onclick="exportDds()">Export DDS</button>` : ''}
-            ${allowImport && !isReadOnly ? `<button class="save-btn" onclick="importDds()">Import DDS</button>` : ''}
+            ${allowExport ? `<button class="save-btn" onclick="exportDds()">Export Texture</button>` : ''}
+            ${allowImport && !isReadOnly ? `<button class="save-btn" onclick="importDds()">Import Texture</button>` : ''}
             ${!isReadOnly ? `<button class="save-btn" onclick="saveMetadata()">Save Changes</button>` : ''}
         </div>
         ${metaSections}

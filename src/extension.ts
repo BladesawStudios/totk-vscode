@@ -1257,7 +1257,7 @@ export async function activate(context: vscode.ExtensionContext) {
                     };
                     const onImport = isReadOnly ? undefined : () => importDdsIntoTexture(uri);
                     const onExport = () => exportFromArchiveSelection([uri]);
-                    openTextureViewer(texName, raw, diskArchive, filePath, onSaveCallback, onImport, onExport);
+                    openTextureViewer(texName, raw, diskArchive, filePath, onSaveCallback, onImport, onExport, uri.fsPath);
                 } else {
                     void vscode.window.showErrorMessage('Failed to load texture preview.');
                 }
