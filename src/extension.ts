@@ -34,6 +34,7 @@ import {
     isPathInsideArchive,
     isTxtgFile,
 } from './archives';
+import { initArchiveRegistry } from './archiveRegistry';
 import { registerDocumentLanguageModes } from './languageModes';
 import { getCoreExtensions } from './coreFsExtensions';
 import {
@@ -52,6 +53,7 @@ import {
 import { getGameIndexPaths, INDEX_SCHEMA_VERSION, migrateLegacyIndexFiles } from './indexPaths';
 import {
     detectProjectAdapter,
+    detectProjectAdapterAsync,
     getProjectAdapters,
 } from './projectAdapters/registry';
 import { createDiskDirectory, deleteDiskPath, renameDiskPath } from './diskFsOps';
@@ -101,6 +103,7 @@ import {
     createTkvscApi,
     getBridgeEnv,
     readRawBytes,
+    TkvscReadyEmitter,
     TKVSC_EXTENSION_ID,
     type TkvscApi,
 } from './api';
@@ -760,7 +763,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     logger.init(context);
     logger.info('Activating TKVSC extension...');
 
-    const onDidReadyEmitter = new vscode.EventEmitter<void>();
+    const onDidReadyEmitter = new TkvscReadyEmitter();
     context.subscriptions.push(onDidReadyEmitter);
     
     // Clean up leftover temp files from previous sessions
@@ -823,7 +826,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         getPython,
         getBridgeEnv,
         getProjectRoots: () =>
-            archiveTree?.workspaceRoots.map((root) => root.fsPath) ?? [],
+            archiveTree?.getProjectRoots().map((root) => root.fsPath) ?? [],
         onDidReadyEmitter,
         registerFormatHandler: (registration) => registerFormatHandler(context, registration),
         registerBridgeHandler: (registration) => registerBridgeHandler(context, registration),
@@ -832,6 +835,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         getGameProfile: (gameId) => getGameProfileRegistry().getProfile(gameId),
         registerProjectAdapter: (adapter) => registerProjectAdapterApi(adapter),
         detectProjectAdapter: (projectRootPath) => detectProjectAdapter(projectRootPath),
+        detectProjectAdapterAsync: (projectRootPath) => detectProjectAdapterAsync(projectRootPath),
         getProjectAdapters: () => getProjectAdapters(),
     });
 
@@ -1479,6 +1483,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     );
 
     // Start Python bootstrap in background so activation doesn't block the extension host.
+    let indexBuildsScheduled = false;
+    const scheduleIndexBuilds = (): void => {
+        if (indexBuildsScheduled) {
+            return;
+        }
+        indexBuildsScheduled = true;
+        void buildRomfsIndex();
+        void buildCanonicalIndex();
+        void importKnownProjectCanonicalPaths();
+    };
+
     logger.info('Starting Python background environment setup...');
     void ensurePythonEnvironment(context).then(async (python) => {
         if (!python) {
@@ -1487,9 +1502,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             return;
         }
         logger.info('Python background setup completed. Commencing search and canonical index building.');
-        void buildRomfsIndex();
-        void buildCanonicalIndex();
-        void importKnownProjectCanonicalPaths();
+        scheduleIndexBuilds();
 
         void runFirstTimeSetup(context);
     }).catch(async (err) => {
@@ -1510,9 +1523,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     void ensureProjectCanonicalOverlayExists(projectCanonicalOverlayPath);
     await migrateSarcWorkspaceFolders(archiveTree);
     onDidReadyEmitter.fire();
-    void buildRomfsIndex();
-    void buildCanonicalIndex();
-    void importKnownProjectCanonicalPaths();
+    if (getCachedPythonExecutable()) {
+        scheduleIndexBuilds();
+    }
 
     context.subscriptions.push(
         archiveTree.onDidChangeRoots(() => {
@@ -1552,6 +1565,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 event.affectsConfiguration('TKVSC.romfsPath')
                 || event.affectsConfiguration('TKVSC.activeGameId')
             ) {
+                initArchiveRegistry();
                 gameDumpTree?.setExternalIndexPath(romfsIndexPath());
                 void buildRomfsIndex();
                 void buildCanonicalIndex();

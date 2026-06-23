@@ -19,13 +19,14 @@ import type { CreateTkvscApiOptions, TkvscApi } from './types';
  * @see docs/api/v1.md
  */
 export { TKVSC_API_VERSION, TKVSC_ARCHIVE_CONTEXT, TKVSC_EXTENSION_ID, TKVSC_VIEWS } from './constants';
+export { TkvscReadyEmitter } from './readyEvent';
 export { getBridgeEnv } from './bridgeEnv';
 export { readRawBytes, writeRawBytes } from './rawFileIo';
 export { resolveProjectRoot } from './resolveProjectRoot';
 export type { TkvscApi, TkvscBridgeAccess, TkvscTreeItemLike } from './types';
 export type { FormatRegistration, BridgeHandlerRegistration } from '../formatRegistry';
-export type { GameProfile, GameProfileRegistration } from '../gameProfile';
-export type { ProjectAdapter, ProjectOptionRef } from '../projectAdapters/types';
+export type { GameProfile, GameProfileRegistration, GameIndexingConfig } from '../gameProfile';
+export type { ProjectAdapter, ProjectOptionRef, ProjectOptionPickResult } from '../projectAdapters/types';
 
 export function createTkvscApi(options: CreateTkvscApiOptions): TkvscApi {
     const ioContext = {
@@ -57,6 +58,7 @@ export function createTkvscApi(options: CreateTkvscApiOptions): TkvscApi {
         getGameProfile: options.getGameProfile,
         registerProjectAdapter: options.registerProjectAdapter,
         detectProjectAdapter: options.detectProjectAdapter,
+        detectProjectAdapterAsync: options.detectProjectAdapterAsync,
         getProjectAdapters: options.getProjectAdapters,
     };
 }

@@ -9,7 +9,7 @@ Programmatic API for companion VS Code extensions that extend [TKVSC](https://gi
 |----------|-------------|
 | **[v1.md](v1.md)** | **Complete API reference** (current) |
 | [CHANGELOG.md](CHANGELOG.md) | API version history |
-| [../addon-development.md](../addon-development.md) | Addon author guide and patterns |
+| [addon-development.md](addon-development.md) | Addon author guide and patterns |
 
 **Extension ID:** `TKVSC-Team.totk-vscode`  
 **Current API version:** `1` (`api.apiVersion`)

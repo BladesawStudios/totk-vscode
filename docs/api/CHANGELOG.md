@@ -87,6 +87,23 @@ Reference docs: [v1.md](v1.md)
 
 ---
 
+## v1 - Pre-merge fixes (additive / behavioral)
+
+**Fixed**
+
+- `onDidReady` replays for dependent addons that subscribe after `activate()` resolves
+- `contributes.tkvsc.archivePatterns` at manifest root merges onto `gameProfile.archivePatterns`
+- `getDiskArchivePath()` uses per-game archive patterns instead of a hardcoded TOTK extension list
+- `getProjectRoots()` returns logical active project paths (multi-mod aware)
+- `detectProjectAdapterAsync()` added for async `isProjectRoot` adapters
+- `TKVSC.activeGameId` changes refresh the archive pattern registry
+- `archiveFsCommands` uses adapter `contextValues` instead of hardcoded TKMM strings
+- Manifest parsing validates `contributes.tkvsc` shape instead of unchecked casts
+
+**Added exports** (`src/api/index.ts`): `GameIndexingConfig`, `ProjectOptionPickResult`, `TkvscReadyEmitter`
+
+---
+
 ## Template for future entries
 
 ```markdown

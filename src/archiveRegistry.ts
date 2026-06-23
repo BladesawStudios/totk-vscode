@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { getActiveGameId, getGameProfileRegistry } from './gameProfile';
 
 const DEFAULT_ARCHIVE_PATTERN = /\.(pack|sarc|genvb|blarc|bfarc|bntx)(\.zs)?$/i;
@@ -65,13 +66,32 @@ class ArchiveRegistry {
     }
 
     getDiskArchivePath(fsPath: string, gameId?: string): string {
-        const match = fsPath.replace(/\\/g, '/').match(
-            /^(.+?\.(pack|sarc|genvb|blarc|bfarc|bntx)(\.zs)?)(?=\/|$)/i,
-        );
-        if (match && this.isArchiveFileName(match[1]!.split('/').pop() ?? '', gameId)) {
-            return match[1]!;
+        const normalized = fsPath.replace(/\\/g, '/').replace(/\/+$/, '');
+        if (!normalized) {
+            return fsPath;
         }
-        return fsPath;
+
+        const segments = normalized.split('/').filter(Boolean);
+        if (segments.length === 0) {
+            return fsPath;
+        }
+
+        let lastArchiveIndex = -1;
+        for (let i = 0; i < segments.length; i++) {
+            if (this.isArchiveFileName(segments[i]!, gameId)) {
+                lastArchiveIndex = i;
+            }
+        }
+
+        if (lastArchiveIndex < 0) {
+            return fsPath;
+        }
+
+        const prefix = segments.slice(0, lastArchiveIndex + 1).join('/');
+        if (/^[a-zA-Z]:/.test(normalized)) {
+            return prefix.replace(/\//g, path.sep);
+        }
+        return prefix;
     }
 }
 

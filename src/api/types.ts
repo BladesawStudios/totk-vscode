@@ -4,6 +4,7 @@ import type { FormatRegistration, BridgeHandlerRegistration } from '../formatReg
 import type { GameProfile, GameProfileRegistration } from '../gameProfile';
 import type { ProjectAdapter } from '../projectAdapters/types';
 import type { TKVSC_API_VERSION, TKVSC_ARCHIVE_CONTEXT, TKVSC_VIEWS } from './constants';
+import type { TkvscReadyEmitter } from './readyEvent';
 
 export type TkvscTreeItemLike = {
     contextValue?: string;
@@ -28,7 +29,7 @@ export interface TkvscApi {
     readonly extensionId: string;
     readonly views: typeof TKVSC_VIEWS;
     readonly contextValues: typeof TKVSC_ARCHIVE_CONTEXT;
-    /** Fires after the projects archive tree is registered at startup. */
+    /** Fires after the projects archive tree is registered. Replays for late subscribers. */
     readonly onDidReady: vscode.Event<void>;
     /** @see docs/api/v1.md#resolveprojectrootitem */
     resolveProjectRoot(item: unknown): string | undefined;
@@ -54,6 +55,8 @@ export interface TkvscApi {
     registerProjectAdapter(adapter: ProjectAdapter): vscode.Disposable;
     /** @see docs/api/v1.md#detectprojectadapterprojectrootpath */
     detectProjectAdapter(projectRootPath: string): ProjectAdapter;
+    /** Async variant when {@link ProjectAdapter.isProjectRoot} returns a Promise. */
+    detectProjectAdapterAsync(projectRootPath: string): Promise<ProjectAdapter>;
     /** @see docs/api/v1.md#getprojectadapters */
     getProjectAdapters(): ProjectAdapter[];
 }
@@ -64,7 +67,7 @@ export interface CreateTkvscApiOptions {
     getPython: () => string;
     getBridgeEnv: () => NodeJS.ProcessEnv;
     getProjectRoots: () => string[];
-    onDidReadyEmitter: vscode.EventEmitter<void>;
+    onDidReadyEmitter: TkvscReadyEmitter;
     registerFormatHandler: (registration: FormatRegistration) => vscode.Disposable;
     registerBridgeHandler: (registration: BridgeHandlerRegistration) => vscode.Disposable;
     registerGameProfile: (registration: GameProfileRegistration) => vscode.Disposable;
@@ -72,5 +75,6 @@ export interface CreateTkvscApiOptions {
     getGameProfile: (gameId: string) => GameProfile | undefined;
     registerProjectAdapter: (adapter: ProjectAdapter) => vscode.Disposable;
     detectProjectAdapter: (projectRootPath: string) => ProjectAdapter;
+    detectProjectAdapterAsync: (projectRootPath: string) => Promise<ProjectAdapter>;
     getProjectAdapters: () => ProjectAdapter[];
 }

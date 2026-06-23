@@ -83,6 +83,37 @@ class ProjectAdapterRegistry {
 
 const registry = new ProjectAdapterRegistry();
 
+export function isAdapterOptionsContextValue(contextValue: string | undefined): boolean {
+    if (!contextValue) {
+        return false;
+    }
+    for (const adapter of registry.getAll()) {
+        const values = adapter.contextValues;
+        if (
+            contextValue === values.optionsRoot
+            || contextValue === values.optionGroup
+            || contextValue === values.option
+            || contextValue === values.optionActive
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+export function isAdapterOptionFolderContextValue(contextValue: string | undefined): boolean {
+    if (!contextValue) {
+        return false;
+    }
+    for (const adapter of registry.getAll()) {
+        const values = adapter.contextValues;
+        if (contextValue === values.optionGroup || contextValue === values.option) {
+            return true;
+        }
+    }
+    return false;
+}
+
 export function initProjectAdapterRegistry(): void {
     registry.initBuiltin();
 }
@@ -133,7 +164,7 @@ export function getActiveProjectOption(
 export async function askForProjectOption(
     projectRoot: string,
 ): Promise<ReturnType<ProjectAdapter['askForOption']>> {
-    const adapter = detectProjectAdapter(projectRoot);
+    const adapter = await detectProjectAdapterAsync(projectRoot);
     return adapter.askForOption(projectRoot);
 }
 

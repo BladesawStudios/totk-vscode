@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import {
     contributionToBridgeHandlers,
+    mergeArchivePatternLists,
     parseTkvscContribution,
     type TkvscManifestContribution,
 } from './addonManifest';
-import { initArchiveRegistry, registerArchivePattern } from './archiveRegistry';
+import { initArchiveRegistry } from './archiveRegistry';
 import {
     getGameProfileRegistry,
     initGameProfileRegistry,
@@ -40,21 +41,33 @@ function applyManifestContribution(
     source: 'manifest' | 'api',
 ): void {
     const formatRegistry = getFormatRegistry();
-    const gameId = contribution.gameProfile?.id ?? contribution.id;
+    const registry = getGameProfileRegistry();
 
     if (contribution.gameProfile) {
         const profile: GameProfileRegistration = {
             ...contribution.gameProfile,
             id: contribution.gameProfile.id ?? contribution.id ?? contribution.gameProfile.id,
+            archivePatterns: mergeArchivePatternLists(
+                contribution.gameProfile.archivePatterns,
+                contribution.archivePatterns,
+            ),
         };
         if (profile.id) {
-            getGameProfileRegistry().registerProfile(profile, source);
+            registry.registerProfile(profile, source);
         }
-    }
-
-    if (gameId && contribution.archivePatterns?.length) {
-        for (const pattern of contribution.archivePatterns) {
-            registerArchivePattern(gameId, pattern);
+    } else if (contribution.id && contribution.archivePatterns?.length) {
+        const existing = registry.getProfile(contribution.id);
+        if (existing) {
+            registry.registerProfile(
+                {
+                    ...existing,
+                    archivePatterns: mergeArchivePatternLists(
+                        existing.archivePatterns,
+                        contribution.archivePatterns,
+                    ),
+                },
+                existing.source,
+            );
         }
     }
 
