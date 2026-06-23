@@ -1,10 +1,13 @@
 import * as path from 'path';
 import type { FormatRegistration, BridgeHandlerRegistration } from './formatRegistry';
+import type { GameProfileRegistration } from './gameProfile';
 
 export interface TkvscManifestContribution {
     id?: string;
+    gameProfile?: GameProfileRegistration;
     formats?: FormatRegistration[];
     aampExtensions?: string[];
+    archivePatterns?: string[];
     bridgeHandlers?: Array<{
         kind: string;
         modulePath: string;

@@ -49,7 +49,7 @@ from xlink_io import (
     read_xlnk_content,
     write_xlnk_bytes,
 )
-from zstd_totk import compress_container, decompress_container
+from compression import compress_container, decompress_container
 
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stdin.reconfigure(encoding="utf-8")
@@ -253,7 +253,10 @@ def _export_texture_dds_bytes(
 
 
 def get_romfs_path():
-    return os.environ.get("TOTK_EDITOR_ROMFS", "").strip()
+    return (
+        os.environ.get("TKVSC_ROMFS", "").strip()
+        or os.environ.get("TOTK_EDITOR_ROMFS", "").strip()
+    )
 
 
 def load_sarc(archive_path):

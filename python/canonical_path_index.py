@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 
 from archive_resolve import list_archive_files
-from romfs_index import _ARCHIVE_EXTENSIONS
+from romfs_index import get_archive_extensions
 
 
 def _normalize_rel(path_value: str) -> str:
@@ -16,12 +16,12 @@ def _normalize_rel(path_value: str) -> str:
 
 def _is_archive_file(name: str) -> bool:
     lower = name.lower()
-    return any(lower.endswith(ext) for ext in _ARCHIVE_EXTENSIONS)
+    return any(lower.endswith(ext) for ext in get_archive_extensions())
 
 
 def build_canonical_path_index(romfs_path: str, output_path: str) -> dict:
     if not romfs_path:
-        raise ValueError("TOTK_EDITOR_ROMFS is not set.")
+        raise ValueError("TKVSC_ROMFS is not set.")
 
     romfs_root = Path(romfs_path)
     if not romfs_root.is_dir():
@@ -56,6 +56,9 @@ def build_canonical_path_index(romfs_path: str, output_path: str) -> dict:
 
     normalized_root = _normalize_rel(str(romfs_root.resolve()))
     conn.execute("INSERT INTO meta (key, value) VALUES ('root', ?)", (normalized_root,))
+    game_id = os.environ.get("TKVSC_GAME_ID", "totk").strip() or "totk"
+    conn.execute("INSERT INTO meta (key, value) VALUES ('gameId', ?)", (game_id,))
+    conn.execute("INSERT INTO meta (key, value) VALUES ('schemaVersion', ?)", ("4",))
 
     row_count = 0
     batch: list[tuple[str, str]] = []

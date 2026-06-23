@@ -1,6 +1,8 @@
 import type * as vscode from 'vscode';
 import type { runBridgeJsonAsync } from '../bridge';
 import type { FormatRegistration, BridgeHandlerRegistration } from '../formatRegistry';
+import type { GameProfile, GameProfileRegistration } from '../gameProfile';
+import type { ProjectAdapter } from '../projectAdapters/types';
 import type { TKVSC_API_VERSION, TKVSC_ARCHIVE_CONTEXT, TKVSC_VIEWS } from './constants';
 
 export type TkvscTreeItemLike = {
@@ -42,6 +44,18 @@ export interface TkvscApi {
     registerFormatHandler(registration: FormatRegistration): vscode.Disposable;
     /** @see docs/api/v1.md#registerbridgehandlerregistration */
     registerBridgeHandler(registration: BridgeHandlerRegistration): vscode.Disposable;
+    /** @see docs/api/v1.md#registergameprofileregistration */
+    registerGameProfile(registration: GameProfileRegistration): vscode.Disposable;
+    /** @see docs/api/v1.md#getactivegameprofile */
+    getActiveGameProfile(): GameProfile;
+    /** @see docs/api/v1.md#getgameprofilegameid */
+    getGameProfile(gameId: string): GameProfile | undefined;
+    /** @see docs/api/v1.md#registerprojectadapteradapter */
+    registerProjectAdapter(adapter: ProjectAdapter): vscode.Disposable;
+    /** @see docs/api/v1.md#detectprojectadapterprojectrootpath */
+    detectProjectAdapter(projectRootPath: string): ProjectAdapter;
+    /** @see docs/api/v1.md#getprojectadapters */
+    getProjectAdapters(): ProjectAdapter[];
 }
 
 export interface CreateTkvscApiOptions {
@@ -53,4 +67,10 @@ export interface CreateTkvscApiOptions {
     onDidReadyEmitter: vscode.EventEmitter<void>;
     registerFormatHandler: (registration: FormatRegistration) => vscode.Disposable;
     registerBridgeHandler: (registration: BridgeHandlerRegistration) => vscode.Disposable;
+    registerGameProfile: (registration: GameProfileRegistration) => vscode.Disposable;
+    getActiveGameProfile: () => GameProfile;
+    getGameProfile: (gameId: string) => GameProfile | undefined;
+    registerProjectAdapter: (adapter: ProjectAdapter) => vscode.Disposable;
+    detectProjectAdapter: (projectRootPath: string) => ProjectAdapter;
+    getProjectAdapters: () => ProjectAdapter[];
 }

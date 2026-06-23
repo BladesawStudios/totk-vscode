@@ -51,7 +51,7 @@ export async function activate(context: vscode.ExtensionContext) {
 | Model | When to use |
 |-------|-------------|
 | **Standard VS Code contributes** | Commands, menus, custom editors, grammars, settings — no TKVSC API required beyond optional helpers |
-| **`contributes.tkvsc` manifest** | Declarative file formats, AAMP extensions, Python bridge handlers — scanned at core startup |
+| **`contributes.tkvsc` manifest** | Declarative file formats, game profiles, AAMP extensions, archive patterns, Python bridge handlers |
 | **TKVSC programmatic API** | Project tree context, raw file I/O inside archives, Python bridge access, runtime format registration |
 
 ## Declarative formats (`contributes.tkvsc`)
@@ -103,6 +103,69 @@ api.registerBridgeHandler({
 
 See [api/v1.md](api/v1.md) for full field reference.
 
+## Game addons (`gameProfile`)
+
+Game addons register a profile so TKVSC knows how to validate dumps, compress `.zs` files, and index archives:
+
+```json
+{
+  "contributes": {
+    "tkvsc": {
+      "id": "splatoon3",
+      "gameProfile": {
+        "displayName": "Splatoon 3",
+        "romfsSentinel": "Pack/TitleBG.pack",
+        "compressionBackend": "plain-zstd-yaz0",
+        "romfsSettingsKey": "splatoon3.romfsPath",
+        "indexing": {
+          "enableRomfsSearch": true,
+          "enableCanonicalPaths": false
+        }
+      },
+      "archivePatterns": ["\\.(pack|sarc|genvb)(\\.zs)?$"],
+      "formats": [
+        { "extensions": ["byml", "bgyml"], "handler": "byml", "language": "byml", "editable": true }
+      ]
+    },
+    "configuration": {
+      "title": "Splatoon 3 (TKVSC)",
+      "properties": {
+        "TKVSC.splatoon3.romfsPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to your Splatoon 3 RomFS dump."
+        }
+      }
+    }
+  }
+}
+```
+
+Users switch the active profile with `TKVSC.activeGameId`. Each game gets its own search index under `globalStorage/indexes/{gameId}/`.
+
+TOTK remains the built-in default (`config/games/totk.json`); canonical path sync is TOTK-specific and should be disabled for other games.
+
+## Project adapters (`ProjectAdapter`)
+
+Use a **project adapter** when your mod tool uses a different folder layout than TKMM (e.g. BCML, loose romfs projects):
+
+```typescript
+const api = await vscode.extensions.getExtension('TKVSC-Team.totk-vscode')?.activate();
+
+api.registerProjectAdapter(myBcmlAdapter);
+```
+
+Each adapter implements:
+
+- **Detection** — `isProjectRoot(path)` 
+- **Options tree** — `optionsDirName`, `contextValues` for menu `when` clauses
+- **Import** — optional `importProjects()` (like TKMM `recent.json`)
+- **Scaffold** — optional `scaffoldNewProject()` for “create project” flows
+
+TKMM is the built-in adapter (`id: 'tkmm'`). `resolveProjectRoot()` and the Projects sidebar consult whichever adapter matches the folder.
+
+See [`src/projectAdapters/tkmmAdapter.ts`](../src/projectAdapters/tkmmAdapter.ts) as the reference implementation.
+
 ## Common patterns
 
 ### Context menu on a project root
@@ -139,7 +202,7 @@ Works for `sarc://`, `totk-disk://`, and `file://` URIs that point inside nested
 
 | Document | Description |
 |----------|-------------|
-| [api/v1.md](api/v1.md) | **Current** — API reference (Phase 1 + Phase 2 format registration) |
+| [api/v1.md](api/v1.md) | **Current** — API reference (Phases 1–4) |
 | [api/CHANGELOG.md](api/CHANGELOG.md) | API version history |
 
 When new API versions ship, a new `vN.md` is added. Breaking changes bump `api.apiVersion`.

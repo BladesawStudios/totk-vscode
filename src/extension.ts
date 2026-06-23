@@ -36,7 +36,24 @@ import {
 } from './archives';
 import { registerDocumentLanguageModes } from './languageModes';
 import { getCoreExtensions } from './coreFsExtensions';
-import { initAddonRegistries, registerBridgeHandler, registerFormatHandler } from './addonRegistry';
+import {
+    initAddonRegistries,
+    registerBridgeHandler,
+    registerFormatHandler,
+    registerGameProfileApi,
+    registerProjectAdapterApi,
+} from './addonRegistry';
+import {
+    getActiveGameProfile,
+    getActiveGameId,
+    getGameProfileRegistry,
+    isRomfsPathValid,
+} from './gameProfile';
+import { getGameIndexPaths, INDEX_SCHEMA_VERSION, migrateLegacyIndexFiles } from './indexPaths';
+import {
+    detectProjectAdapter,
+    getProjectAdapters,
+} from './projectAdapters/registry';
 import { createDiskDirectory, deleteDiskPath, renameDiskPath } from './diskFsOps';
 import {
     focusArchiveSidebar,
@@ -750,6 +767,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     cleanupOldTempFiles();
     
     initAddonRegistries(context);
+    void migrateLegacyIndexFiles(context.globalStorageUri.fsPath);
     initTextureViewer(context.extensionUri);
     initAudioViewer(context.extensionUri);
     initBarsViewer(context.extensionUri);
@@ -809,6 +827,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         onDidReadyEmitter,
         registerFormatHandler: (registration) => registerFormatHandler(context, registration),
         registerBridgeHandler: (registration) => registerBridgeHandler(context, registration),
+        registerGameProfile: (registration) => registerGameProfileApi(context, registration),
+        getActiveGameProfile: () => getActiveGameProfile(),
+        getGameProfile: (gameId) => getGameProfileRegistry().getProfile(gameId),
+        registerProjectAdapter: (adapter) => registerProjectAdapterApi(adapter),
+        detectProjectAdapter: (projectRootPath) => detectProjectAdapter(projectRootPath),
+        getProjectAdapters: () => getProjectAdapters(),
     });
 
     const getRawFontBytes = (uri: vscode.Uri) => readRawBytes(uri, rawFileIoContext);
@@ -820,24 +844,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             provideTextDocumentContent: () => 'Font preview not supported as text.',
         })
     );
-    const romfsIndexPath = path.join(context.globalStorageUri.fsPath, 'romfs-index.sqlite');
-    const canonicalIndexPath = path.join(context.globalStorageUri.fsPath, 'canonical-paths.sqlite');
+    const activeGameId = () => getActiveGameId();
+    const gameIndexPaths = () => getGameIndexPaths(context.globalStorageUri.fsPath, activeGameId());
+    const romfsIndexPath = () => gameIndexPaths().romfsIndex;
+    const canonicalIndexPath = () => gameIndexPaths().canonicalIndex;
     const projectCanonicalOverlayPath = path.join(
         context.globalStorageUri.fsPath,
         'canonical-project-overlays.sqlite',
     );
-    const romfsIndexStatePath = path.join(context.globalStorageUri.fsPath, 'romfs-index.state.json');
-    const canonicalIndexStatePath = path.join(context.globalStorageUri.fsPath, 'canonical-paths.state.json');
+    const romfsIndexStatePath = () => gameIndexPaths().romfsIndexState;
+    const canonicalIndexStatePath = () => gameIndexPaths().canonicalIndexState;
     const ROMFS_INDEX_STATE_KEY = 'totk-editor.romfsIndexState';
     const CANONICAL_INDEX_STATE_KEY = 'totk-editor.canonicalIndexState';
-    const ROMFS_INDEX_SCHEMA_VERSION = 3;
-    const CANONICAL_INDEX_SCHEMA_VERSION = 3;
+    const ROMFS_INDEX_SCHEMA_VERSION = INDEX_SCHEMA_VERSION;
+    const CANONICAL_INDEX_SCHEMA_VERSION = INDEX_SCHEMA_VERSION;
     const PROJECT_CANONICAL_IMPORT_SCHEMA_VERSION = 3;
     let romfsIndexBuildPromise: Promise<void> | undefined;
     let canonicalIndexBuildPromise: Promise<void> | undefined;
     let gameDumpTree: ReturnType<typeof registerGameDumpTree> | undefined;
 
     const shouldPropagateCanonicalSaves = (): boolean => {
+        const profile = getActiveGameProfile();
+        if (profile.indexing?.enableCanonicalPaths === false) {
+            return false;
+        }
         const config = vscode.workspace.getConfiguration('TKVSC');
         return config.get<boolean>('enableCanonicalSavePropagation', true);
     };
@@ -854,7 +884,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         return config.get<string[]>('canonicalSyncFileExtensionBlacklist', []);
     };
 
-    type IndexState = { romfsPath: string; schemaVersion: number };
+    type IndexState = { romfsPath: string; schemaVersion: number; gameId?: string };
 
     const readIndexState = (
         key: string,
@@ -873,6 +903,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             return {
                 romfsPath: normalizePath(parsed.romfsPath),
                 schemaVersion: parsed.schemaVersion,
+                gameId: typeof parsed.gameId === 'string' ? parsed.gameId : undefined,
             };
         } catch {
             return undefined;
@@ -884,10 +915,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         statePath: string,
         romfsPath: string,
         schemaVersion: number,
+        gameId: string,
     ): Promise<void> => {
         const state: IndexState = {
             romfsPath: normalizePath(romfsPath),
             schemaVersion,
+            gameId,
         };
         await context.globalState.update(key, state);
         await fs.promises.mkdir(path.dirname(statePath), { recursive: true });
@@ -898,6 +931,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         dbPath: string,
         romfsPath: string,
         schemaVersion: number,
+        gameId: string,
         stateKey: string,
         statePath: string,
     ): boolean => {
@@ -911,6 +945,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         if (state.schemaVersion !== schemaVersion) {
             return true;
         }
+        if (state.gameId && state.gameId !== gameId) {
+            return true;
+        }
         return !pathsEqual(state.romfsPath, romfsPath);
     };
 
@@ -918,17 +955,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         if (romfsIndexBuildPromise) {
             return romfsIndexBuildPromise;
         }
+        const profile = getActiveGameProfile();
+        if (!profile.indexing?.enableRomfsSearch) {
+            return;
+        }
         const romfsPath = resolveRomfsPath();
         const pythonExe = getPython();
+        const gameId = activeGameId();
         if (!romfsPath || !pythonExe || !gameDumpTree) {
             return;
         }
         if (!force && !shouldRebuildIndex(
-            romfsIndexPath,
+            romfsIndexPath(),
             romfsPath,
             ROMFS_INDEX_SCHEMA_VERSION,
+            gameId,
             ROMFS_INDEX_STATE_KEY,
-            romfsIndexStatePath,
+            romfsIndexStatePath(),
         )) {
             return;
         }
@@ -942,20 +985,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             },
             async () => {
                 try {
-                    logger.info(`Starting RomFS search index build at: ${romfsIndexPath}`);
-                    await fs.promises.mkdir(context.globalStorageUri.fsPath, { recursive: true });
+                    const indexPath = romfsIndexPath();
+                    logger.info(`Starting RomFS search index build at: ${indexPath}`);
+                    await fs.promises.mkdir(path.dirname(indexPath), { recursive: true });
                     await runBridgeJsonAsync<{ path: string; count: number }>(
                         pythonExe,
                         bridgePath,
-                        ['build-romfs-index', romfsIndexPath],
+                        ['build-romfs-index', indexPath],
                         undefined,
                         getBridgeEnv(),
                     );
                     await writeIndexState(
                         ROMFS_INDEX_STATE_KEY,
-                        romfsIndexStatePath,
+                        romfsIndexStatePath(),
                         romfsPath,
                         ROMFS_INDEX_SCHEMA_VERSION,
+                        gameId,
                     );
                     logger.info('RomFS search index built successfully.');
                     gameDumpTree?.onExternalIndexUpdated();
@@ -974,17 +1019,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         if (canonicalIndexBuildPromise) {
             return canonicalIndexBuildPromise;
         }
+        const profile = getActiveGameProfile();
+        if (!profile.indexing?.enableCanonicalPaths) {
+            return;
+        }
         const romfsPath = resolveRomfsPath();
         const pythonExe = getPython();
+        const gameId = activeGameId();
         if (!romfsPath || !pythonExe) {
             return;
         }
         if (!force && !shouldRebuildIndex(
-            canonicalIndexPath,
+            canonicalIndexPath(),
             romfsPath,
             CANONICAL_INDEX_SCHEMA_VERSION,
+            gameId,
             CANONICAL_INDEX_STATE_KEY,
-            canonicalIndexStatePath,
+            canonicalIndexStatePath(),
         )) {
             return;
         }
@@ -997,20 +1048,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             },
             async () => {
                 try {
-                    logger.info(`Starting canonical path index build at: ${canonicalIndexPath}`);
-                    await fs.promises.mkdir(context.globalStorageUri.fsPath, { recursive: true });
+                    const indexPath = canonicalIndexPath();
+                    logger.info(`Starting canonical path index build at: ${indexPath}`);
+                    await fs.promises.mkdir(path.dirname(indexPath), { recursive: true });
                     await runBridgeJsonAsync<{ path: string; count: number }>(
                         pythonExe,
                         bridgePath,
-                        ['build-canonical-path-index', canonicalIndexPath],
+                        ['build-canonical-path-index', indexPath],
                         undefined,
                         getBridgeEnv(),
                     );
                     await writeIndexState(
                         CANONICAL_INDEX_STATE_KEY,
-                        canonicalIndexStatePath,
+                        canonicalIndexStatePath(),
                         romfsPath,
                         CANONICAL_INDEX_SCHEMA_VERSION,
+                        gameId,
                     );
                     logger.info('Canonical path index built successfully.');
                     invalidateCanonicalPathIndex();
@@ -1040,7 +1093,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         await propagateCanonicalSave({
             enabled: shouldPropagateCanonicalSaves(),
             romfsPath,
-            canonicalIndexPath,
+            canonicalIndexPath: canonicalIndexPath(),
             bridgePath,
             pythonExecutable: pythonExe,
             bridgeEnv: getBridgeEnv(),
@@ -1100,7 +1153,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         importSchemaVersion: PROJECT_CANONICAL_IMPORT_SCHEMA_VERSION,
                         shouldIncludeCanonicalPath: async (canonicalPath: string) => {
                             const existsInBase = await hasBaseCanonicalPath(
-                                canonicalIndexPath,
+                                canonicalIndexPath(),
                                 romfsPath,
                                 canonicalPath,
                             );
@@ -1453,7 +1506,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
     archiveTree = registerArchiveTree(context);
     gameDumpTree = registerGameDumpTree(context, archiveTree, () => importKnownProjectCanonicalPaths());
-    gameDumpTree.setExternalIndexPath(romfsIndexPath);
+    gameDumpTree.setExternalIndexPath(romfsIndexPath());
     void ensureProjectCanonicalOverlayExists(projectCanonicalOverlayPath);
     await migrateSarcWorkspaceFolders(archiveTree);
     onDidReadyEmitter.fire();
@@ -1495,7 +1548,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {
-            if (event.affectsConfiguration('TKVSC.romfsPath')) {
+            if (
+                event.affectsConfiguration('TKVSC.romfsPath')
+                || event.affectsConfiguration('TKVSC.activeGameId')
+            ) {
+                gameDumpTree?.setExternalIndexPath(romfsIndexPath());
                 void buildRomfsIndex();
                 void buildCanonicalIndex();
                 invalidateCanonicalPathIndex();
@@ -1799,11 +1856,13 @@ async function runFirstTimeSetup(context: vscode.ExtensionContext): Promise<void
                 });
                 if (folderUri && folderUri.length > 0) {
                     const fsPath = folderUri[0].fsPath;
-                    
-                    const zsdicPath = path.join(fsPath, 'Pack', 'ZsDic.pack.zs');
-                    if (fs.existsSync(zsdicPath)) {
+                    const profile = getActiveGameProfile();
+                    const sentinelLabel = profile.romfsSentinel.replace(/\\/g, '/');
+
+                    if (isRomfsPathValid(fsPath)) {
                         const config = vscode.workspace.getConfiguration('TKVSC');
-                        await config.update('romfsPath', fsPath, vscode.ConfigurationTarget.Global);
+                        const settingsKey = profile.romfsSettingsKey ?? 'romfsPath';
+                        await config.update(settingsKey, fsPath, vscode.ConfigurationTarget.Global);
                         void vscode.window.showInformationMessage(`TKVSC: RomFS path set to ${fsPath}`);
                         validRomfsSelected = true;
                     } else {
@@ -1813,9 +1872,10 @@ async function runFirstTimeSetup(context: vscode.ExtensionContext): Promise<void
                             for (const [name, type] of entries) {
                                 if (type === vscode.FileType.Directory) {
                                     const nestedPath = path.join(fsPath, name);
-                                    if (fs.existsSync(path.join(nestedPath, 'Pack', 'ZsDic.pack.zs'))) {
+                                    if (isRomfsPathValid(nestedPath)) {
                                         const config = vscode.workspace.getConfiguration('TKVSC');
-                                        await config.update('romfsPath', nestedPath, vscode.ConfigurationTarget.Global);
+                                        const settingsKey = profile.romfsSettingsKey ?? 'romfsPath';
+                                        await config.update(settingsKey, nestedPath, vscode.ConfigurationTarget.Global);
                                         void vscode.window.showInformationMessage(`TKVSC: RomFS path set to ${nestedPath}`);
                                         validRomfsSelected = true;
                                         foundNested = true;
@@ -1826,12 +1886,15 @@ async function runFirstTimeSetup(context: vscode.ExtensionContext): Promise<void
                         } catch {
                             // ignore
                         }
-                        
+
                         if (foundNested) {
                             continue;
                         }
-                        
-                        await vscode.window.showWarningMessage('TKVSC: The selected directory must contain a "Pack/ZsDic.pack.zs" file. Please choose a valid game dump directory.', { modal: true });
+
+                        await vscode.window.showWarningMessage(
+                            `TKVSC: The selected directory must contain "${sentinelLabel}". Please choose a valid game dump directory.`,
+                            { modal: true },
+                        );
                     }
                 } else {
                     break;

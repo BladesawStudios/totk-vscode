@@ -8,7 +8,7 @@ from pathlib import Path
 
 from archive_resolve import list_archive_files
 
-_ARCHIVE_EXTENSIONS = (
+_DEFAULT_ARCHIVE_EXTENSIONS = (
     ".pack",
     ".sarc",
     ".genvb",
@@ -23,6 +23,21 @@ _ARCHIVE_EXTENSIONS = (
     ".bntx.zs",
 )
 
+# Kept for canonical_path_index import compatibility.
+_ARCHIVE_EXTENSIONS = _DEFAULT_ARCHIVE_EXTENSIONS
+
+
+def get_archive_extensions() -> tuple[str, ...]:
+    raw = os.environ.get("TKVSC_ARCHIVE_EXTENSIONS", "").strip()
+    if not raw:
+        return _DEFAULT_ARCHIVE_EXTENSIONS
+    parts = tuple(ext.strip() for ext in raw.split(",") if ext.strip())
+    return parts or _DEFAULT_ARCHIVE_EXTENSIONS
+
+
+def _get_game_id() -> str:
+    return os.environ.get("TKVSC_GAME_ID", "totk").strip() or "totk"
+
 
 def _normalize_rel(path_value: str) -> str:
     return path_value.replace("\\", "/").strip("/")
@@ -30,12 +45,12 @@ def _normalize_rel(path_value: str) -> str:
 
 def _is_archive_file(name: str) -> bool:
     lower = name.lower()
-    return any(lower.endswith(ext) for ext in _ARCHIVE_EXTENSIONS)
+    return any(lower.endswith(ext) for ext in get_archive_extensions())
 
 
 def build_romfs_index(romfs_path: str, output_path: str) -> dict:
     if not romfs_path:
-        raise ValueError("TOTK_EDITOR_ROMFS is not set.")
+        raise ValueError("TKVSC_ROMFS is not set.")
 
     romfs_root = Path(romfs_path)
     if not romfs_root.is_dir():
@@ -66,6 +81,8 @@ def build_romfs_index(romfs_path: str, output_path: str) -> dict:
 
     normalized_root = _normalize_rel(str(romfs_root.resolve()))
     conn.execute("INSERT INTO meta (key, value) VALUES ('root', ?)", (normalized_root,))
+    conn.execute("INSERT INTO meta (key, value) VALUES ('gameId', ?)", (_get_game_id(),))
+    conn.execute("INSERT INTO meta (key, value) VALUES ('schemaVersion', ?)", ("4",))
 
     file_count = 0
     batch: list[tuple[str,]] = []

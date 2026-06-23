@@ -46,6 +46,47 @@ Reference docs: [v1.md](v1.md)
 
 ---
 
+## v1 — Phase 3 (additive)
+
+**Added**
+
+- `registerGameProfile(registration)` — game profile registration
+- `getActiveGameProfile()`, `getGameProfile(gameId)`
+- `contributes.tkvsc.gameProfile` and `archivePatterns` manifest fields
+- `GameProfile` registry — RomFS sentinel, compression backend, per-game settings key
+- `ArchiveRegistry` — per-game archive file patterns
+- Per-game index paths: `globalStorage/indexes/{gameId}/` (auto-migrates legacy TOTK indexes)
+- Python compression backend dispatch (`totk-zstd`, `plain-zstd-yaz0`)
+- Bridge env: `TKVSC_ROMFS`, `TKVSC_GAME_ID`, `TKVSC_COMPRESSION_BACKEND`, `TKVSC_ARCHIVE_EXTENSIONS`
+- Setting: `TKVSC.activeGameId` (default `totk`)
+
+**Notes**
+
+- `api.apiVersion` remains `1`.
+- TOTK built-in profile: [`config/games/totk.json`](../../config/games/totk.json).
+- `TKVSC.romfsPath` remains the TOTK dump path; game addons use `TKVSC.<gameId>.romfsPath` via `romfsSettingsKey`.
+- Canonical save propagation is disabled when `indexing.enableCanonicalPaths` is `false`.
+
+---
+
+## v1 — Phase 4 (additive)
+
+**Added**
+
+- `registerProjectAdapter(adapter)` — pluggable mod project layouts
+- `detectProjectAdapter(projectRootPath)`, `getProjectAdapters()`
+- `ProjectAdapter` interface + built-in `TkmmProjectAdapter` (`id: 'tkmm'`)
+- Projects tree, add-to-option, dump-to-project, and `resolveProjectRoot()` delegate to adapter registry
+- `importProjectsFromAdapters()` — merges import paths from all adapters with `importProjects()`
+
+**Notes**
+
+- `api.apiVersion` remains `1`.
+- TKMM tree `contextValue` strings (`tkmmOptionsRoot`, etc.) unchanged — they are defined on `TkmmProjectAdapter.contextValues`.
+- `tkmmOptions.ts` is a thin deprecated re-export; new code should use the adapter registry.
+
+---
+
 ## Template for future entries
 
 ```markdown

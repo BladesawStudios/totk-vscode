@@ -7,7 +7,7 @@ import { isPathInsideArchive, isArchiveFile, getDiskArchivePath, isArchiveFileNa
 import { getDumpSelection, type DumpTreeItem } from './dumpTree';
 import { resolveRomfsPath } from './romfs';
 import { addDumpEntryToProject, resolveRomfsForProject } from './addToProject';
-import { getActiveTkmmOption, askForTkmmOption } from './tkmmOptions';
+import { askForProjectOption, getActiveProjectOption } from './projectAdapters/registry';
 
 let archiveTreeView: vscode.TreeView<ArchiveTreeItem> | undefined;
 
@@ -1329,13 +1329,13 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
 
         let tkmmOption: { group: string; option: string } | undefined;
         if (useActive) {
-            tkmmOption = getActiveTkmmOption(context, projectRoot);
+            tkmmOption = getActiveProjectOption(context, projectRoot);
             if (!tkmmOption) {
                 void vscode.window.showWarningMessage('No active option selected. Select an active option first.');
                 return;
             }
         } else {
-            const result = await askForTkmmOption(projectRoot);
+            const result = await askForProjectOption(projectRoot);
             if (!result || result === 'BACK') {
                 return; // Cancelled
             }

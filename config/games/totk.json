@@ -1,0 +1,28 @@
+{
+  "id": "totk",
+  "displayName": "Tears of the Kingdom",
+  "romfsSentinel": "Pack/ZsDic.pack.zs",
+  "compressionBackend": "totk-zstd",
+  "romfsSettingsKey": "romfsPath",
+  "indexing": {
+    "enableRomfsSearch": true,
+    "enableCanonicalPaths": true,
+    "archiveExtensions": [
+      ".pack",
+      ".sarc",
+      ".genvb",
+      ".blarc",
+      ".bfarc",
+      ".bntx",
+      ".pack.zs",
+      ".sarc.zs",
+      ".genvb.zs",
+      ".blarc.zs",
+      ".bfarc.zs",
+      ".bntx.zs"
+    ]
+  },
+  "archivePatterns": [
+    "\\.(pack|sarc|genvb|blarc|bfarc|bntx)(\\.zs)?$"
+  ]
+}

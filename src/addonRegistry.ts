@@ -1,20 +1,26 @@
-import * as path from 'path';
 import * as vscode from 'vscode';
 import {
     contributionToBridgeHandlers,
     parseTkvscContribution,
     type TkvscManifestContribution,
 } from './addonManifest';
+import { initArchiveRegistry, registerArchivePattern } from './archiveRegistry';
+import {
+    getGameProfileRegistry,
+    initGameProfileRegistry,
+    registerGameProfile,
+    type GameProfileRegistration,
+} from './gameProfile';
 import {
     getFormatRegistry,
     type FormatRegistration,
     type BridgeHandlerRegistration,
 } from './formatRegistry';
 import { writeHandlerManifest } from './handlerManifest';
+import { initProjectAdapterRegistry, registerProjectAdapter } from './projectAdapters/registry';
+import type { ProjectAdapter } from './projectAdapters/types';
 
 export function scanAddonManifests(context: vscode.ExtensionContext): void {
-    const registry = getFormatRegistry();
-
     for (const extension of vscode.extensions.all) {
         const contributes = extension.packageJSON.contributes as
             | { tkvsc?: unknown }
@@ -33,18 +39,35 @@ function applyManifestContribution(
     extensionRoot: string,
     source: 'manifest' | 'api',
 ): void {
-    const registry = getFormatRegistry();
+    const formatRegistry = getFormatRegistry();
+    const gameId = contribution.gameProfile?.id ?? contribution.id;
+
+    if (contribution.gameProfile) {
+        const profile: GameProfileRegistration = {
+            ...contribution.gameProfile,
+            id: contribution.gameProfile.id ?? contribution.id ?? contribution.gameProfile.id,
+        };
+        if (profile.id) {
+            getGameProfileRegistry().registerProfile(profile, source);
+        }
+    }
+
+    if (gameId && contribution.archivePatterns?.length) {
+        for (const pattern of contribution.archivePatterns) {
+            registerArchivePattern(gameId, pattern);
+        }
+    }
 
     for (const format of contribution.formats ?? []) {
-        registry.registerFormat(format, source);
+        formatRegistry.registerFormat(format, source);
     }
 
     if (contribution.aampExtensions?.length) {
-        registry.registerAampExtensions(contribution.aampExtensions, source);
+        formatRegistry.registerAampExtensions(contribution.aampExtensions, source);
     }
 
     for (const handler of contributionToBridgeHandlers(contribution, extensionRoot)) {
-        registry.registerBridgeHandler(handler, source);
+        formatRegistry.registerBridgeHandler(handler, source);
     }
 }
 
@@ -70,11 +93,35 @@ export function registerBridgeHandler(
     });
 }
 
+export function registerGameProfileApi(
+    context: vscode.ExtensionContext,
+    registration: GameProfileRegistration,
+): vscode.Disposable {
+    registerGameProfile(registration);
+    initArchiveRegistry();
+    writeHandlerManifest(context.globalStorageUri.fsPath);
+    return new vscode.Disposable(() => {
+        // See registerFormatHandler.
+    });
+}
+
+export function registerProjectAdapterApi(
+    registration: ProjectAdapter,
+): vscode.Disposable {
+    registerProjectAdapter(registration);
+    return new vscode.Disposable(() => {
+        // Adapter removal not tracked in v1.
+    });
+}
+
 export function initAddonRegistries(
     context: vscode.ExtensionContext,
 ): void {
+    initProjectAdapterRegistry();
+    initGameProfileRegistry(context.extensionPath);
     initFormatRegistryOnly(context.extensionPath);
     scanAddonManifests(context);
+    initArchiveRegistry();
     writeHandlerManifest(context.globalStorageUri.fsPath);
 
     context.subscriptions.push(

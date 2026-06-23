@@ -1,6 +1,5 @@
-import * as path from 'path';
 import type { TkvscTreeItemLike } from './types';
-import { TKVSC_ARCHIVE_CONTEXT } from './constants';
+import { resolveProjectRootFromTreeItem as resolveFromAdapters } from '../projectAdapters/registry';
 
 function asTreeItem(item: unknown): TkvscTreeItemLike | undefined {
     if (!item || typeof item !== 'object') {
@@ -23,23 +22,5 @@ export function resolveProjectRoot(item: unknown): string | undefined {
         return undefined;
     }
 
-    const fsPath = treeItem.resourceUri.fsPath;
-    const contextValue = treeItem.contextValue;
-
-    switch (contextValue) {
-        case TKVSC_ARCHIVE_CONTEXT.archiveRoot:
-            return fsPath;
-        case TKVSC_ARCHIVE_CONTEXT.archiveProjectDir:
-        case TKVSC_ARCHIVE_CONTEXT.archiveProjectDirActive:
-            return fsPath;
-        case TKVSC_ARCHIVE_CONTEXT.tkmmOptionsRoot:
-            return path.dirname(fsPath);
-        case TKVSC_ARCHIVE_CONTEXT.tkmmOption:
-        case TKVSC_ARCHIVE_CONTEXT.tkmmOptionActive:
-            return path.dirname(path.dirname(path.dirname(fsPath)));
-        case TKVSC_ARCHIVE_CONTEXT.tkmmOptionGroup:
-            return path.dirname(path.dirname(fsPath));
-        default:
-            return undefined;
-    }
+    return resolveFromAdapters(treeItem.contextValue, treeItem.resourceUri.fsPath);
 }
