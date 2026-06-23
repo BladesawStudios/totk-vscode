@@ -14,11 +14,11 @@ Reference docs: [v1.md](v1.md)
 
 - `activate()` returns `TkvscApi`
 - `apiVersion`, `extensionId`
-- `views`, `contextValues` — stable IDs for menus
+- `views`, `contextValues` - stable IDs for menus
 - `onDidReady` event
 - `resolveProjectRoot(item)`
 - `readRawBytes(uri)`, `writeRawBytes(uri, data)`
-- `getBridge()` — `bridgePath`, `getPython`, `getBridgeEnv`, `runBridgeJsonAsync`
+- `getBridge()` - `bridgePath`, `getPython`, `getBridgeEnv`, `runBridgeJsonAsync`
 - `getProjectRoots()`
 
 **Notes**
@@ -28,14 +28,14 @@ Reference docs: [v1.md](v1.md)
 
 ---
 
-## v1 — Phase 2 (additive)
+## v1 - Phase 2 (additive)
 
 **Added**
 
-- `registerFormatHandler(registration)` — programmatic format registration
-- `registerBridgeHandler(registration)` — Python bridge handler registration
+- `registerFormatHandler(registration)` - programmatic format registration
+- `registerBridgeHandler(registration)` - Python bridge handler registration
 - `contributes.tkvsc` manifest scanning (`formats`, `aampExtensions`, `bridgeHandlers`)
-- `FormatRegistry` — merged built-in + manifest + API format map
+- `FormatRegistry` - merged built-in + manifest + API format map
 - Handler manifest (`tkvsc-handler-manifest.json`) written to global storage; Python bridge loads addon handlers dynamically via `TKVSC_HANDLER_MANIFEST`
 
 **Notes**
@@ -46,15 +46,15 @@ Reference docs: [v1.md](v1.md)
 
 ---
 
-## v1 — Phase 3 (additive)
+## v1 - Phase 3 (additive)
 
 **Added**
 
-- `registerGameProfile(registration)` — game profile registration
+- `registerGameProfile(registration)` - game profile registration
 - `getActiveGameProfile()`, `getGameProfile(gameId)`
 - `contributes.tkvsc.gameProfile` and `archivePatterns` manifest fields
-- `GameProfile` registry — RomFS sentinel, compression backend, per-game settings key
-- `ArchiveRegistry` — per-game archive file patterns
+- `GameProfile` registry - RomFS sentinel, compression backend, per-game settings key
+- `ArchiveRegistry` - per-game archive file patterns
 - Per-game index paths: `globalStorage/indexes/{gameId}/` (auto-migrates legacy TOTK indexes)
 - Python compression backend dispatch (`totk-zstd`, `plain-zstd-yaz0`)
 - Bridge env: `TKVSC_ROMFS`, `TKVSC_GAME_ID`, `TKVSC_COMPRESSION_BACKEND`, `TKVSC_ARCHIVE_EXTENSIONS`
@@ -69,20 +69,20 @@ Reference docs: [v1.md](v1.md)
 
 ---
 
-## v1 — Phase 4 (additive)
+## v1 - Phase 4 (additive)
 
 **Added**
 
-- `registerProjectAdapter(adapter)` — pluggable mod project layouts
+- `registerProjectAdapter(adapter)` - pluggable mod project layouts
 - `detectProjectAdapter(projectRootPath)`, `getProjectAdapters()`
 - `ProjectAdapter` interface + built-in `TkmmProjectAdapter` (`id: 'tkmm'`)
 - Projects tree, add-to-option, dump-to-project, and `resolveProjectRoot()` delegate to adapter registry
-- `importProjectsFromAdapters()` — merges import paths from all adapters with `importProjects()`
+- `importProjectsFromAdapters()` - merges import paths from all adapters with `importProjects()`
 
 **Notes**
 
 - `api.apiVersion` remains `1`.
-- TKMM tree `contextValue` strings (`tkmmOptionsRoot`, etc.) unchanged — they are defined on `TkmmProjectAdapter.contextValues`.
+- TKMM tree `contextValue` strings (`tkmmOptionsRoot`, etc.) unchanged - they are defined on `TkmmProjectAdapter.contextValues`.
 - `tkmmOptions.ts` is a thin deprecated re-export; new code should use the adapter registry.
 
 ---

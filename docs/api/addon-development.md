@@ -50,7 +50,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 | Model | When to use |
 |-------|-------------|
-| **Standard VS Code contributes** | Commands, menus, custom editors, grammars, settings — no TKVSC API required beyond optional helpers |
+| **Standard VS Code contributes** | Commands, menus, custom editors, grammars, settings - no TKVSC API required beyond optional helpers |
 | **`contributes.tkvsc` manifest** | Declarative file formats, game profiles, AAMP extensions, archive patterns, Python bridge handlers |
 | **TKVSC programmatic API** | Project tree context, raw file I/O inside archives, Python bridge access, runtime format registration |
 
@@ -157,10 +157,10 @@ api.registerProjectAdapter(myBcmlAdapter);
 
 Each adapter implements:
 
-- **Detection** — `isProjectRoot(path)` 
-- **Options tree** — `optionsDirName`, `contextValues` for menu `when` clauses
-- **Import** — optional `importProjects()` (like TKMM `recent.json`)
-- **Scaffold** — optional `scaffoldNewProject()` for “create project” flows
+- **Detection** - `isProjectRoot(path)` 
+- **Options tree** - `optionsDirName`, `contextValues` for menu `when` clauses
+- **Import** - optional `importProjects()` (like TKMM `recent.json`)
+- **Scaffold** - optional `scaffoldNewProject()` for “create project” flows
 
 TKMM is the built-in adapter (`id: 'tkmm'`). `resolveProjectRoot()` and the Projects sidebar consult whichever adapter matches the folder.
 
@@ -202,7 +202,7 @@ Works for `sarc://`, `totk-disk://`, and `file://` URIs that point inside nested
 
 | Document | Description |
 |----------|-------------|
-| [api/v1.md](api/v1.md) | **Complete API reference** — every method, type, manifest field, env var, and integration recipe |
+| [api/v1.md](api/v1.md) | **Complete API reference** - every method, type, manifest field, env var, and integration recipe |
 | [api/README.md](api/README.md) | API doc index and type source paths |
 | [api/CHANGELOG.md](api/CHANGELOG.md) | API version history |
 
@@ -224,5 +224,5 @@ User-facing settings use the `TKVSC.*` namespace (see [settings.md](settings.md)
 
 ## Further reading
 
-- [commands.md](commands.md) — stable `totk-editor.*` command IDs for menu `when` clauses
-- [settings.md](settings.md) — core configuration
+- [commands.md](commands.md) - stable `totk-editor.*` command IDs for menu `when` clauses
+- [settings.md](settings.md) - core configuration

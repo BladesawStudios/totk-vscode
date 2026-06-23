@@ -45,7 +45,7 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
         }
         const diskArchive = getDiskArchivePath(fsPath);
         const locator = getLocatorInsideDiskArchive(fsPath, diskArchive);
-        logger.info(`[HexEditor] Archive export — diskArchive=${diskArchive} locator="${locator}"`);
+        logger.info(`[HexEditor] Archive export - diskArchive=${diskArchive} locator="${locator}"`);
         if (!locator) {
             logger.info(`[HexEditor] ERROR: locator is empty, cannot read archive root`);
             throw new Error('Cannot read archive root.');
@@ -196,7 +196,7 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 // If it is ZSTD compressed, compress it back first!
                 const isZstd = uri.fsPath.toLowerCase().endsWith('.zs') || path.basename(uri.fsPath).toLowerCase().includes('.zs');
                 if (isZstd) {
-                    logger.info(`[HexEditor] File is .zs — recompressing before save`);
+                    logger.info(`[HexEditor] File is .zs - recompressing before save`);
                     const python = getPython();
                     if (!python) {
                         throw new Error('Python environment is not ready. Re-compression of .zs requires Python.');
@@ -284,7 +284,7 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
             cancellable: false
         },
         async () => {
-            logger.info(`[HexEditor] withProgress started — calling getRawBinaryBytes`);
+            logger.info(`[HexEditor] withProgress started - calling getRawBinaryBytes`);
             try {
                 const { data, resolvedName } = await getRawBinaryBytes(uri, extensionUri);
                 logger.info(`[HexEditor] getRawBinaryBytes returned ${data.length} bytes, resolvedName=${resolvedName}`);
@@ -312,7 +312,7 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 }
 
                 const base64Data = Buffer.from(data).toString('base64');
-                logger.info(`[HexEditor] base64 encoded length: ${base64Data.length} chars — setting webview HTML`);
+                logger.info(`[HexEditor] base64 encoded length: ${base64Data.length} chars - setting webview HTML`);
                 pendingInitData = { base64Data, totalSize: data.length };
                 const html = buildHtml(resolvedName, data.length, isReadOnly, panel.webview, patterns);
                 panel.webview.html = html;
@@ -2250,7 +2250,7 @@ function buildHtml(
             updateSelectionsUI();
             updateInspector();
 
-            // Scroll to start — inline the scroll logic instead of calling
+            // Scroll to start - inline the scroll logic instead of calling
             // navigateToOffset() which would clobber selectionEnd via startSelectionAt()
             const targetRow       = Math.floor(start / 16);
             const targetScrollTop = targetRow * ROW_HEIGHT;

@@ -20,7 +20,7 @@ export interface TkvscBridgeAccess {
 /**
  * Public extension API returned from `activate()` for companion addon extensions.
  *
- * @see docs/api/v1.md — versioned reference (update when apiVersion changes)
+ * @see docs/api/v1.md - versioned reference (update when apiVersion changes)
  * @see docs/api/CHANGELOG.md
  */
 export interface TkvscApi {

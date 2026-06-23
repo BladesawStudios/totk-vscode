@@ -16,8 +16,8 @@ Programmatic API for companion VS Code extensions that extend [TKVSC](https://gi
 
 Source of truth for TypeScript types:
 
-- [`src/api/types.ts`](../../src/api/types.ts) — `TkvscApi`, `TkvscBridgeAccess`
-- [`src/api/constants.ts`](../../src/api/constants.ts) — view IDs, context values
-- [`src/formatRegistry.ts`](../../src/formatRegistry.ts) — format / bridge handler types
-- [`src/gameProfile.ts`](../../src/gameProfile.ts) — game profile types
-- [`src/projectAdapters/types.ts`](../../src/projectAdapters/types.ts) — project adapter types
+- [`src/api/types.ts`](../../src/api/types.ts) - `TkvscApi`, `TkvscBridgeAccess`
+- [`src/api/constants.ts`](../../src/api/constants.ts) - view IDs, context values
+- [`src/formatRegistry.ts`](../../src/formatRegistry.ts) - format / bridge handler types
+- [`src/gameProfile.ts`](../../src/gameProfile.ts) - game profile types
+- [`src/projectAdapters/types.ts`](../../src/projectAdapters/types.ts) - project adapter types

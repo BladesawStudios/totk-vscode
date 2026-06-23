@@ -58,7 +58,7 @@ export async function migrateLegacyIndexFiles(
     for (const legacyName of LEGACY_INDEX_FILES) {
         const legacyPath = path.join(globalStorageFsPath, legacyName);
         if (fs.existsSync(legacyPath)) {
-            // Leftover after partial migration — leave in place; next rebuild uses new path.
+            // Leftover after partial migration - leave in place; next rebuild uses new path.
         }
     }
 }

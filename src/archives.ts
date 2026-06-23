@@ -1,4 +1,4 @@
-/** SARC-based archives — patterns come from the active {@link GameProfile} via {@link archiveRegistry}. */
+/** SARC-based archives - patterns come from the active {@link GameProfile} via {@link archiveRegistry}. */
 
 export {
     ARCHIVE_FILE_PATTERN,
