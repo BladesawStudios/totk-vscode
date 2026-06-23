@@ -546,6 +546,6 @@ export async function promptPythonSetup(context: vscode.ExtensionContext): Promi
     } else if (choice === 'Retry Setup') {
         await ensurePythonEnvironment(context, true);
     } else if (choice === 'Open Settings') {
-        await vscode.commands.executeCommand('workbench.action.openSettings', 'totk-editor.pythonPath');
+        await vscode.commands.executeCommand('workbench.action.openSettings', 'TKVSC.pythonPath');
     }
 }

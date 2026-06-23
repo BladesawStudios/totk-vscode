@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { runBridgeJsonAsync } from '../bridge';
+import { getBridgeEnv } from '../api/bridgeEnv';
 import { getCachedPythonExecutable } from '../pythonEnv';
 import { logger } from '../logger';
 import {
@@ -13,21 +14,8 @@ import {
 
 const panels = new Map<string, vscode.WebviewPanel>();
 
-function getBridgeEnv(): NodeJS.ProcessEnv {
-    const config = vscode.workspace.getConfiguration('totk-editor');
-    const romfsPath = config.get<string>('romfsPath', '') || '';
-    const extraAamp = config.get<string[]>('extraAampExtensions', []);
-    return {
-        ...process.env,
-        TOTK_EDITOR_ROMFS: romfsPath,
-        TOTK_TAG_PRODUCT_FORMAT: config.get<string>('tagProductFormat', 'json'),
-        TOTK_EXTRA_AAMP_EXTS: extraAamp.map((ext) => ext.replace(/^\./, '')).join(','),
-        TOTK_BYML_INLINE_CONTAINER_MAX_COUNT: String(config.get<number>('bymlInlineContainerMaxCount', 1)),
-    };
-}
-
 function getPython(): string {
-    const config = vscode.workspace.getConfiguration('totk-editor');
+    const config = vscode.workspace.getConfiguration('TKVSC');
     const override = config.get<string>('pythonPath', '');
     if (override) {
         return override;

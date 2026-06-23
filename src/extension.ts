@@ -35,7 +35,8 @@ import {
     isTxtgFile,
 } from './archives';
 import { registerDocumentLanguageModes } from './languageModes';
-import { getAampExtensions, initAampExtensions } from './aampExtensions';
+import { getCoreExtensions } from './coreFsExtensions';
+import { initAddonRegistries, registerBridgeHandler, registerFormatHandler } from './addonRegistry';
 import { createDiskDirectory, deleteDiskPath, renameDiskPath } from './diskFsOps';
 import {
     focusArchiveSidebar,
@@ -56,7 +57,7 @@ import {
     formatExternalToolPrompt,
     registerExternalToolSupport,
 } from './externalTools';
-import { getCoreExtensions, initCoreFsExtensions } from './coreFsExtensions';
+import { getAampExtensions } from './aampExtensions';
 import { TkprojEditorProvider } from './tkprojEditor';
 import { TkvscEditorProvider } from './tkvscEditor';
 import { FontViewerProvider } from './fontViewer';
@@ -79,6 +80,13 @@ import {
     ensureProjectCanonicalImport,
     setProjectCanonicalOverlayExtensionPath,
 } from './projectCanonicalOverlay';
+import {
+    createTkvscApi,
+    getBridgeEnv,
+    readRawBytes,
+    TKVSC_EXTENSION_ID,
+    type TkvscApi,
+} from './api';
 
 
 function shouldOfferExternalToolPrompt(content: string): boolean {
@@ -104,19 +112,6 @@ function isLikelyBinaryBuffer(data: Uint8Array): boolean {
     }
 
     return suspicious / sampleLength > 0.2;
-}
-
-function getBridgeEnv(): NodeJS.ProcessEnv {
-    const config = vscode.workspace.getConfiguration('TKVSC');
-    const romfsPath = resolveRomfsPath();
-    const extraAamp = config.get<string[]>('extraAampExtensions', []);
-    return {
-        ...process.env,
-        TOTK_EDITOR_ROMFS: romfsPath,
-        TOTK_TAG_PRODUCT_FORMAT: config.get<string>('tagProductFormat', 'json'),
-        TOTK_EXTRA_AAMP_EXTS: extraAamp.map((ext) => ext.replace(/^\./, '')).join(','),
-        TOTK_BYML_INLINE_CONTAINER_MAX_COUNT: String(config.get<number>('bymlInlineContainerMaxCount', 1)),
-    };
 }
 
 function pickExportDestinationName(destinationFolder: string, preferredName: string): string {
@@ -744,15 +739,17 @@ function cleanupOldTempFiles() {
     }
 }
 
-export async function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext): Promise<TkvscApi> {
     logger.init(context);
     logger.info('Activating TKVSC extension...');
+
+    const onDidReadyEmitter = new vscode.EventEmitter<void>();
+    context.subscriptions.push(onDidReadyEmitter);
     
     // Clean up leftover temp files from previous sessions
     cleanupOldTempFiles();
     
-    initAampExtensions(context.extensionPath);
-    initCoreFsExtensions(context.extensionPath);
+    initAddonRegistries(context);
     initTextureViewer(context.extensionUri);
     initAudioViewer(context.extensionUri);
     initBarsViewer(context.extensionUri);
@@ -798,33 +795,23 @@ export async function activate(context: vscode.ExtensionContext) {
     
     const bridgePath = path.join(context.extensionPath, 'python', 'totk_bridge.py');
     const getPython = () => getCachedPythonExecutable() ?? '';
+    const rawFileIoContext = { bridgePath, getPython, getBridgeEnv };
 
-    const getRawFontBytes = async (uri: vscode.Uri): Promise<Uint8Array> => {
-        if (uri.scheme === 'file') {
-            return await fs.promises.readFile(uri.fsPath);
-        }
-        
-        const fsPath = uri.fsPath;
-        const diskArchive = getDiskArchivePath(fsPath);
-        const locator = getLocatorInsideDiskArchive(fsPath, diskArchive);
-        
-        if (!locator || diskArchive === fsPath) {
-            return await fs.promises.readFile(fsPath);
-        }
+    let archiveTree: ReturnType<typeof registerArchiveTree> | undefined;
 
-        const result = await runBridgeJsonAsync<{ path: string }>(
-            getPython(),
-            bridgePath,
-            ['export-temp', diskArchive, locator],
-            undefined,
-            getBridgeEnv()
-        );
-        const raw = await fs.promises.readFile(result.path);
-        try {
-            fs.unlinkSync(result.path);
-        } catch {}
-        return raw;
-    };
+    const tkvscApi = createTkvscApi({
+        extensionId: TKVSC_EXTENSION_ID,
+        bridgePath,
+        getPython,
+        getBridgeEnv,
+        getProjectRoots: () =>
+            archiveTree?.workspaceRoots.map((root) => root.fsPath) ?? [],
+        onDidReadyEmitter,
+        registerFormatHandler: (registration) => registerFormatHandler(context, registration),
+        registerBridgeHandler: (registration) => registerBridgeHandler(context, registration),
+    });
+
+    const getRawFontBytes = (uri: vscode.Uri) => readRawBytes(uri, rawFileIoContext);
     context.subscriptions.push(FontViewerProvider.register(context, getRawFontBytes));
     context.subscriptions.push(InfoJsonEditorProvider.register(context));
 
@@ -849,7 +836,6 @@ export async function activate(context: vscode.ExtensionContext) {
     let romfsIndexBuildPromise: Promise<void> | undefined;
     let canonicalIndexBuildPromise: Promise<void> | undefined;
     let gameDumpTree: ReturnType<typeof registerGameDumpTree> | undefined;
-    let archiveTree: ReturnType<typeof registerArchiveTree> | undefined;
 
     const shouldPropagateCanonicalSaves = (): boolean => {
         const config = vscode.workspace.getConfiguration('TKVSC');
@@ -1152,7 +1138,7 @@ export async function activate(context: vscode.ExtensionContext) {
             const romfsPath = resolveRomfsPath();
             if (!romfsPath) {
                 void vscode.window.showWarningMessage(
-                    'Set totk-editor.romfsPath before rebuilding the search index.',
+                    'Set TKVSC.romfsPath before rebuilding the search index.',
                 );
                 return;
             }
@@ -1169,7 +1155,7 @@ export async function activate(context: vscode.ExtensionContext) {
             const romfsPath = resolveRomfsPath();
             if (!romfsPath) {
                 void vscode.window.showWarningMessage(
-                    'Set totk-editor.romfsPath before rebuilding the canonical path index.',
+                    'Set TKVSC.romfsPath before rebuilding the canonical path index.',
                 );
                 return;
             }
@@ -1470,6 +1456,7 @@ export async function activate(context: vscode.ExtensionContext) {
     gameDumpTree.setExternalIndexPath(romfsIndexPath);
     void ensureProjectCanonicalOverlayExists(projectCanonicalOverlayPath);
     await migrateSarcWorkspaceFolders(archiveTree);
+    onDidReadyEmitter.fire();
     void buildRomfsIndex();
     void buildCanonicalIndex();
     void importKnownProjectCanonicalPaths();
@@ -1752,7 +1739,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const scheme = targetUri.scheme;
         if (scheme !== 'totk-dump') {
             const fsPath = targetUri.fsPath;
-            const config = vscode.workspace.getConfiguration('totk-editor');
+            const config = vscode.workspace.getConfiguration('TKVSC');
             const romfsPath = config.get<string>('romfsPath', '');
             const normalizedRomfs = romfsPath ? path.normalize(romfsPath).toLowerCase() : '';
             const normalizedFsPath = path.normalize(fsPath).toLowerCase();
@@ -1782,13 +1769,15 @@ export async function activate(context: vscode.ExtensionContext) {
             },
         });
 
-        if (fileUri?.[0]) {
+        if (fileUri?.[0] && archiveTree) {
             await archiveTree.addRoot(fileUri[0]);
             void focusArchiveSidebar();
         }
     });
 
     context.subscriptions.push(openArchive);
+
+    return tkvscApi;
 }
 
 async function runFirstTimeSetup(context: vscode.ExtensionContext): Promise<void> {

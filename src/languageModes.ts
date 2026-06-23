@@ -1,26 +1,8 @@
 import * as vscode from 'vscode';
-import { isAampExtension } from './aampExtensions';
+import { getFormatRegistry } from './formatRegistry';
 
 export function languageIdForPath(filePath: string): string | undefined {
-    const lower = filePath.toLowerCase().replace(/\\/g, '/');
-
-    if (/\.(byml|bgyml)(\.zs)?$/i.test(lower)) {
-        return 'byml';
-    }
-    if (/\.msbt(\.zs)?$/i.test(lower)) {
-        return 'msbt';
-    }
-    if (/\.(asb|baev)(\.zs)?$/i.test(lower)) {
-        return 'json';
-    }
-    if (isAampExtension(filePath)) {
-        return 'yaml';
-    }
-    if (/\.(belnk|bslnk)(\.zs)?$/i.test(lower)) {
-        return 'yaml';
-    }
-
-    return undefined;
+    return getFormatRegistry().getLanguageId(filePath);
 }
 
 export function registerDocumentLanguageModes(context: vscode.ExtensionContext): void {

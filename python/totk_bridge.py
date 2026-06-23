@@ -515,24 +515,12 @@ def write_msbt_bytes(orig_file_data, editor_text, logical_path="", romfs_path=""
 def _file_kind(
     logical_path: str, file_data: bytes | None = None, romfs_path: str = ""
 ) -> str | None:
-    lower = logical_path.lower().replace("\\", "/")
-    if (
-        lower.endswith(".byml")
-        or lower.endswith(".bgyml")
-        or lower.endswith(".byml.zs")
-        or lower.endswith(".bgyml.zs")
-    ):
-        return "byml"
-    if lower.endswith(".msbt") or lower.endswith(".msbt.zs"):
-        return "msbt"
-    if lower.endswith(".asb") or lower.endswith(".asb.zs"):
-        return "asb"
-    if lower.endswith(".baev") or lower.endswith(".baev.zs"):
-        return "baev"
-    if is_aamp_extension(logical_path):
-        return "aamp"
-    if is_xlnk_extension(logical_path):
-        return "xlnk"
+    from handler_manifest import extension_to_handler_kind
+
+    manifest_kind = extension_to_handler_kind(logical_path)
+    if manifest_kind:
+        return manifest_kind
+
     if file_data is not None:
         try:
             data, _, _ = decompress_container(file_data, logical_path, romfs_path)
@@ -546,7 +534,11 @@ def _file_kind(
 
 
 def read_file_content(file_data: bytes, logical_path: str, sarc=None, romfs_path: str = "") -> str:
+    from handler_manifest import is_addon_handler_kind, read_addon_content
+
     kind = _file_kind(logical_path, file_data, romfs_path)
+    if kind and is_addon_handler_kind(kind):
+        return read_addon_content(kind, file_data, logical_path, romfs_path)
     if kind == "byml":
         return read_byml_content(file_data, logical_path, romfs_path)
     if kind == "msbt":
@@ -636,6 +628,17 @@ def write_file_content(
         writer = oead.SarcWriter.from_sarc(sarc)
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
+    elif kind:
+        from handler_manifest import is_addon_handler_kind, write_addon_bytes
+
+        if is_addon_handler_kind(kind):
+            orig = get_original_bytes()
+            new_bytes = write_addon_bytes(kind, orig, editor_text, logical_path, romfs_path)
+            writer = oead.SarcWriter.from_sarc(sarc)
+            writer.files[logical_path] = new_bytes
+            save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
+        else:
+            raise ValueError(f"Cannot write file type: {logical_path}")
     else:
         raise ValueError(f"Cannot write file type: {logical_path}")
 

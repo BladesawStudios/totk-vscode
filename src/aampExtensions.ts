@@ -1,34 +1,14 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as vscode from 'vscode';
+import { getFormatRegistry } from './formatRegistry';
 
-let baseExtensions: Set<string> | undefined;
-
+/** @deprecated Builtin formats load via {@link initFormatRegistry} / {@link initAddonRegistries}. */
 export function initAampExtensions(extensionPath: string): void {
-    const jsonPath = path.join(extensionPath, 'config', 'aamp-extensions.json');
-    const parsed = JSON.parse(fs.readFileSync(jsonPath, 'utf8')) as string[];
-    baseExtensions = new Set(parsed.map((ext) => ext.toLowerCase()));
-}
-
-function extensionName(filePath: string): string {
-    let lower = filePath.toLowerCase().replace(/\\/g, '/');
-    if (lower.endsWith('.zs')) {
-        lower = lower.slice(0, -3);
-    }
-    const dot = lower.lastIndexOf('.');
-    return dot === -1 ? '' : lower.slice(dot + 1);
+    getFormatRegistry().initBuiltin(extensionPath);
 }
 
 export function getAampExtensions(): Set<string> {
-    const base = baseExtensions ?? new Set<string>();
-    const extra = vscode.workspace
-        .getConfiguration('TKVSC')
-        .get<string[]>('extraAampExtensions', [])
-        .map((ext) => ext.toLowerCase().replace(/^\./, ''));
-    return new Set([...base, ...extra]);
+    return getFormatRegistry().getAampExtensions();
 }
 
 export function isAampExtension(filePath: string): boolean {
-    const ext = extensionName(filePath);
-    return ext !== '' && getAampExtensions().has(ext);
+    return getFormatRegistry().isAampExtension(filePath);
 }

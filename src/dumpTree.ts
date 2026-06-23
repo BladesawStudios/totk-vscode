@@ -635,7 +635,7 @@ export function registerGameDumpTree(
         vscode.commands.registerCommand('totk-editor.openRomfsSettings', async () => {
             await vscode.commands.executeCommand(
                 'workbench.action.openSettings',
-                'totk-editor.romfsPath',
+                'TKVSC.romfsPath',
             );
         }),
     );

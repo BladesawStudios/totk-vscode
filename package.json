@@ -513,12 +513,12 @@
       "view/title": [
         {
           "command": "totk-editor.canonicalSyncOn",
-          "when": "view == totk-editor.archives && config.totk-editor.enableCanonicalSavePropagation",
+          "when": "view == totk-editor.archives && config.TKVSC.enableCanonicalSavePropagation",
           "group": "navigation"
         },
         {
           "command": "totk-editor.canonicalSyncOff",
-          "when": "view == totk-editor.archives && !config.totk-editor.enableCanonicalSavePropagation",
+          "when": "view == totk-editor.archives && !config.TKVSC.enableCanonicalSavePropagation",
           "group": "navigation"
         },
         {
