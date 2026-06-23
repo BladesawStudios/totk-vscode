@@ -513,12 +513,12 @@
       "view/title": [
         {
           "command": "totk-editor.canonicalSyncOn",
-          "when": "view == totk-editor.archives && config.totk-editor.enableCanonicalSavePropagation",
+          "when": "view == totk-editor.archives && config.TKVSC.enableCanonicalSavePropagation",
           "group": "navigation"
         },
         {
           "command": "totk-editor.canonicalSyncOff",
-          "when": "view == totk-editor.archives && !config.totk-editor.enableCanonicalSavePropagation",
+          "when": "view == totk-editor.archives && !config.TKVSC.enableCanonicalSavePropagation",
           "group": "navigation"
         },
         {
@@ -790,7 +790,12 @@
         "TKVSC.romfsPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to your extracted game **RomFS** (game dump) folder. Must contain `Pack/ZsDic.pack.zs`. **Required** to open or save any `.zs` file (`.pack.zs`, `.byml.zs`, `.bcett.byml.zs`, etc.)."
+          "markdownDescription": "Path to your extracted **TOTK** RomFS (game dump) folder. Must contain the active game profile sentinel (default: `Pack/ZsDic.pack.zs`). **Required** to open or save `.zs` files when using the TOTK compression backend."
+        },
+        "TKVSC.activeGameId": {
+          "type": "string",
+          "default": "totk",
+          "markdownDescription": "Active game profile ID (`totk` by default). Controls compression backend, RomFS validation, and per-game index databases. Game addons register additional profiles via `contributes.tkvsc`."
         },
         "TKVSC.createRomfsOnImport": {
           "type": "boolean",

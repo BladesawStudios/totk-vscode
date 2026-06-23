@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getDiskArchivePath, isArchiveFile, isPathInsideArchive } from './archives';
+import { getRomfsSentinelPath } from './gameProfile';
+import { listProjectModRoots } from './projectAdapters/registry';
 
 export function normalizePath(filePath: string): string {
     return path.normalize(filePath);
@@ -25,7 +27,9 @@ export function isWithinRoot(root: string, target: string): boolean {
     return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
-const ZSDIC = path.join('Pack', 'ZsDic.pack.zs');
+function romfsSentinelExists(projectDir: string): boolean {
+    return fs.existsSync(path.join(projectDir, getRomfsSentinelPath()));
+}
 
 const ROMFS_DIR_NAMES = ['RomFS', 'romfs', 'Romfs', 'ROMFS'];
 
@@ -68,10 +72,10 @@ function findNamedRomfsFolder(base: string): string | undefined {
     return undefined;
 }
 
-/** Locate the RomFS folder under a project (ZsDic dump, RomFS/romfs folder, or nested). */
+/** Locate the RomFS folder under a project (game sentinel, RomFS/romfs folder, or nested). */
 export function findRomfsFolderUnder(projectRoot: string): string | undefined {
     const project = normalizePath(projectRoot);
-    if (fs.existsSync(path.join(project, ZSDIC))) {
+    if (romfsSentinelExists(project)) {
         return project;
     }
 
@@ -85,7 +89,7 @@ export function findRomfsFolderUnder(projectRoot: string): string | undefined {
     }
 
     for (const child of listSubdirectories(project)) {
-        if (fs.existsSync(path.join(child, ZSDIC))) {
+        if (romfsSentinelExists(child)) {
             return child;
         }
         const nested = findNamedRomfsFolder(child);
@@ -213,19 +217,5 @@ export function resolveAddToCopyPaths(
  * This includes the workspace root itself and all TKMM options (options/<Group>/<Option>).
  */
 export function getProjectModRoots(projectRoot: string): string[] {
-    const project = normalizePath(projectRoot);
-    const roots: string[] = [project];
-    const optionsDir = path.join(project, 'options');
-    
-    if (fs.existsSync(optionsDir) && isDirectory(optionsDir)) {
-        const groups = listSubdirectories(optionsDir);
-        for (const group of groups) {
-            const options = listSubdirectories(group);
-            for (const option of options) {
-                roots.push(normalizePath(option));
-            }
-        }
-    }
-    
-    return roots;
+    return listProjectModRoots(projectRoot);
 }

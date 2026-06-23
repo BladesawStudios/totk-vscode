@@ -5,7 +5,7 @@ from pathlib import Path
 
 import oead
 from bntx_reader import is_bntx, list_textures, read_texture_data
-from zstd_totk import compress_container, decompress_container
+from compression import compress_container, decompress_container
 
 _ARCHIVE_SEGMENT = re.compile(r"\.(pack|sarc|genvb|blarc|bfarc|bntx)(\.zs)?$", re.IGNORECASE)
 _BNTX_SEGMENT = re.compile(r"\.bntx(\.zs)?$", re.IGNORECASE)

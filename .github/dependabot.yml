@@ -9,24 +9,24 @@
 #
 # Key options:
 #
-#   schedule.interval   — "daily" | "weekly" | "monthly"
-#   schedule.day/time   — when within the interval to run (Monday 6am here)
-#   schedule.timezone   — IANA timezone for the above time
+#   schedule.interval   - "daily" | "weekly" | "monthly"
+#   schedule.day/time   - when within the interval to run (Monday 6am here)
+#   schedule.timezone   - IANA timezone for the above time
 #
-#   open-pull-requests-limit — max number of open dep-bump PRs at once (default 5)
+#   open-pull-requests-limit - max number of open dep-bump PRs at once (default 5)
 #                              set to 0 to pause updates for that ecosystem
 #
-#   labels — GitHub labels automatically applied to the opened PRs
+#   labels - GitHub labels automatically applied to the opened PRs
 #
-#   commit-message.prefix  — prepended to the commit message (e.g. "chore: bump X")
-#   commit-message.include — "scope" adds the package name in parentheses
+#   commit-message.prefix  - prepended to the commit message (e.g. "chore: bump X")
+#   commit-message.include - "scope" adds the package name in parentheses
 #
-#   groups — bundle multiple related packages into a single PR instead of one PR per package. 
+#   groups - bundle multiple related packages into a single PR instead of one PR per package. 
 #            Without groups, a project with 20 deps could open 20 PRs.
 #
-#   ignore — blacklist or limit updates for specific packages
+#   ignore - blacklist or limit updates for specific packages
 #
-#   allow — whitelist only specific packages
+#   allow - whitelist only specific packages
 
 version: 2
 updates:

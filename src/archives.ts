@@ -1,87 +1,19 @@
-/** SARC-based archives (.pack, .sarc, .genvb, .blarc, .bntx and optional .zs compression). */
+/** SARC-based archives - patterns come from the active {@link GameProfile} via {@link archiveRegistry}. */
 
-export const ARCHIVE_FILE_PATTERN = /\.(pack|sarc|genvb|blarc|bfarc|bntx)(\.zs)?$/i;
-const TXTG_FILE_PATTERN = /\.txtg(\.zs)?$/i;
-
-const BNTX_PARENT_PATTERN = /\.bntx(\.zs)?[/\\]/i;
-
-/** True when the URI path indicates a file inside a BNTX container. */
-export function isBntxTextureUri(uri: { fsPath: string }): boolean {
-    return BNTX_PARENT_PATTERN.test(uri.fsPath);
-}
-
-const DISK_ARCHIVE_PATTERN = /^(.+?\.(pack|sarc|genvb|blarc|bfarc|bntx)(\.zs)?)(?=\\|\/|$)/i;
-
-export function isArchiveFileName(name: string): boolean {
-    return ARCHIVE_FILE_PATTERN.test(name.replace(/\\/g, '/').split('/').pop() ?? name);
-}
-
-export function isArchiveFile(filePath: string): boolean {
-    return ARCHIVE_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
-}
-
-export function isTxtgFile(filePath: string): boolean {
-    return TXTG_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
-}
-
-const BWAV_FILE_PATTERN = /\.bwav(\.zs)?$/i;
-
-export function isBwavAudioFile(filePath: string): boolean {
-    return BWAV_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
-}
-
-const BARS_FILE_PATTERN = /\.bars(\.zs)?$/i;
-
-export function isBarsAudioArchive(filePath: string): boolean {
-    return BARS_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
-}
-
-
-/** True when the path continues *inside* an archive file (virtual path). */
-export function isPathInsideArchive(filePath: string): boolean {
-    const normalized = filePath.replace(/\\/g, '/').replace(/\/+$/, '');
-    const segments = normalized.split('/').filter(Boolean);
-    for (let i = 0; i < segments.length; i++) {
-        if (!isArchiveFileName(segments[i]!)) {
-            continue;
-        }
-        if (i < segments.length - 1) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/** Use archive listing / reads (on-disk archive file or path inside one). */
-export function isArchiveBrowsePath(filePath: string): boolean {
-    return isPathInsideArchive(filePath) || isArchiveFile(filePath);
-}
-
-/** @deprecated Prefer {@link isPathInsideArchive}. */
-export function pathContainsArchive(filePath: string): boolean {
-    return isPathInsideArchive(filePath);
-}
-
-/** First on-disk archive in a path (for nested archive browsing). */
-export function getDiskArchivePath(fsPath: string): string {
-    const match = fsPath.replace(/\\/g, '/').match(DISK_ARCHIVE_PATTERN);
-    return match ? match[1]! : fsPath;
-}
-
-/** Path inside the on-disk archive (may include nested archive segments). */
-export function getLocatorInsideDiskArchive(fsPath: string, diskArchive: string): string {
-    let rest = fsPath.substring(diskArchive.length);
-    if (rest.startsWith('/') || rest.startsWith('\\')) {
-        rest = rest.substring(1);
-    }
-    return rest.replace(/\\/g, '/');
-}
-
-/** @deprecated Use getDiskArchivePath - kept for callers expecting the old name. */
-export function getArchivePhysicalPath(fsPath: string): string {
-    return getDiskArchivePath(fsPath);
-}
-
-export function archiveCacheKey(diskArchive: string, locator: string): string {
-    return `${diskArchive}::${locator}`;
-}
+export {
+    ARCHIVE_FILE_PATTERN,
+    archiveCacheKey,
+    getArchivePhysicalPath,
+    getDiskArchivePath,
+    getLocatorInsideDiskArchive,
+    isArchiveBrowsePath,
+    isArchiveFile,
+    isArchiveFileName,
+    isBarsAudioArchive,
+    isBntxTextureUri,
+    isBwavAudioFile,
+    isPathInsideArchive,
+    isTxtgFile,
+    pathContainsArchive,
+    registerArchivePattern,
+} from './archiveRegistry';

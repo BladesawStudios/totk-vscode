@@ -22,6 +22,16 @@ Thanks for your interest in contributing! Here's what you need to know.
 - Follow the existing patterns in the file you're editing
 - Run `npm run fix` before submitting - this runs both TypeScript and Python linting and formatting in one step
 
+## Addon API documentation
+
+Changes under `src/api/` that affect addon extensions **must** update:
+
+- [`docs/api/v1.md`](../docs/api/v1.md) - method/property reference for the current API version
+- [`docs/api/CHANGELOG.md`](../docs/api/CHANGELOG.md) - additive changes under v1; new file `vN.md` + changelog entry when `apiVersion` bumps
+- [`docs/addon-development.md`](../docs/addon-development.md) - when integration patterns or requirements change
+
+Link new symbols from TSDoc in `src/api/types.ts` to the matching `docs/api/v1.md` anchor.
+
 ## Questions?
 
 Join the [TKVSC Discord](https://discord.gg/vwPnX2uB8s) if you want to discuss a contribution before starting.

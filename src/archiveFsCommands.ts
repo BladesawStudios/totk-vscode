@@ -7,7 +7,7 @@ import { isPathInsideArchive, isArchiveFile, getDiskArchivePath, isArchiveFileNa
 import { getDumpSelection, type DumpTreeItem } from './dumpTree';
 import { resolveRomfsPath } from './romfs';
 import { addDumpEntryToProject, resolveRomfsForProject } from './addToProject';
-import { getActiveTkmmOption, askForTkmmOption } from './tkmmOptions';
+import { askForProjectOption, getActiveProjectOption, isAdapterOptionFolderContextValue, isAdapterOptionsContextValue } from './projectAdapters/registry';
 
 let archiveTreeView: vscode.TreeView<ArchiveTreeItem> | undefined;
 
@@ -154,9 +154,7 @@ function isDiskMutableItem(item: ArchiveTreeItem): boolean {
         item.contextValue === 'archiveDir' ||
         item.contextValue === 'archiveVirtualDir' ||
         item.contextValue === 'archiveRoot' ||
-        item.contextValue === 'tkmmOptionsRoot' ||
-        item.contextValue === 'tkmmOptionGroup' ||
-        item.contextValue === 'tkmmOption'
+        isAdapterOptionsContextValue(item.contextValue)
     );
 }
 
@@ -675,7 +673,7 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                 const target = vscode.Uri.joinPath(parentDirectoryUri(sourceUri), newName);
                 try {
                     const updateInfoJson = async (folderUri: vscode.Uri, name: string) => {
-                        if (entry.contextValue === 'tkmmOptionGroup' || entry.contextValue === 'tkmmOption') {
+                        if (isAdapterOptionFolderContextValue(entry.contextValue)) {
                             const infoUri = vscode.Uri.joinPath(folderUri, 'info.json');
                             try {
                                 const infoContent = await vscode.workspace.fs.readFile(infoUri);
@@ -1329,13 +1327,13 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
 
         let tkmmOption: { group: string; option: string } | undefined;
         if (useActive) {
-            tkmmOption = getActiveTkmmOption(context, projectRoot);
+            tkmmOption = getActiveProjectOption(context, projectRoot);
             if (!tkmmOption) {
                 void vscode.window.showWarningMessage('No active option selected. Select an active option first.');
                 return;
             }
         } else {
-            const result = await askForTkmmOption(projectRoot);
+            const result = await askForProjectOption(projectRoot);
             if (!result || result === 'BACK') {
                 return; // Cancelled
             }

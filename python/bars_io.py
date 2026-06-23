@@ -187,7 +187,7 @@ def _parse_amta(data: bytes, amta_offset: int) -> AmtaMetadata:
 
     if strg_rel == 0:
         raise ValueError(
-            f"AMTA at {amta_offset:#x}: STRG section offset is zero — cannot read asset name"
+            f"AMTA at {amta_offset:#x}: STRG section offset is zero - cannot read asset name"
         )
 
     # STRG: 4 magic + 4 size + body of null-terminated strings

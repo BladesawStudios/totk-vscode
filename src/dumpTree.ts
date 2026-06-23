@@ -6,7 +6,7 @@ import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile, isBwa
 import type { ArchiveTreeProvider } from './archiveTree';
 import { resolveRomfsPath } from './romfs';
 import { invalidateRomfsIndex, queryRomfsIndex } from './romfsIndex';
-import { getActiveTkmmOption, askForTkmmOption } from './tkmmOptions';
+import { getActiveProjectOption, askForProjectOption } from './projectAdapters/registry';
 
 export const DUMP_SCHEME = 'totk-dump';
 const GAME_DUMP_SEARCH_VIEW_ID = 'totk-editor.gameDumpSearch';
@@ -635,7 +635,7 @@ export function registerGameDumpTree(
         vscode.commands.registerCommand('totk-editor.openRomfsSettings', async () => {
             await vscode.commands.executeCommand(
                 'workbench.action.openSettings',
-                'totk-editor.romfsPath',
+                'TKVSC.romfsPath',
             );
         }),
     );
@@ -670,7 +670,7 @@ export function registerGameDumpTree(
                     return;
                 }
 
-                const activeTkmmOption = getActiveTkmmOption(context, projectRoot);
+                const activeOption = getActiveProjectOption(context, projectRoot);
 
                 let copiedCount = 0;
                 for (const entry of entries) {
@@ -679,7 +679,7 @@ export function registerGameDumpTree(
                         projectRoot,
                         undefined,
                         { suppressSuccessMessage: entries.length > 1 },
-                        activeTkmmOption
+                        activeOption
                     );
                     if (copied) {
                         copiedCount++;
@@ -722,7 +722,7 @@ export function registerGameDumpTree(
                     return;
                 }
 
-                const optionResult = await askForTkmmOption(projectRoot);
+                const optionResult = await askForProjectOption(projectRoot);
                 if (!optionResult || optionResult === 'BACK') {
                     return;
                 }

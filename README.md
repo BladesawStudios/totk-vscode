@@ -136,6 +136,10 @@ That produces `totk-vscode-0.0.1.vsix` (version comes from `package.json`).
 
 See: [CONTRIBUTING.md](./.github/CONTRIBUTING.md)
 
+### Addon development
+
+Companion VS Code extensions can extend TKVSC via the exported API. See [docs/api/addon-development.md](docs/api/addon-development.md) (guide) and [docs/api/v1.md](docs/api/v1.md) (full API reference).
+
 ## Credits
 ### TKVSC Team
 **Mind** - Project Lead, Developer\

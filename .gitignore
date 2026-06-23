@@ -10,3 +10,4 @@ context/
 research
 .ruff_cache/
 totk_vscode_python.egg-info/
+*.plan.md

@@ -2,17 +2,17 @@
 #
 # This file defines who is automatically requested as a reviewer when a pull
 # request modifies files matching a given pattern. GitHub checks this file from
-# bottom to top — the last matching rule wins.
+# bottom to top - the last matching rule wins.
 #
 # Format:
 #   <glob pattern>  <@username or @org/team>  [<additional owners>...]
 #
 # Examples:
-#   *                     @someone          — matches every file (catch-all)
-#   *.ts                  @someone          — all TypeScript files
-#   src/                  @someone          — everything under src/
-#   src/bridge.ts         @someone @other   — one specific file, multiple owners
-#   docs/                 @docs-person      — only doc changes go to this person
+#   *                     @someone          - matches every file (catch-all)
+#   *.ts                  @someone          - all TypeScript files
+#   src/                  @someone          - everything under src/
+#   src/bridge.ts         @someone @other   - one specific file, multiple owners
+#   docs/                 @docs-person      - only doc changes go to this person
 #
 # A GitHub team can be used instead of individual usernames:
 #   *  @TKVSC-Team/maintainers

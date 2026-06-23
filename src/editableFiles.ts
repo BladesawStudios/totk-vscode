@@ -1,11 +1,10 @@
 import * as vscode from 'vscode';
-import { isAampExtension } from './aampExtensions';
-import { isCoreExtension } from './coreFsExtensions';
+import { getFormatRegistry } from './formatRegistry';
 
-/** TOTK file types that the Python bridge can convert to/from editor text. */
+/** File types that the Python bridge can convert to/from editor text. */
 
 export function isEditableFile(filePath: string): boolean {
-    return isCoreExtension(filePath) || isAampExtension(filePath);
+    return getFormatRegistry().isEditable(filePath);
 }
 
 export function toTotkDiskUri(fileUri: vscode.Uri): vscode.Uri {

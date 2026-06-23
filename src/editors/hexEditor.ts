@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { runBridgeJsonAsync } from '../bridge';
+import { getBridgeEnv } from '../api/bridgeEnv';
 import { getCachedPythonExecutable } from '../pythonEnv';
 import { logger } from '../logger';
 import {
@@ -13,21 +14,8 @@ import {
 
 const panels = new Map<string, vscode.WebviewPanel>();
 
-function getBridgeEnv(): NodeJS.ProcessEnv {
-    const config = vscode.workspace.getConfiguration('totk-editor');
-    const romfsPath = config.get<string>('romfsPath', '') || '';
-    const extraAamp = config.get<string[]>('extraAampExtensions', []);
-    return {
-        ...process.env,
-        TOTK_EDITOR_ROMFS: romfsPath,
-        TOTK_TAG_PRODUCT_FORMAT: config.get<string>('tagProductFormat', 'json'),
-        TOTK_EXTRA_AAMP_EXTS: extraAamp.map((ext) => ext.replace(/^\./, '')).join(','),
-        TOTK_BYML_INLINE_CONTAINER_MAX_COUNT: String(config.get<number>('bymlInlineContainerMaxCount', 1)),
-    };
-}
-
 function getPython(): string {
-    const config = vscode.workspace.getConfiguration('totk-editor');
+    const config = vscode.workspace.getConfiguration('TKVSC');
     const override = config.get<string>('pythonPath', '');
     if (override) {
         return override;
@@ -57,7 +45,7 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
         }
         const diskArchive = getDiskArchivePath(fsPath);
         const locator = getLocatorInsideDiskArchive(fsPath, diskArchive);
-        logger.info(`[HexEditor] Archive export — diskArchive=${diskArchive} locator="${locator}"`);
+        logger.info(`[HexEditor] Archive export - diskArchive=${diskArchive} locator="${locator}"`);
         if (!locator) {
             logger.info(`[HexEditor] ERROR: locator is empty, cannot read archive root`);
             throw new Error('Cannot read archive root.');
@@ -208,7 +196,7 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 // If it is ZSTD compressed, compress it back first!
                 const isZstd = uri.fsPath.toLowerCase().endsWith('.zs') || path.basename(uri.fsPath).toLowerCase().includes('.zs');
                 if (isZstd) {
-                    logger.info(`[HexEditor] File is .zs — recompressing before save`);
+                    logger.info(`[HexEditor] File is .zs - recompressing before save`);
                     const python = getPython();
                     if (!python) {
                         throw new Error('Python environment is not ready. Re-compression of .zs requires Python.');
@@ -296,7 +284,7 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
             cancellable: false
         },
         async () => {
-            logger.info(`[HexEditor] withProgress started — calling getRawBinaryBytes`);
+            logger.info(`[HexEditor] withProgress started - calling getRawBinaryBytes`);
             try {
                 const { data, resolvedName } = await getRawBinaryBytes(uri, extensionUri);
                 logger.info(`[HexEditor] getRawBinaryBytes returned ${data.length} bytes, resolvedName=${resolvedName}`);
@@ -324,7 +312,7 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 }
 
                 const base64Data = Buffer.from(data).toString('base64');
-                logger.info(`[HexEditor] base64 encoded length: ${base64Data.length} chars — setting webview HTML`);
+                logger.info(`[HexEditor] base64 encoded length: ${base64Data.length} chars - setting webview HTML`);
                 pendingInitData = { base64Data, totalSize: data.length };
                 const html = buildHtml(resolvedName, data.length, isReadOnly, panel.webview, patterns);
                 panel.webview.html = html;
@@ -2262,7 +2250,7 @@ function buildHtml(
             updateSelectionsUI();
             updateInspector();
 
-            // Scroll to start — inline the scroll logic instead of calling
+            // Scroll to start - inline the scroll logic instead of calling
             // navigateToOffset() which would clobber selectionEnd via startSelectionAt()
             const targetRow       = Math.floor(start / 16);
             const targetScrollTop = targetRow * ROW_HEIGHT;

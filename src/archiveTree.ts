@@ -2,7 +2,13 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile, isBwavAudioFile, isBarsAudioArchive } from './archives';
 import { registerArchiveFileCommands, ArchiveTreeDragDrop, setArchiveTreeView } from './archiveFsCommands';
-import { getActiveTkmmOption, createTkmmOptionGroup, createTkmmOption, setActiveTkmmOption } from './tkmmOptions';
+import {
+    detectProjectAdapter,
+    getActiveProjectOption,
+    importProjectsFromAdapters,
+    resolveProjectRootFromTreeItem,
+} from './projectAdapters/registry';
+import type { ProjectAdapter } from './projectAdapters/types';
 
 const STORAGE_KEY = 'totk-editor.archiveRoots';
 
@@ -142,19 +148,17 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                 }
             }
 
-            // Find the project root for TKMM options
-            let tkmmProjectRoot = element.resourceUri.fsPath;
-            if (element.contextValue === 'tkmmOptionsRoot') {
-                tkmmProjectRoot = path.dirname(element.resourceUri.fsPath);
-            } else if (element.contextValue === 'tkmmOptionGroup') {
-                tkmmProjectRoot = path.dirname(path.dirname(element.resourceUri.fsPath));
-            } else if (element.contextValue === 'tkmmOption' || element.contextValue === 'tkmmOptionActive') {
-                tkmmProjectRoot = path.dirname(path.dirname(path.dirname(element.resourceUri.fsPath)));
-            } else if (!isProjectRoot) {
-                tkmmProjectRoot = workspaceRootPath;
-            }
-            
-            const activeTkmmOption = getActiveTkmmOption(this.context, tkmmProjectRoot);
+            const projectAdapter = detectProjectAdapter(workspaceRootPath);
+
+            const optionsProjectRoot = projectAdapter.resolveOptionsProjectRoot(
+                element.contextValue,
+                element.resourceUri.fsPath,
+                workspaceRootPath,
+                isProjectRoot,
+            );
+
+            const activeOption = getActiveProjectOption(this.context, optionsProjectRoot);
+            const cv = projectAdapter.contextValues;
 
             const children = await Promise.all(entries
                 .sort(compareEntriesFoldersFirstKeepingArchivesMixed)
@@ -163,12 +167,17 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                     const isDirectory = fileType === vscode.FileType.Directory || isArchiveFile(name);
                     
                     let contextValue = archiveContextValue(name, isDirectory, childUri.fsPath);
-                    if (isProjectRoot && name.toLowerCase() === 'options' && isDirectory) {
-                        contextValue = 'tkmmOptionsRoot';
-                    } else if (element.contextValue === 'tkmmOptionsRoot' && isDirectory) {
-                        contextValue = 'tkmmOptionGroup';
-                    } else if (element.contextValue === 'tkmmOptionGroup' && isDirectory) {
-                        contextValue = 'tkmmOption';
+                    if (
+                        isProjectRoot
+                        && name.toLowerCase() === projectAdapter.optionsDirName
+                        && isDirectory
+                        && (await projectAdapter.supportsOptionsTree(workspaceRootPath))
+                    ) {
+                        contextValue = cv.optionsRoot;
+                    } else if (element.contextValue === cv.optionsRoot && isDirectory) {
+                        contextValue = cv.optionGroup;
+                    } else if (element.contextValue === cv.optionGroup && isDirectory) {
+                        contextValue = cv.option;
                     } else if (isDirectory && this.hasMultipleMods.has(workspaceRootPath) && contextValue === 'archiveDir') {
                         // Check if this directory is a valid mod folder (has romfs/exefs/.tkproj)
                         let isModFolder = false;
@@ -195,14 +204,14 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                     }
 
                     let isActiveOption = false;
-                    if (activeTkmmOption) {
-                        if (contextValue === 'tkmmOption') {
-                            if (element.entryName === activeTkmmOption.group && name === activeTkmmOption.option) {
+                    if (activeOption) {
+                        if (contextValue === cv.option) {
+                            if (element.entryName === activeOption.group && name === activeOption.option) {
                                 isActiveOption = true;
-                                contextValue = 'tkmmOptionActive';
+                                contextValue = cv.optionActive;
                             }
-                        } else if (contextValue === 'tkmmOptionGroup') {
-                            if (name === activeTkmmOption.group) {
+                        } else if (contextValue === cv.optionGroup) {
+                            if (name === activeOption.group) {
                                 isActiveOption = true;
                             }
                         }
@@ -421,36 +430,7 @@ export async function focusArchiveSidebar(): Promise<void> {
     await vscode.commands.executeCommand('totk-editor.archives.focus');
 }
 
-export async function getTkmmRecentJsonPath(): Promise<string | undefined> {
-    const recentJsonPaths: string[] = [];
-    const homeDir = require('os').homedir();
-    if (process.platform === 'win32' && process.env.LOCALAPPDATA) {
-        recentJsonPaths.push(path.join(process.env.LOCALAPPDATA, '.tk-studio', 'recent.json'));
-    } else if (process.platform === 'darwin') {
-        recentJsonPaths.push(path.join(homeDir, 'Library', 'Application Support', '.tk-studio', 'recent.json'));
-    } else {
-        // Linux and other Unix-like systems
-        if (process.env.XDG_DATA_HOME) {
-            recentJsonPaths.push(path.join(process.env.XDG_DATA_HOME, '.tk-studio', 'recent.json'));
-        } else {
-            recentJsonPaths.push(path.join(homeDir, '.local', 'share', '.tk-studio', 'recent.json'));
-        }
-    }
-
-    let foundPath: string | undefined;
-    for (const p of recentJsonPaths) {
-        try {
-            const stat = await vscode.workspace.fs.stat(vscode.Uri.file(p));
-            if (stat.type === vscode.FileType.File) {
-                foundPath = p;
-                break;
-            }
-        } catch {
-            // Ignore
-        }
-    }
-    return foundPath;
-}
+export { getTkmmRecentJsonPath } from './projectAdapters/tkmmAdapter';
 
 export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTreeProvider {
     extensionUri = context.extensionUri;
@@ -537,14 +517,14 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
                 // Doesn't exist, which is good
             }
 
-            // Create folder
             await vscode.workspace.fs.createDirectory(projectFolderUri);
-            
-            // Create romfs
-            await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(projectFolderUri, 'romfs'));
-            
-            // Create .tkproj
-            await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(projectFolderUri, '.tkproj'), new Uint8Array(0));
+
+            const adapter = detectProjectAdapter(projectFolderUri.fsPath);
+            if (adapter.scaffoldNewProject) {
+                await adapter.scaffoldNewProject(projectFolderUri);
+            } else {
+                await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(projectFolderUri, 'romfs'));
+            }
 
             // Add to workspace/archive tree
             await provider.addRoot(projectFolderUri);
@@ -559,37 +539,36 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
     };
 
     const importTKMMProjects = async (): Promise<void> => {
-        const foundPath = await getTkmmRecentJsonPath();
-
-        if (!foundPath) {
-            void vscode.window.showWarningMessage('TOTK Archives: Could not find TKMM recent.json. Please make sure you have opened projects in TKMM before.');
+        let batches: Array<{ adapter: ProjectAdapter; paths: string[] }>;
+        try {
+            batches = await importProjectsFromAdapters();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            void vscode.window.showErrorMessage(`TOTK Archives: Failed to import projects: ${message}`);
             return;
         }
 
-        try {
-            const data = await vscode.workspace.fs.readFile(vscode.Uri.file(foundPath));
-            const projects = JSON.parse(Buffer.from(data).toString('utf-8')) as string[];
-            if (Array.isArray(projects)) {
-                let addedCount = 0;
-                for (const p of projects) {
-                    try {
-                        const stat = await vscode.workspace.fs.stat(vscode.Uri.file(p));
-                        if (stat.type === vscode.FileType.Directory) {
-                            await provider.addRoot(vscode.Uri.file(p));
-                            addedCount++;
-                        }
-                    } catch {
-                        // Project directory might have been deleted or moved
-                    }
-                }
-                void focusArchiveSidebar();
-                void vscode.window.showInformationMessage(`TOTK Archives: Imported ${addedCount} TKMM project(s).`);
-            } else {
-                void vscode.window.showErrorMessage('TOTK Archives: Invalid format in TKMM recent.json.');
+        if (batches.length === 0) {
+            void vscode.window.showWarningMessage(
+                'TOTK Archives: No external project lists found. Open projects in TKMM (or register a project adapter) first.',
+            );
+            return;
+        }
+
+        let addedCount = 0;
+        for (const { adapter, paths } of batches) {
+            for (const projectPath of paths) {
+                await provider.addRoot(vscode.Uri.file(projectPath));
+                addedCount++;
             }
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            void vscode.window.showErrorMessage(`TOTK Archives: Failed to read TKMM recent.json: ${message}`);
+            if (paths.length > 0) {
+                void vscode.window.showInformationMessage(
+                    `TOTK Archives: Imported ${paths.length} project(s) from ${adapter.getImportSourceLabel?.() ?? adapter.displayName}.`,
+                );
+            }
+        }
+        if (addedCount > 0) {
+            void focusArchiveSidebar();
         }
     };
 
@@ -635,17 +614,27 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
         vscode.commands.registerCommand(
             'totk-editor.createOptionGroup',
             async (item: ArchiveTreeItem | undefined) => {
-                let rootUri: string | undefined;
-                if (item?.contextValue === 'archiveRoot') {
-                    rootUri = item.resourceUri.fsPath;
-                } else if (item?.contextValue === 'tkmmOptionsRoot') {
-                    rootUri = path.dirname(item.resourceUri.fsPath);
+                if (!item?.resourceUri) {
+                    return;
                 }
-                if (!rootUri) {return;}
-                
+                const rootUri = resolveProjectRootFromTreeItem(
+                    item.contextValue,
+                    item.resourceUri.fsPath,
+                );
+                if (!rootUri) {
+                    return;
+                }
+                const adapter = detectProjectAdapter(rootUri);
+                if (
+                    item.contextValue !== 'archiveRoot'
+                    && item.contextValue !== adapter.contextValues.optionsRoot
+                ) {
+                    return;
+                }
+
                 const groupName = await vscode.window.showInputBox({ prompt: 'Enter Option Group Name' });
                 if (groupName) {
-                    await createTkmmOptionGroup(rootUri, groupName);
+                    await adapter.createOptionGroup(rootUri, groupName);
                     provider.refresh();
                 }
             }
@@ -653,29 +642,56 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
         vscode.commands.registerCommand(
             'totk-editor.createOption',
             async (item: ArchiveTreeItem | undefined) => {
-                if (item?.contextValue === 'tkmmOptionGroup') {
-                    const groupName = item.entryName;
-                    const rootUri = path.dirname(path.dirname(item.resourceUri.fsPath));
-                    
-                    const optionName = await vscode.window.showInputBox({ prompt: `Enter Option Name for group '${groupName}'` });
-                    if (optionName) {
-                        await createTkmmOption(rootUri, groupName, optionName);
-                        provider.refresh();
-                    }
+                if (!item?.resourceUri) {
+                    return;
+                }
+                const rootUri = resolveProjectRootFromTreeItem(
+                    item.contextValue,
+                    item.resourceUri.fsPath,
+                );
+                if (!rootUri) {
+                    return;
+                }
+                const adapter = detectProjectAdapter(rootUri);
+                if (item.contextValue !== adapter.contextValues.optionGroup) {
+                    return;
+                }
+
+                const groupName = item.entryName;
+                const optionName = await vscode.window.showInputBox({
+                    prompt: `Enter Option Name for group '${groupName}'`,
+                });
+                if (optionName) {
+                    await adapter.createOption(rootUri, groupName, optionName);
+                    provider.refresh();
                 }
             }
         ),
         vscode.commands.registerCommand(
             'totk-editor.setActiveOption',
             async (item: ArchiveTreeItem | undefined) => {
-                if (item?.contextValue === 'tkmmOption' || item?.contextValue === 'tkmmOptionActive') {
-                    const optionName = item.entryName;
-                    const groupName = path.basename(path.dirname(item.resourceUri.fsPath));
-                    const rootUri = path.dirname(path.dirname(path.dirname(item.resourceUri.fsPath)));
-                    
-                    await setActiveTkmmOption(context, rootUri, groupName, optionName);
-                    provider.refresh();
+                if (!item?.resourceUri) {
+                    return;
                 }
+                const rootUri = resolveProjectRootFromTreeItem(
+                    item.contextValue,
+                    item.resourceUri.fsPath,
+                );
+                if (!rootUri) {
+                    return;
+                }
+                const adapter = detectProjectAdapter(rootUri);
+                if (
+                    item.contextValue !== adapter.contextValues.option
+                    && item.contextValue !== adapter.contextValues.optionActive
+                ) {
+                    return;
+                }
+
+                const optionName = item.entryName;
+                const groupName = path.basename(path.dirname(item.resourceUri.fsPath));
+                await adapter.setActiveOption(context, rootUri, groupName, optionName);
+                provider.refresh();
             }
         ),
         vscode.commands.registerCommand(
@@ -687,24 +703,27 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
                     if (!rootUri && provider.getProjectRoots().length > 0) {
                         rootUri = provider.getProjectRoots()[0]?.fsPath;
                     }
-                } else if (item.contextValue === 'archiveRoot') {
-                    const mapped = provider.getProjectRoots().find(r => r.fsPath.startsWith(item.resourceUri.fsPath) || item.resourceUri.fsPath.startsWith(r.fsPath));
-                    rootUri = mapped ? mapped.fsPath : item.resourceUri.fsPath;
-                } else if (item.contextValue === 'archiveProjectDir' || item.contextValue === 'archiveProjectDirActive') {
-                    rootUri = item.resourceUri.fsPath;
-                } else if (item.contextValue === 'tkmmOptionActive' || item.contextValue === 'tkmmOption') {
-                    rootUri = path.dirname(path.dirname(path.dirname(item.resourceUri.fsPath)));
-                } else if (item.contextValue === 'tkmmOptionGroup') {
-                    rootUri = path.dirname(path.dirname(item.resourceUri.fsPath));
-                } else if (item.contextValue === 'tkmmOptionsRoot') {
-                    rootUri = path.dirname(item.resourceUri.fsPath);
+                } else if (item.resourceUri) {
+                    rootUri = resolveProjectRootFromTreeItem(
+                        item.contextValue,
+                        item.resourceUri.fsPath,
+                    );
+                    if (
+                        !rootUri
+                        && (item.contextValue === 'archiveRoot'
+                            || item.contextValue === 'archiveProjectDir'
+                            || item.contextValue === 'archiveProjectDirActive')
+                    ) {
+                        rootUri = item.resourceUri.fsPath;
+                    }
                 }
-                
+
                 if (rootUri) {
-                    await setActiveTkmmOption(context, rootUri, undefined, undefined);
+                    const adapter = detectProjectAdapter(rootUri);
+                    await adapter.setActiveOption(context, rootUri, undefined, undefined);
                     provider.refresh();
                 } else {
-                    void vscode.window.showInformationMessage("TKVSC: No active project found to unset.");
+                    void vscode.window.showInformationMessage('TKVSC: No active project found to unset.');
                 }
             }
         ),
