@@ -202,7 +202,8 @@ Works for `sarc://`, `totk-disk://`, and `file://` URIs that point inside nested
 
 | Document | Description |
 |----------|-------------|
-| [api/v1.md](api/v1.md) | **Current** — API reference (Phases 1–4) |
+| [api/v1.md](api/v1.md) | **Complete API reference** — every method, type, manifest field, env var, and integration recipe |
+| [api/README.md](api/README.md) | API doc index and type source paths |
 | [api/CHANGELOG.md](api/CHANGELOG.md) | API version history |
 
 When new API versions ship, a new `vN.md` is added. Breaking changes bump `api.apiVersion`.

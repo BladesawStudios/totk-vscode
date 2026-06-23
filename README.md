@@ -138,7 +138,7 @@ See: [CONTRIBUTING.md](./.github/CONTRIBUTING.md)
 
 ### Addon development
 
-Companion VS Code extensions can extend TKVSC via the exported API. See [docs/addon-development.md](docs/addon-development.md) and [docs/api/v1.md](docs/api/v1.md).
+Companion VS Code extensions can extend TKVSC via the exported API. See [docs/api/addon-development.md](docs/api/addon-development.md) (guide) and [docs/api/v1.md](docs/api/v1.md) (full API reference).
 
 ## Credits
 ### TKVSC Team
