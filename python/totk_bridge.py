@@ -101,7 +101,7 @@ def _read_txtg_texture_result(file_data: bytes, texture_name: str, logical_path:
     from txtg_reader import read_txtg_texture_result
 
     try:
-        payload, _, _ = decompress_container(file_data, logical_path, get_romfs_path())
+        payload, _, _, _ = decompress_container(file_data, logical_path, get_romfs_path())
     except Exception:
         payload = file_data
     return read_txtg_texture_result(payload, texture_name)
@@ -305,7 +305,7 @@ def _patch_python_byml():
 
 
 def read_byml_content(file_data, logical_path="", romfs_path=""):
-    file_data, _, _ = decompress_container(file_data, logical_path, romfs_path)
+    file_data, _, _, _ = decompress_container(file_data, logical_path, romfs_path)
     if len(file_data) == 0:
         return "{}\n"
 
@@ -373,7 +373,7 @@ def read_byml_content(file_data, logical_path="", romfs_path=""):
 def read_msbt_content(file_data, logical_path="", romfs_path=""):
     from pymsbt.msbt import MSBTFile
 
-    file_data, _, _ = decompress_container(file_data, logical_path, romfs_path)
+    file_data, _, _, _ = decompress_container(file_data, logical_path, romfs_path)
     if len(file_data) == 0:
         return (
             "# New MSBT file detected.\n"
@@ -394,7 +394,7 @@ def read_msbt_content(file_data, logical_path="", romfs_path=""):
 
 
 def write_byml_bytes(orig_file_data, new_yaml, logical_path="", romfs_path=""):
-    orig_file_data, is_zstd, is_yaz0 = decompress_container(
+    orig_file_data, is_zstd, is_yaz0, is_mc = decompress_container(
         orig_file_data, logical_path, romfs_path
     )
     if logical_path.lower().endswith(".zs"):
@@ -422,7 +422,9 @@ def write_byml_bytes(orig_file_data, new_yaml, logical_path="", romfs_path=""):
 
         if is_tag_product_fmt:
             new_byml_bytes = tag_product_from_editor_text(new_yaml, big_endian, version)
-            return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
+            return compress_container(
+                new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0, was_mc=is_mc
+            )
 
     byml_doc = oead.byml.from_text(normalize_byml_u64_literals(new_yaml))
 
@@ -466,18 +468,22 @@ def write_byml_bytes(orig_file_data, new_yaml, logical_path="", romfs_path=""):
 
         writer = b_mod.Writer(py_doc, be=big_endian, version=version)
         new_byml_bytes = writer.get_bytes()
-        return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
+        return compress_container(
+            new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0, was_mc=is_mc
+        )
 
     new_byml_bytes = oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)
 
-    return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
+    return compress_container(
+        new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0, was_mc=is_mc
+    )
 
 
 def write_msbt_bytes(orig_file_data, editor_text, logical_path="", romfs_path=""):
     from pymsbt.msbt import MSBTFile
     from pymsbt.msbt_write import MSBTWriter
 
-    orig_file_data, is_zstd, is_yaz0 = decompress_container(
+    orig_file_data, is_zstd, is_yaz0, is_mc = decompress_container(
         orig_file_data, logical_path, romfs_path
     )
     if logical_path.lower().endswith(".zs"):
@@ -508,7 +514,9 @@ def write_msbt_bytes(orig_file_data, editor_text, logical_path="", romfs_path=""
             MSBTWriter(msbt, out_path)
 
         new_bytes = Path(out_path).read_bytes()
-        return compress_container(new_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
+        return compress_container(
+            new_bytes, logical_path, romfs_path, is_zstd, is_yaz0, was_mc=is_mc
+        )
     finally:
         os.unlink(tmp_path)
         if os.path.exists(out_path):
@@ -526,7 +534,7 @@ def _file_kind(
 
     if file_data is not None:
         try:
-            data, _, _ = decompress_container(file_data, logical_path, romfs_path)
+            data, _, _, _ = decompress_container(file_data, logical_path, romfs_path)
         except ValueError:
             data = file_data
         if is_aamp_binary(data):
@@ -714,7 +722,7 @@ def main():
             input_path = sys.argv[2]
             logical_path = sys.argv[3] if len(sys.argv) > 3 else input_path
             file_data = Path(input_path).read_bytes()
-            decompressed, _, _ = decompress_container(file_data, logical_path, romfs_path)
+            decompressed, _, _, _ = decompress_container(file_data, logical_path, romfs_path)
             fd, tmp_path = tempfile.mkstemp(
                 prefix="totk-decomp-", suffix="-" + Path(logical_path).name.replace(".zs", "")
             )
@@ -1185,7 +1193,9 @@ def main():
                     logical_path = archive_path
 
                 try:
-                    payload, _, is_zstd = decompress_container(file_data, logical_path, romfs_path)
+                    payload, _, is_zstd, _ = decompress_container(
+                        file_data, logical_path, romfs_path
+                    )
                 except Exception:
                     payload = file_data
                     is_zstd = False
@@ -1287,7 +1297,9 @@ def main():
                     logical_path = archive_path
 
                 try:
-                    payload, _, is_zstd = decompress_container(file_data, logical_path, romfs_path)
+                    payload, _, is_zstd, _ = decompress_container(
+                        file_data, logical_path, romfs_path
+                    )
                 except Exception:
                     payload = file_data
                     is_zstd = False

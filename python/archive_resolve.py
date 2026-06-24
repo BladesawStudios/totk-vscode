@@ -4,11 +4,15 @@ import re
 from pathlib import Path
 
 import oead
+from bfres_reader import list_bfres_entries, load_bfres_bytes, read_bfres_file_bytes
 from bntx_reader import is_bntx, list_textures, read_texture_data
 from compression import compress_container, decompress_container
 
-_ARCHIVE_SEGMENT = re.compile(r"\.(pack|sarc|genvb|blarc|bfarc|bntx)(\.zs)?$", re.IGNORECASE)
+_ARCHIVE_SEGMENT = re.compile(
+    r"\.(pack|sarc|genvb|blarc|bfarc|bfres|bntx)(\.zs|\.mc)?$", re.IGNORECASE
+)
 _BNTX_SEGMENT = re.compile(r"\.bntx(\.zs)?$", re.IGNORECASE)
+_BFRES_SEGMENT = re.compile(r"\.bfres(\.mc|\.zs)?$", re.IGNORECASE)
 _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 
 
@@ -63,6 +67,10 @@ def _is_bntx_name(name: str) -> bool:
     return bool(_BNTX_SEGMENT.search(name.replace("\\", "/")))
 
 
+def _is_bfres_name(name: str) -> bool:
+    return bool(_BFRES_SEGMENT.search(name.replace("\\", "/")))
+
+
 def _normalize_path(path: str) -> str:
     return path.replace("\\", "/").strip("/")
 
@@ -73,11 +81,16 @@ def load_sarc_file(archive_path: str, romfs_path: str):
 
     is_compressed = data.startswith(_ZSTD_MAGIC)
     if is_compressed:
-        data, _, _ = decompress_container(data, archive_path, romfs_path)
+        data, _, _, _ = decompress_container(data, archive_path, romfs_path)
 
     if is_bntx(data):
         raise ValueError(
             f"Cannot open BNTX file as SARC: {archive_path}. Use the BNTX reader instead."
+        )
+
+    if _is_bfres_name(archive_path):
+        raise ValueError(
+            f"Cannot open BFRES file as SARC: {archive_path}. Use the BFRES reader instead."
         )
 
     return oead.Sarc(data), is_compressed
@@ -176,11 +189,18 @@ def _mutate_nested_set(
     entry_path = "/".join(segments[: index + 1])
     remainder = segments[index + 1 :]
     nested_data = _get_file_bytes(sarc, entry_path)
-    payload, was_zstd, was_yaz0 = decompress_container(nested_data, entry_path, romfs_path)
+    payload, was_zstd, was_yaz0, was_mc = decompress_container(
+        nested_data, entry_path, romfs_path
+    )
     nested_sarc = oead.Sarc(payload)
     nested_out = _mutate_nested_set(nested_sarc, remainder, file_data, romfs_path)
     nested_out = compress_container(
-        nested_out, entry_path, romfs_path, was_zstd=was_zstd, was_yaz0=was_yaz0
+        nested_out,
+        entry_path,
+        romfs_path,
+        was_zstd=was_zstd,
+        was_yaz0=was_yaz0,
+        was_mc=was_mc,
     )
     return _write_file_bytes(sarc, entry_path, nested_out)
 
@@ -198,11 +218,18 @@ def _mutate_nested_delete(
     entry_path = "/".join(segments[: index + 1])
     remainder = segments[index + 1 :]
     nested_data = _get_file_bytes(sarc, entry_path)
-    payload, was_zstd, was_yaz0 = decompress_container(nested_data, entry_path, romfs_path)
+    payload, was_zstd, was_yaz0, was_mc = decompress_container(
+        nested_data, entry_path, romfs_path
+    )
     nested_sarc = oead.Sarc(payload)
     nested_out = _mutate_nested_delete(nested_sarc, remainder, romfs_path)
     nested_out = compress_container(
-        nested_out, entry_path, romfs_path, was_zstd=was_zstd, was_yaz0=was_yaz0
+        nested_out,
+        entry_path,
+        romfs_path,
+        was_zstd=was_zstd,
+        was_yaz0=was_yaz0,
+        was_mc=was_mc,
     )
     return _write_file_bytes(sarc, entry_path, nested_out)
 
@@ -232,11 +259,18 @@ def _mutate_nested_rename(
     old_remainder = old_segments[old_index + 1 :]
     new_remainder = new_segments[new_index + 1 :]
     nested_data = _get_file_bytes(sarc, old_entry)
-    payload, was_zstd, was_yaz0 = decompress_container(nested_data, old_entry, romfs_path)
+    payload, was_zstd, was_yaz0, was_mc = decompress_container(
+        nested_data, old_entry, romfs_path
+    )
     nested_sarc = oead.Sarc(payload)
     nested_out = _mutate_nested_rename(nested_sarc, old_remainder, new_remainder, romfs_path)
     nested_out = compress_container(
-        nested_out, old_entry, romfs_path, was_zstd=was_zstd, was_yaz0=was_yaz0
+        nested_out,
+        old_entry,
+        romfs_path,
+        was_zstd=was_zstd,
+        was_yaz0=was_yaz0,
+        was_mc=was_mc,
     )
     return _write_file_bytes(sarc, old_entry, nested_out)
 
@@ -253,12 +287,12 @@ def resolve_sarc_view(disk_archive_path: str, locator_path: str, romfs_path: str
     consumed_archive_segments: list[str] = []
 
     for index, segment in enumerate(segments):
-        if not _is_archive_name(segment) or _is_bntx_name(segment):
+        if not _is_archive_name(segment) or _is_bntx_name(segment) or _is_bfres_name(segment):
             continue
 
         entry_path = "/".join(segments[after_archive : index + 1])
         file_data = _get_file_bytes(sarc, entry_path)
-        file_data, _, _ = decompress_container(file_data, entry_path, romfs_path)
+        file_data, _, _, _ = decompress_container(file_data, entry_path, romfs_path)
         sarc = oead.Sarc(file_data)
         consumed_archive_segments.extend(segments[after_archive : index + 1])
         after_archive = index + 1
@@ -272,7 +306,7 @@ def _load_disk_bytes(disk_archive_path: str, romfs_path: str) -> tuple[bytes, bo
     raw = Path(disk_archive_path).read_bytes()
     is_compressed = raw.startswith(_ZSTD_MAGIC)
     if is_compressed:
-        raw, _, _ = decompress_container(raw, disk_archive_path, romfs_path)
+        raw, _, _, _ = decompress_container(raw, disk_archive_path, romfs_path)
     return raw, is_compressed
 
 
@@ -300,7 +334,7 @@ def _resolve_bntx_data(disk_archive_path: str, locator_path: str, romfs_path: st
         bntx_entry = f"{prefix}/{seg}".strip("/") if prefix else seg
         bntx_bytes = _get_file_bytes(sarc, bntx_entry)
         if bntx_bytes[:4] == _ZSTD_MAGIC[:4]:
-            bntx_bytes, _, _ = decompress_container(bntx_bytes, seg, romfs_path)
+            bntx_bytes, _, _, _ = decompress_container(bntx_bytes, seg, romfs_path)
         if is_bntx(bntx_bytes):
             remainder = "/".join(segments[i + 1 :]).strip("/")
             bntx_prefix = "/".join(segments[: i + 1])
@@ -308,7 +342,61 @@ def _resolve_bntx_data(disk_archive_path: str, locator_path: str, romfs_path: st
     return None
 
 
+def _resolve_bfres_data(disk_archive_path: str, locator_path: str, romfs_path: str):
+    if _is_bfres_name(disk_archive_path):
+        data, _ = _load_disk_bytes(disk_archive_path, romfs_path)
+        try:
+            bfres_data = load_bfres_bytes(data)
+        except ValueError:
+            return None
+        return bfres_data, _normalize_path(locator_path), ""
+
+    if not locator_path:
+        return None
+
+    normalized = _normalize_path(locator_path)
+    segments = normalized.split("/")
+    for i, seg in enumerate(segments):
+        if not _is_bfres_name(seg):
+            continue
+        parent_locator = "/".join(segments[:i]) if i > 0 else ""
+        sarc, prefix, _, _ = resolve_sarc_view(
+            disk_archive_path,
+            parent_locator,
+            romfs_path,
+        )
+        bfres_entry = f"{prefix}/{seg}".strip("/") if prefix else seg
+        bfres_bytes = _get_file_bytes(sarc, bfres_entry)
+        bfres_bytes, _, _, _ = decompress_container(bfres_bytes, seg, romfs_path)
+        try:
+            bfres_data = load_bfres_bytes(bfres_bytes)
+        except ValueError:
+            continue
+        remainder = "/".join(segments[i + 1 :]).strip("/")
+        bfres_prefix = "/".join(segments[: i + 1])
+        return bfres_data, remainder, bfres_prefix
+    return None
+
+
 def list_archive_files(disk_archive_path: str, locator_path: str, romfs_path: str) -> list[str]:
+    bfres = _resolve_bfres_data(disk_archive_path, locator_path, romfs_path)
+    if bfres is not None:
+        bfres_data, remainder, bfres_prefix = bfres
+        names = list_bfres_entries(bfres_data)
+        if remainder:
+            prefix = remainder.rstrip("/") + "/"
+            names = [name[len(prefix) :] for name in names if name.startswith(prefix)]
+            if not names and not any(
+                entry.startswith(prefix) for entry in list_bfres_entries(bfres_data)
+            ):
+                raise FileNotFoundError(remainder)
+        if bfres_prefix:
+            base = f"{bfres_prefix}/{remainder}".strip("/") if remainder else bfres_prefix
+            return [f"{base}/{name}".strip("/") for name in names]
+        if remainder:
+            return [f"{remainder}/{name}".strip("/") for name in names]
+        return names
+
     bntx = _resolve_bntx_data(disk_archive_path, locator_path, romfs_path)
     if bntx is not None:
         bntx_data, remainder, bntx_prefix = bntx
@@ -338,6 +426,15 @@ def read_archive_file_bytes(disk_archive_path: str, file_path: str, romfs_path: 
     if _is_archive_name(leaf):
         raise IsADirectoryError(file_path)
 
+    bfres = _resolve_bfres_data(disk_archive_path, file_path, romfs_path)
+    if bfres is not None:
+        bfres_data, remainder, _ = bfres
+        if not remainder:
+            if _is_bfres_name(leaf):
+                return bfres_data
+            raise IsADirectoryError(file_path)
+        return read_bfres_file_bytes(bfres_data, remainder)
+
     bntx = _resolve_bntx_data(disk_archive_path, file_path, romfs_path)
     if bntx is not None:
         bntx_data, remainder, _ = bntx
@@ -350,6 +447,18 @@ def read_archive_file_bytes(disk_archive_path: str, file_path: str, romfs_path: 
     if file_path.lower().endswith((".bfotf", ".bfttf")):
         file_bytes = decrypt_bfttf(file_bytes)
     return file_bytes
+
+
+def _reject_bfres_mutation(disk_archive_path: str, operation: str, target_path: str = "") -> None:
+    if _is_bfres_name(disk_archive_path):
+        raise PermissionError(f"Cannot {operation} inside a BFRES container (read-only)")
+
+    if target_path:
+        segments = [s for s in target_path.split("/") if s]
+        if any(_is_bfres_name(seg) for seg in segments[:-1]):
+            raise PermissionError(
+                f"Cannot {operation} resources inside a nested BFRES container (read-only)"
+            )
 
 
 def _reject_bntx_mutation(disk_archive_path: str, operation: str, target_path: str = "") -> None:
@@ -372,6 +481,7 @@ def write_archive_file_bytes(
 ) -> None:
     file_path = _normalize_path(file_path)
     _reject_bntx_mutation(disk_archive_path, "write", file_path)
+    _reject_bfres_mutation(disk_archive_path, "write", file_path)
     if not file_path:
         raise ValueError("Missing file path")
 
@@ -396,6 +506,7 @@ def delete_archive_entry(
 ) -> None:
     target_path = _normalize_path(target_path)
     _reject_bntx_mutation(disk_archive_path, "delete", target_path)
+    _reject_bfres_mutation(disk_archive_path, "delete", target_path)
     if not target_path:
         raise ValueError("Missing target path")
 
@@ -415,6 +526,8 @@ def rename_archive_entry(
     new_path = _normalize_path(new_path)
     _reject_bntx_mutation(disk_archive_path, "rename", old_path)
     _reject_bntx_mutation(disk_archive_path, "rename", new_path)
+    _reject_bfres_mutation(disk_archive_path, "rename", old_path)
+    _reject_bfres_mutation(disk_archive_path, "rename", new_path)
     if not old_path or not new_path:
         raise ValueError("Missing rename path")
 

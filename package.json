@@ -148,7 +148,10 @@
           ".genvb",
           ".genvb.zs",
           ".bfarc",
-          ".bfarc.zs"
+          ".bfarc.zs",
+          ".bfres",
+          ".bfres.mc",
+          ".bfres.zs"
         ],
         "aliases": [
           "TOTK Archive"
@@ -255,7 +258,7 @@
     "commands": [
       {
         "command": "totk-editor.openPack",
-        "title": "TKVSC: Open Archive (.pack, .sarc, .genvb, .blarc, .bfarc, .bntx)",
+        "title": "TKVSC: Open Archive (.pack, .sarc, .genvb, .blarc, .bfarc, .bfres, .bntx)",
         "icon": "$(package)"
       },
       {
@@ -946,6 +949,9 @@
         "**.genvb.zs": "package",
         "**.bfarc": "package",
         "**.bfarc.zs": "package",
+        "**.bfres": "package",
+        "**.bfres.mc": "package",
+        "**.bfres.zs": "package",
         "**.asb": "robot",
         "**.baev": "log",
         "**.aamp": "settings",

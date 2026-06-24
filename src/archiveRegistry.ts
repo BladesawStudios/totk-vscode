@@ -1,10 +1,11 @@
 import * as path from 'path';
 import { getActiveGameId, getGameProfileRegistry } from './gameProfile';
 
-const DEFAULT_ARCHIVE_PATTERN = /\.(pack|sarc|genvb|blarc|bfarc|bntx)(\.zs)?$/i;
+const DEFAULT_ARCHIVE_PATTERN = /\.(pack|sarc|genvb|blarc|bfarc|bfres|bntx)(\.(zs|mc))?$/i;
 
 const TXTG_FILE_PATTERN = /\.txtg(\.zs)?$/i;
 const BNTX_PARENT_PATTERN = /\.bntx(\.zs)?[/\\]/i;
+const BFRES_TEXTURE_PATTERN = /\.bfres(\.(mc|zs))?[/\\]Textures[/\\]/i;
 const BWAV_FILE_PATTERN = /\.bwav(\.zs)?$/i;
 const BARS_FILE_PATTERN = /\.bars(\.zs)?$/i;
 
@@ -126,7 +127,8 @@ export function isTxtgFile(filePath: string): boolean {
 }
 
 export function isBntxTextureUri(uri: { fsPath: string }): boolean {
-    return BNTX_PARENT_PATTERN.test(uri.fsPath);
+    const path = uri.fsPath.replace(/\\/g, '/');
+    return BNTX_PARENT_PATTERN.test(path) || BFRES_TEXTURE_PATTERN.test(path);
 }
 
 export function isBwavAudioFile(filePath: string): boolean {
