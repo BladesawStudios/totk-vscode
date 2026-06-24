@@ -1,7 +1,13 @@
 """Read-only BFRES (.bfres / .bfres.mc) archive support for TKVSC.
 
-Lists internal resources similar to Switch Toolbox's BFRES tree:
-Models, animation groups, embedded files, and nested BNTX textures.
+A BFRES file is an archive (like SARC): it holds models, animations, embedded
+files, textures, and other resources. Listing and extraction treat the file as
+that container.
+
+Each *model* inside (FMDL under Models/{name}) is different: it is the unit
+for export / a future model viewer, and it also exposes a virtual sub-tree
+(Objects, Materials, Skeleton) for browsing. Those inner paths are not separate
+files on disk.
 """
 
 from __future__ import annotations
@@ -18,6 +24,13 @@ _FRES_MAGIC = b"FRES"
 _HAS_EXTERNAL_STRING = 1 << 1
 _EMBEDDED_FOLDER = "Embedded Files"
 _EXTERNAL_STRING_REL = os.path.join("Shader", "ExternalBinaryString.bfres.mc")
+
+# Virtual folders inside Models/{name}/ — browse-only, not extractable resources.
+_MODEL_OBJECT_FOLDER = "Objects"
+_MODEL_MATERIAL_FOLDER = "Materials"
+_MODEL_SKELETON_FOLDER = "Skeleton"
+_FMDL_MAGIC = b"FMDL"
+_FSKL_MAGIC = b"FSKL"
 
 
 def is_bfres(data: bytes) -> bool:
@@ -372,6 +385,93 @@ def _embedded_files(
     return files
 
 
+def _model_offsets(data: bytes, header: dict) -> list[int]:
+    """Return file offsets of each FMDL model resource."""
+    array_offset = header["model_array"]
+    count = header["num_models"]
+    if array_offset <= 0 or count <= 0:
+        return []
+    le = header["le"]
+    offsets: list[int] = []
+    for index in range(count):
+        slot = array_offset + index * 8
+        if slot + 8 > len(data):
+            break
+        if data[slot : slot + 4] == _FMDL_MAGIC:
+            offsets.append(slot)
+            continue
+        entry_ptr = _read_i64(data, slot, le)
+        if 0 < entry_ptr < len(data) and data[entry_ptr : entry_ptr + 4] == _FMDL_MAGIC:
+            offsets.append(entry_ptr)
+    return offsets
+
+
+def _model_subtree_paths(
+    data: bytes,
+    model_offset: int,
+    model_name: str,
+    external: bytes | None,
+) -> list[str]:
+    """List Objects / Materials / Skeleton children for one FMDL (Switch Toolbox model tree)."""
+    le = data[0x0C:0x0E] == b"\xff\xfe"
+    if model_offset + 0x70 > len(data) or data[model_offset : model_offset + 4] != _FMDL_MAGIC:
+        return []
+
+    prefix = f"Models/{model_name}"
+    paths: list[str] = []
+
+    shape_count = _read_u16(data, model_offset + 0x6C, le)
+    shape_dict = _read_i64(data, model_offset + 0x30, le)
+    for name in _dict_keys_ordered(data, shape_dict, le, shape_count, data, external):
+        paths.append(f"{prefix}/{_MODEL_OBJECT_FOLDER}/{name}")
+
+    material_count = _read_u16(data, model_offset + 0x6E, le)
+    material_dict = _read_i64(data, model_offset + 0x40, le)
+    for name in _dict_keys_ordered(data, material_dict, le, material_count, data, external):
+        paths.append(f"{prefix}/{_MODEL_MATERIAL_FOLDER}/{name}")
+
+    skeleton_offset = _read_i64(data, model_offset + 0x18, le)
+    if (
+        0 < skeleton_offset < len(data)
+        and data[skeleton_offset : skeleton_offset + 4] == _FSKL_MAGIC
+    ):
+        paths.append(f"{prefix}/{_MODEL_SKELETON_FOLDER}")
+        bone_array = _read_i64(data, skeleton_offset + 0x10, le)
+        bone_count = _read_u16(data, skeleton_offset + 0x38, le)
+        if bone_array > 0 and 0 < bone_count <= 512:
+            for index in range(bone_count):
+                bone_offset = bone_array + index * 8
+                if bone_offset + 8 > len(data):
+                    break
+                bone_ptr = _read_i64(data, bone_offset, le)
+                if bone_ptr <= 0 or bone_ptr + 0x10 > len(data):
+                    continue
+                name_ptr = _read_i64(data, bone_ptr + 0x08, le)
+                bone_name = _resolve_string_ptr(name_ptr, data, external, le)
+                if bone_name:
+                    paths.append(f"{prefix}/{_MODEL_SKELETON_FOLDER}/{bone_name}")
+
+    return paths
+
+
+def is_bfres_model_document_path(internal_path: str) -> bool:
+    """True for Models/{name} — one FMDL, the export / model-viewer unit."""
+    parts = internal_path.replace("\\", "/").strip("/").split("/")
+    return len(parts) == 2 and parts[0] == "Models" and parts[1] != ""
+
+
+def is_bfres_virtual_node(internal_path: str) -> bool:
+    """True for model sub-parts (Objects/Materials/Skeleton) — browse only."""
+    normalized = internal_path.replace("\\", "/").strip("/")
+    if not normalized.startswith("Models/"):
+        return False
+    tail = normalized.split("/", 2)
+    if len(tail) < 3:
+        return False
+    section = tail[2].split("/", 1)[0]
+    return section in (_MODEL_OBJECT_FOLDER, _MODEL_MATERIAL_FOLDER, _MODEL_SKELETON_FOLDER)
+
+
 def _bntx_texture_paths(bntx_data: bytes, prefix: str) -> list[str]:
     names = list_textures(bntx_data)
     if prefix:
@@ -387,7 +487,7 @@ def list_bfres_entries(data: bytes, romfs_path: str = "") -> list[str]:
 
     paths: list[str] = []
 
-    for name in _resource_names(
+    model_names = _resource_names(
         bfres,
         header,
         header["model_dict"],
@@ -395,8 +495,14 @@ def list_bfres_entries(data: bytes, romfs_path: str = "") -> list[str]:
         header["num_models"],
         0x08,
         external,
-    ):
+    )
+    model_file_offsets = _model_offsets(bfres, header)
+    for index, name in enumerate(model_names):
         paths.append(f"Models/{name}")
+        if index < len(model_file_offsets):
+            paths.extend(
+                _model_subtree_paths(bfres, model_file_offsets[index], name, external)
+            )
 
     for name in _resource_names(
         bfres,
@@ -479,6 +585,9 @@ def read_bfres_file_bytes(
     header = _parse_header_v9(bfres)
     use_external = bool(header["external_flags"] & _HAS_EXTERNAL_STRING)
     external = _load_external_string_bfres(romfs_path) if use_external else None
+
+    if internal_path.startswith("Models/"):
+        raise IsADirectoryError(internal_path)
 
     if internal_path.startswith("Textures/"):
         texture_name = internal_path[len("Textures/") :]
