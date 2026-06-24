@@ -382,12 +382,12 @@ def list_archive_files(disk_archive_path: str, locator_path: str, romfs_path: st
     bfres = _resolve_bfres_data(disk_archive_path, locator_path, romfs_path)
     if bfres is not None:
         bfres_data, remainder, bfres_prefix = bfres
-        names = list_bfres_entries(bfres_data)
+        names = list_bfres_entries(bfres_data, romfs_path)
         if remainder:
             prefix = remainder.rstrip("/") + "/"
             names = [name[len(prefix) :] for name in names if name.startswith(prefix)]
             if not names and not any(
-                entry.startswith(prefix) for entry in list_bfres_entries(bfres_data)
+                entry.startswith(prefix) for entry in list_bfres_entries(bfres_data, romfs_path)
             ):
                 raise FileNotFoundError(remainder)
         if bfres_prefix:
@@ -433,7 +433,7 @@ def read_archive_file_bytes(disk_archive_path: str, file_path: str, romfs_path: 
             if _is_bfres_name(leaf):
                 return bfres_data
             raise IsADirectoryError(file_path)
-        return read_bfres_file_bytes(bfres_data, remainder)
+        return read_bfres_file_bytes(bfres_data, remainder, romfs_path)
 
     bntx = _resolve_bntx_data(disk_archive_path, file_path, romfs_path)
     if bntx is not None:
