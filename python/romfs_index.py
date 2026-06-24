@@ -15,15 +15,12 @@ _DEFAULT_ARCHIVE_EXTENSIONS = (
     ".blarc",
     ".bfarc",
     ".bntx",
-    ".bfres",
-    ".bfres.mc",
     ".pack.zs",
     ".sarc.zs",
     ".genvb.zs",
     ".blarc.zs",
     ".bfarc.zs",
     ".bntx.zs",
-    ".bfres.zs",
 )
 
 # Kept for canonical_path_index import compatibility.

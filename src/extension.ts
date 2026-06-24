@@ -480,7 +480,7 @@ class SarcProvider implements vscode.FileSystemProvider {
 
     private rejectArchiveMutation(operation: string): never {
         throw vscode.FileSystemError.NoPermissions(
-            `Cannot ${operation} paths inside .pack / .sarc / .genvb / .blarc / .bfarc / .bfres / .bntx archives. Extract the file or use a dedicated modding tool.`,
+            `Cannot ${operation} paths inside .pack / .sarc / .genvb / .blarc / .bfarc / .bntx archives. Extract the file or use a dedicated modding tool.`,
         );
     }
 
@@ -1836,7 +1836,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         const fileUri = await vscode.window.showOpenDialog({
             canSelectMany: false,
             filters: {
-                'TOTK Archives': ['pack', 'sarc', 'genvb', 'blarc', 'bfarc', 'bfres', 'bntx', 'mc', 'zs'],
+                'TOTK Archives': ['pack', 'sarc', 'genvb', 'blarc', 'bfarc', 'bntx', 'zs'],
             },
         });
 

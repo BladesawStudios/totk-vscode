@@ -14,18 +14,15 @@
       ".blarc",
       ".bfarc",
       ".bntx",
-      ".bfres",
-      ".bfres.mc",
       ".pack.zs",
       ".sarc.zs",
       ".genvb.zs",
       ".blarc.zs",
       ".bfarc.zs",
-      ".bntx.zs",
-      ".bfres.zs"
+      ".bntx.zs"
     ]
   },
   "archivePatterns": [
-    "\\.(pack|sarc|genvb|blarc|bfarc|bfres|bntx)(\\.(zs|mc))?$"
+    "\\.(pack|sarc|genvb|blarc|bfarc|bntx)(\\.zs)?$"
   ]
 }
