@@ -13,7 +13,6 @@ import bwav_io
 import oead
 from aamp_io import (
     is_aamp_binary,
-    is_aamp_extension,
     read_aamp_content,
     write_aamp_bytes,
 )
@@ -38,6 +37,7 @@ from asb_io import (
 from bntx_editor import BntxEditor
 from byml_editor_format import to_editor_text
 from byml_yaml_utils import format_byml_for_editor, normalize_byml_u64_literals
+from compression import compress_container, decompress_container
 from msbt_editor_format import from_editor_text as msbt_from_editor_text
 from msbt_editor_format import to_editor_text as msbt_to_editor_text
 from tag_product_format import from_editor_text as tag_product_from_editor_text
@@ -45,11 +45,9 @@ from tag_product_format import to_editor_text as tag_product_to_editor_text
 from txtg_editor import TxtgEditor
 from xlink_io import (
     is_xlnk_binary,
-    is_xlnk_extension,
     read_xlnk_content,
     write_xlnk_bytes,
 )
-from compression import compress_container, decompress_container
 
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stdin.reconfigure(encoding="utf-8")
@@ -254,8 +252,7 @@ def _export_texture_dds_bytes(
 
 def get_romfs_path():
     return (
-        os.environ.get("TKVSC_ROMFS", "").strip()
-        or os.environ.get("TOTK_EDITOR_ROMFS", "").strip()
+        os.environ.get("TKVSC_ROMFS", "").strip() or os.environ.get("TOTK_EDITOR_ROMFS", "").strip()
     )
 
 
