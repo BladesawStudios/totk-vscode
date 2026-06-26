@@ -169,5 +169,6 @@ Companion VS Code extensions can extend TKVSC via the exported API. See [docs/ap
 
 ## Help and Community
 
-- [Discord Server](https://discord.gg/vwPnX2uB8s )
-<!--- [Documentation]()--->
+- [Discord Server](https://discord.gg/vwPnX2uB8s)
+- [Documentation](https://tkvsc.dev/docs/index.html)
+- [Patreon](https://www.patreon.com/cw/TKVSC)
