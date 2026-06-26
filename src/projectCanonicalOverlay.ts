@@ -28,6 +28,19 @@ export interface EnsureProjectImportOptions {
     shouldIncludeCanonicalPath: (canonicalPath: string) => Promise<boolean>;
 }
 
+export interface ImportArchiveOverlayOptions {
+    overlayDbPath: string;
+    projectRoot: string;
+    archiveAbsPath: string;
+    romfsPath: string;
+    pythonExecutable: string;
+    bridgePath: string;
+    bridgeEnv: NodeJS.ProcessEnv;
+    output: vscode.OutputChannel;
+    importSchemaVersion: number;
+    shouldIncludeCanonicalPath: (canonicalPath: string) => Promise<boolean>;
+}
+
 interface ArchivePathInfo {
     archivePath: string;
     mtimeMs: number;
@@ -272,6 +285,7 @@ async function markProjectImported(
     overlayDbPath: string,
     projectRoot: string,
     importSchemaVersion: number,
+    importedAt = Date.now(),
 ): Promise<void> {
     const database = await openDb(overlayDbPath);
     const projectId = projectIdFromRoot(normalizeProjectRoot(projectRoot));
@@ -285,10 +299,126 @@ async function markProjectImported(
     stmt.run({
         ':projectId': projectId,
         ':schemaVersion': importSchemaVersion,
-        ':importedAt': Date.now(),
+        ':importedAt': importedAt,
     });
     stmt.free();
     await saveDb(overlayDbPath);
+}
+
+async function mergeProjectCanonicalRows(
+    overlayDbPath: string,
+    projectRoot: string,
+    rows: Array<{ canonical: string; archiveRel: string }>,
+): Promise<void> {
+    if (rows.length === 0) {
+        return;
+    }
+    const database = await openDb(overlayDbPath);
+    const projectId = projectIdFromRoot(normalizeProjectRoot(projectRoot));
+    database.run('BEGIN');
+    try {
+        const stmt = database.prepare(`
+            INSERT OR IGNORE INTO project_entries (project_id, canonical_path, archive_rel_path)
+            VALUES (:projectId, :canonical, :archiveRel)
+        `);
+        for (const row of rows) {
+            stmt.run({
+                ':projectId': projectId,
+                ':canonical': row.canonical,
+                ':archiveRel': row.archiveRel,
+            });
+        }
+        stmt.free();
+        database.run('COMMIT');
+    } catch (error) {
+        database.run('ROLLBACK');
+        throw error;
+    }
+    await saveDb(overlayDbPath);
+}
+
+/** Incrementally index custom canonical paths from a single archive (no full-project rescan). */
+export async function importArchiveCanonicalOverlay(
+    options: ImportArchiveOverlayOptions,
+): Promise<void> {
+    const projectRoot = normalizeProjectRoot(options.projectRoot);
+    const projectRomfsRoot = resolveProjectRomfsMount(projectRoot, options.romfsPath);
+    const archiveAbsPath = normalizePath(options.archiveAbsPath);
+    if (!fs.existsSync(archiveAbsPath)) {
+        return;
+    }
+
+    const archiveRel = normalizeRel(path.relative(projectRomfsRoot, archiveAbsPath));
+    if (!archiveRel || archiveRel.startsWith('..')) {
+        return;
+    }
+
+    let listed: string[] = [];
+    try {
+        listed = await runBridgeJsonAsync<string[]>(
+            options.pythonExecutable,
+            options.bridgePath,
+            ['list', archiveAbsPath, ''],
+            undefined,
+            options.bridgeEnv,
+        );
+    } catch (error) {
+        options.output.appendLine(
+            `[canonical-save] Failed to list entries for ${archiveAbsPath}: ${error}`,
+        );
+        return;
+    }
+
+    const rows: Array<{ canonical: string; archiveRel: string }> = [];
+    for (const virtualPath of listed) {
+        const canonical = normalizeRel(virtualPath);
+        if (!canonical) {
+            continue;
+        }
+        if (await options.shouldIncludeCanonicalPath(canonical)) {
+            rows.push({ canonical, archiveRel });
+        }
+    }
+
+    await mergeProjectCanonicalRows(options.overlayDbPath, projectRoot, rows);
+
+    let archiveMtime = Date.now();
+    try {
+        archiveMtime = (await fs.promises.stat(archiveAbsPath)).mtimeMs;
+    } catch {
+        // Pass
+    }
+    const importState = await getProjectImportState(options.overlayDbPath, projectRoot);
+    const importedAt = Math.max(importState?.importedAt ?? 0, archiveMtime);
+    await markProjectImported(
+        options.overlayDbPath,
+        projectRoot,
+        options.importSchemaVersion,
+        importedAt,
+    );
+}
+
+/** Mark a project import as fresh after canonical sync writes (avoids full rescan on next check). */
+export async function bumpProjectImportAfterArchiveWrites(
+    overlayDbPath: string,
+    projectRoot: string,
+    archiveAbsPaths: string[],
+    importSchemaVersion: number,
+): Promise<void> {
+    if (archiveAbsPaths.length === 0) {
+        return;
+    }
+    let latestMtime = 0;
+    for (const archiveAbsPath of archiveAbsPaths) {
+        try {
+            latestMtime = Math.max(latestMtime, (await fs.promises.stat(archiveAbsPath)).mtimeMs);
+        } catch {
+            // Pass
+        }
+    }
+    const importState = await getProjectImportState(overlayDbPath, projectRoot);
+    const importedAt = Math.max(importState?.importedAt ?? 0, latestMtime, Date.now());
+    await markProjectImported(overlayDbPath, projectRoot, importSchemaVersion, importedAt);
 }
 
 async function parallelMap<T, R>(items: T[], fn: (item: T) => Promise<R>, limit = 8): Promise<R[]> {

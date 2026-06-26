@@ -659,12 +659,12 @@
         },
         {
           "command": "totk-editor.archiveAddToActiveOption",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir)",
+          "when": "view == totk-editor.archives && (viewItem == archiveRomfsFile || viewItem == archiveRomfsVirtualFile || viewItem == archiveRomfsPackage || viewItem == archiveRomfsDir || viewItem == archiveRomfsVirtualDir)",
           "group": "2_add@1"
         },
         {
           "command": "totk-editor.archiveAddToOption",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir)",
+          "when": "view == totk-editor.archives && (viewItem == archiveRomfsFile || viewItem == archiveRomfsVirtualFile || viewItem == archiveRomfsPackage || viewItem == archiveRomfsDir || viewItem == archiveRomfsVirtualDir)",
           "group": "2_add@2"
         },
         {

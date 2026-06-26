@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { getActiveGameId, getGameProfileRegistry } from './gameProfile';
 
@@ -87,11 +88,27 @@ class ArchiveRegistry {
             return fsPath;
         }
 
-        const prefix = segments.slice(0, lastArchiveIndex + 1).join('/');
-        if (/^[a-zA-Z]:/.test(normalized)) {
-            return prefix.replace(/\//g, path.sep);
+        const toDiskPath = (endIndex: number): string => {
+            const prefix = segments.slice(0, endIndex + 1).join('/');
+            if (/^[a-zA-Z]:/.test(normalized)) {
+                return prefix.replace(/\//g, path.sep);
+            }
+            return prefix;
+        };
+
+        // Nested archive entries (e.g. timg/__Combined.bntx inside a .blarc) are virtual;
+        // walk back to the last archive segment that exists on disk.
+        for (let i = lastArchiveIndex; i >= 0; i--) {
+            if (!this.isArchiveFileName(segments[i]!, gameId)) {
+                continue;
+            }
+            const diskPath = toDiskPath(i);
+            if (fs.existsSync(diskPath)) {
+                return diskPath;
+            }
         }
-        return prefix;
+
+        return toDiskPath(lastArchiveIndex);
     }
 }
 

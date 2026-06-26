@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile, isBwavAudioFile, isBarsAudioArchive } from './archives';
 import { registerArchiveFileCommands, ArchiveTreeDragDrop, setArchiveTreeView } from './archiveFsCommands';
+import { isPathInsideRomfsFolder } from './projectPaths';
 import {
     detectProjectAdapter,
     getActiveProjectOption,
@@ -733,13 +734,18 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
 }
 
 function archiveContextValue(name: string, isDirectory: boolean, fsPath: string): string {
+    let value: string;
     if (isArchiveFile(name)) {
-        return 'archivePackage';
+        value = 'archivePackage';
+    } else if (!isDirectory) {
+        value = isPathInsideArchive(fsPath) ? 'archiveVirtualFile' : 'archiveFile';
+    } else {
+        value = isPathInsideArchive(fsPath) ? 'archiveVirtualDir' : 'archiveDir';
     }
-    if (!isDirectory) {
-        return isPathInsideArchive(fsPath) ? 'archiveVirtualFile' : 'archiveFile';
+    if (isPathInsideRomfsFolder(fsPath)) {
+        value = value.replace(/^archive/, 'archiveRomfs');
     }
-    return isPathInsideArchive(fsPath) ? 'archiveVirtualDir' : 'archiveDir';
+    return value;
 }
 
 /** Move legacy `sarc://` workspace folders back to `file://` and add them to the archive tree. */

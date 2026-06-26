@@ -1073,7 +1073,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     logger.info('Canonical path index built successfully.');
                     invalidateCanonicalPathIndex();
                     await clearProjectImportState(projectCanonicalOverlayPath);
-                    void importKnownProjectCanonicalPaths();
                 } catch (err) {
                     logger.error('Failed to build canonical path index:', err as Error);
                 } finally {
@@ -1107,6 +1106,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             blacklistPrefixes: getCanonicalBlacklistPrefixes(),
             archiveTypeBlacklist: getCanonicalArchiveTypeBlacklist(),
             fileExtensionBlacklist: getCanonicalFileExtensionBlacklist(),
+            importSchemaVersion: PROJECT_CANONICAL_IMPORT_SCHEMA_VERSION,
             onPulledNewFiles: () => archiveTree?.refresh(),
             writeInput: {
                 diskArchivePath: normalizePath(info.diskArchivePath),
@@ -1118,34 +1118,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         });
     };
 
-    const importKnownProjectCanonicalPaths = async (): Promise<void> => {
+    let projectImportPromise: Promise<void> | undefined;
+
+    const importKnownProjectCanonicalPaths = async (options?: {
+        projectRoots?: string[];
+        showProgress?: boolean;
+    }): Promise<void> => {
         const pythonExe = getPython();
         const romfsPath = resolveRomfsPath();
         await ensureProjectCanonicalOverlayExists(projectCanonicalOverlayPath);
         if (!archiveTree || !pythonExe || !romfsPath) {
             return;
         }
-        await buildCanonicalIndex();
-        const roots = archiveTree.getProjectRoots();
-        if (roots.length === 0) {
-            return;
-        }
 
-        const allModRoots = new Set<string>();
-        for (const root of roots) {
-            const modRoots = getProjectModRoots(root.fsPath);
-            for (const m of modRoots) {
-                allModRoots.add(m);
+        const scopedRoots = options?.projectRoots?.map((root) => normalizePath(root));
+        const importTask = async (): Promise<void> => {
+            await buildCanonicalIndex();
+            const roots = archiveTree!.getProjectRoots();
+            if (roots.length === 0) {
+                return;
             }
-        }
 
-        await vscode.window.withProgress(
-            {
-                location: vscode.ProgressLocation.Notification,
-                title: 'Scanning project files and mapping canonical paths...',
-                cancellable: false,
-            },
-            async () => {
+            const allModRoots = new Set<string>();
+            for (const root of roots) {
+                for (const modRoot of getProjectModRoots(root.fsPath)) {
+                    if (!scopedRoots || scopedRoots.some((scoped) => pathsEqual(scoped, modRoot))) {
+                        allModRoots.add(modRoot);
+                    }
+                }
+            }
+
+            if (allModRoots.size === 0) {
+                return;
+            }
+
+            const runImports = async (): Promise<void> => {
                 for (const modRoot of allModRoots) {
                     await ensureProjectCanonicalImport({
                         overlayDbPath: projectCanonicalOverlayPath,
@@ -1166,8 +1173,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         },
                     });
                 }
+            };
+
+            if (options?.showProgress === false) {
+                await runImports();
+                return;
             }
-        );
+
+            await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: scopedRoots
+                        ? 'Updating project canonical path map...'
+                        : 'Scanning project files and mapping canonical paths...',
+                    cancellable: false,
+                },
+                runImports,
+            );
+        };
+
+        if (projectImportPromise) {
+            return projectImportPromise;
+        }
+        projectImportPromise = importTask().finally(() => {
+            projectImportPromise = undefined;
+        });
+        return projectImportPromise;
     };
 
     context.subscriptions.push(
@@ -1224,6 +1255,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             }
             void vscode.window.showInformationMessage('TKVSC: Rebuilding canonical path index...');
             await buildCanonicalIndex(true);
+            await importKnownProjectCanonicalPaths();
             void vscode.window.showInformationMessage('TKVSC: Canonical path index rebuilt.');
         }),
         vscode.commands.registerCommand('totk-editor.canonicalSyncOn', async () => {
@@ -1519,7 +1551,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     registerIconThemeCommands(context);
 
     archiveTree = registerArchiveTree(context);
-    gameDumpTree = registerGameDumpTree(context, archiveTree, () => importKnownProjectCanonicalPaths());
+    gameDumpTree = registerGameDumpTree(context, archiveTree, (projectRoot) =>
+        importKnownProjectCanonicalPaths(projectRoot ? { projectRoots: [projectRoot] } : undefined),
+    );
     gameDumpTree.setExternalIndexPath(romfsIndexPath());
     void ensureProjectCanonicalOverlayExists(projectCanonicalOverlayPath);
     await migrateSarcWorkspaceFolders(archiveTree);
@@ -1569,7 +1603,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 initArchiveRegistry();
                 gameDumpTree?.setExternalIndexPath(romfsIndexPath());
                 void buildRomfsIndex();
-                void buildCanonicalIndex();
+                void buildCanonicalIndex().then(() => importKnownProjectCanonicalPaths());
                 invalidateCanonicalPathIndex();
             }
         }),

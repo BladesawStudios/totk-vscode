@@ -4,9 +4,11 @@ import * as vscode from 'vscode';
 import { runBridgeJsonAsync } from './bridge';
 import { isArchiveFile } from './archives';
 import { hasBaseCanonicalPath, queryCanonicalArchives } from './canonicalPathIndex';
-import { isWithinRoot, normalizePath, pathsEqual, resolveProjectRomfsMount } from './projectPaths';
+import { isWithinRoot, normalizePath, pathsEqual, resolveProjectRomfsMount, getProjectModRoots } from './projectPaths';
 import {
     addProjectCanonicalEntry,
+    bumpProjectImportAfterArchiveWrites,
+    importArchiveCanonicalOverlay,
     queryProjectCanonicalArchives,
 } from './projectCanonicalOverlay';
 
@@ -36,7 +38,13 @@ export interface CanonicalSavePropagationOptions {
     fileExtensionBlacklist: string[];
     writeInput: CanonicalSaveWriteInput;
     output: vscode.OutputChannel;
-    onPulledNewFiles?: () => void | Promise<void>;
+    importSchemaVersion: number;
+    onPulledNewFiles?: (info: { copiedArchives: string[] }) => void | Promise<void>;
+    onArchivesUpdated?: (info: {
+        projectRoot: string;
+        copiedArchives: string[];
+        writtenArchives: string[];
+    }) => void | Promise<void>;
 }
 
 function splitRel(relPath: string): string[] {
@@ -165,6 +173,34 @@ function inferActiveModRoot(
     return best.root;
 }
 
+function resolveModRootForArchivePath(
+    archiveAbsPath: string,
+    projectRoots: ProjectRootInfo[],
+    romfsPath: string,
+): { modRoot: string; projectRomfsRoot: string } | undefined {
+    const normalizedArchive = normalizePath(archiveAbsPath);
+    let best: { modRoot: string; projectRomfsRoot: string; score: number } | undefined;
+
+    for (const root of projectRoots) {
+        for (const modRoot of getProjectModRoots(root.fsPath)) {
+            const projectRomfsRoot = resolveProjectRomfsMount(modRoot, romfsPath);
+            const normalizedMount = normalizePath(projectRomfsRoot);
+            if (
+                normalizedArchive === normalizedMount
+                || normalizedArchive.startsWith(`${normalizedMount}${path.sep}`)
+                || normalizedArchive.startsWith(`${normalizedMount}/`)
+            ) {
+                const score = normalizedMount.length;
+                if (!best || score > best.score) {
+                    best = { modRoot, projectRomfsRoot: normalizedMount, score };
+                }
+            }
+        }
+    }
+
+    return best ? { modRoot: best.modRoot, projectRomfsRoot: best.projectRomfsRoot } : undefined;
+}
+
 async function ensureArchiveInProject(
     projectArchivePath: string,
     dumpArchivePath: string,
@@ -212,14 +248,15 @@ function loadTkvscConfig(projectRoot: string): TkvscConfig {
 export async function propagateCanonicalSave(
     options: CanonicalSavePropagationOptions,
 ): Promise<void> {
-    if (!options.enabled) {
-        return;
-    }
-
     const activeProjectRoot = inferActiveModRoot(
         options.writeInput.diskArchivePath,
         options.projectRoots,
     );
+
+    try {
+    if (!options.enabled) {
+        return;
+    }
     if (!activeProjectRoot) {
         options.output.appendLine(
             `[canonical-save] Could not infer active project root for ${options.writeInput.diskArchivePath}`,
@@ -312,23 +349,58 @@ export async function propagateCanonicalSave(
         ? Buffer.from(options.writeInput.rawContent).toString('base64')
         : '';
 
+    const shouldIncludeCanonicalPath = async (candidatePath: string): Promise<boolean> => {
+        const existsInBase = await hasBaseCanonicalPath(
+            options.canonicalIndexPath,
+            options.romfsPath,
+            candidatePath,
+        );
+        return !existsInBase;
+    };
+
     let propagated = 0;
     let copiedArchives = 0;
+    const copiedArchivePaths: string[] = [];
+    const updatesByModRoot = new Map<string, { copied: string[]; written: string[] }>();
+
+    const recordArchiveUpdate = (
+        modRoot: string,
+        archiveAbsPath: string,
+        kind: 'copied' | 'written',
+    ): void => {
+        const normalizedArchive = normalizePath(archiveAbsPath);
+        let entry = updatesByModRoot.get(modRoot);
+        if (!entry) {
+            entry = { copied: [], written: [] };
+            updatesByModRoot.set(modRoot, entry);
+        }
+        const bucket = kind === 'copied' ? entry.copied : entry.written;
+        if (!bucket.includes(normalizedArchive)) {
+            bucket.push(normalizedArchive);
+        }
+    };
+
     const tasks = Array.from(mergedMatches.values()).map(async (match) => {
         const dumpArchivePath = path.join(options.romfsPath, ...splitRel(match.archiveRelPath));
         const projectArchivePath = path.join(projectRomfsRoot, ...splitRel(match.archiveRelPath));
+        const target = resolveModRootForArchivePath(
+            projectArchivePath,
+            options.projectRoots,
+            options.romfsPath,
+        );
+        const targetModRoot = target?.modRoot ?? activeProjectRoot.fsPath;
         if (
             pathContainsBlacklistedArchiveType(match.canonicalPath, options.archiveTypeBlacklist) ||
             pathContainsBlacklistedArchiveType(match.archiveRelPath, options.archiveTypeBlacklist)
         ) {
-            return { propagated: false, copied: false };
+            return undefined;
         }
         if (pathMatchesBlacklistedFileSuffix(match.canonicalPath, mergedFileExtensionBlacklist)) {
-            return { propagated: false, copied: false };
+            return undefined;
         }
 
         if (pathsEqual(projectArchivePath, primaryArchive)) {
-            return { propagated: false, copied: false };
+            return undefined;
         }
 
         const prepareResult = await ensureArchiveInProject(
@@ -337,7 +409,7 @@ export async function propagateCanonicalSave(
             options.output,
         );
         if (!prepareResult.ready) {
-            return { propagated: false, copied: false };
+            return undefined;
         }
 
         try {
@@ -358,24 +430,65 @@ export async function propagateCanonicalSave(
                     options.bridgeEnv,
                 );
             }
-            return { propagated: true, copied: prepareResult.copied };
+            return { propagated: true, copied: prepareResult.copied, projectArchivePath, targetModRoot };
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             options.output.appendLine(
                 `[canonical-save] Failed to propagate to ${projectArchivePath}: ${message}`,
             );
-            return { propagated: false, copied: prepareResult.copied };
+            return {
+                propagated: false,
+                copied: prepareResult.copied,
+                projectArchivePath,
+                targetModRoot,
+            };
         }
     });
 
     const results = await Promise.all(tasks);
+    recordArchiveUpdate(activeProjectRoot.fsPath, primaryArchive, 'written');
     for (const res of results) {
+        if (!res) {
+            continue;
+        }
         if (res.propagated) {
             propagated++;
+            recordArchiveUpdate(res.targetModRoot, res.projectArchivePath, 'written');
         }
         if (res.copied) {
             copiedArchives++;
+            copiedArchivePaths.push(res.projectArchivePath);
+            recordArchiveUpdate(res.targetModRoot, res.projectArchivePath, 'copied');
         }
+    }
+
+    for (const [modRoot, update] of updatesByModRoot.entries()) {
+        for (const archiveAbsPath of update.copied) {
+            await importArchiveCanonicalOverlay({
+                overlayDbPath: options.projectOverlayDbPath,
+                projectRoot: modRoot,
+                archiveAbsPath,
+                romfsPath: options.romfsPath,
+                pythonExecutable: options.pythonExecutable,
+                bridgePath: options.bridgePath,
+                bridgeEnv: options.bridgeEnv,
+                output: options.output,
+                importSchemaVersion: options.importSchemaVersion,
+                shouldIncludeCanonicalPath,
+            });
+        }
+        const writtenOnly = update.written.filter((archive) => !update.copied.includes(archive));
+        await bumpProjectImportAfterArchiveWrites(
+            options.projectOverlayDbPath,
+            modRoot,
+            writtenOnly,
+            options.importSchemaVersion,
+        );
+        await options.onArchivesUpdated?.({
+            projectRoot: modRoot,
+            copiedArchives: update.copied,
+            writtenArchives: writtenOnly,
+        });
     }
 
     if (propagated > 0) {
@@ -384,6 +497,16 @@ export async function propagateCanonicalSave(
         );
     }
     if (copiedArchives > 0) {
-        await options.onPulledNewFiles?.();
+        await options.onPulledNewFiles?.({ copiedArchives: copiedArchivePaths });
+    }
+    } finally {
+        if (activeProjectRoot) {
+            await bumpProjectImportAfterArchiveWrites(
+                options.projectOverlayDbPath,
+                activeProjectRoot.fsPath,
+                [options.writeInput.diskArchivePath],
+                options.importSchemaVersion,
+            );
+        }
     }
 }

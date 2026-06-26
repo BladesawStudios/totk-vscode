@@ -7,6 +7,7 @@ import { isPathInsideArchive, isArchiveFile, getDiskArchivePath, isArchiveFileNa
 import { getDumpSelection, type DumpTreeItem } from './dumpTree';
 import { resolveRomfsPath } from './romfs';
 import { addDumpEntryToProject, resolveRomfsForProject } from './addToProject';
+import { isPathInsideRomfsFolder } from './projectPaths';
 import { askForProjectOption, getActiveProjectOption, isAdapterOptionFolderContextValue, isAdapterOptionsContextValue } from './projectAdapters/registry';
 
 let archiveTreeView: vscode.TreeView<ArchiveTreeItem> | undefined;
@@ -1292,7 +1293,9 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
     );
 
     const doArchiveAddToOption = async (item: ArchiveTreeItem | undefined, useActive: boolean) => {
-        const items = selectedItems(item);
+        const items = selectedItems(item).filter((entry) =>
+            isPathInsideRomfsFolder(entry.resourceUri.fsPath),
+        );
         if (items.length === 0) {
             return;
         }

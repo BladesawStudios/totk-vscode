@@ -72,6 +72,28 @@ function findNamedRomfsFolder(base: string): string | undefined {
     return undefined;
 }
 
+/** True when `fsPath` lies under a project `romfs` folder (not `exefs`). */
+export function isPathInsideRomfsFolder(fsPath: string): boolean {
+    const normalized = normalizePath(fsPath).replace(/\\/g, '/');
+    if (/(^|\/)romfs(\/|$)/i.test(normalized)) {
+        return true;
+    }
+
+    let current = normalized;
+    while (current) {
+        if (romfsSentinelExists(current)) {
+            return isWithinRoot(current, fsPath);
+        }
+        const parent = path.dirname(current).replace(/\\/g, '/');
+        if (parent === current) {
+            break;
+        }
+        current = parent;
+    }
+
+    return false;
+}
+
 /** Locate the RomFS folder under a project (game sentinel, RomFS/romfs folder, or nested). */
 export function findRomfsFolderUnder(projectRoot: string): string | undefined {
     const project = normalizePath(projectRoot);
