@@ -480,7 +480,7 @@ class GameDumpSearchViewProvider implements vscode.WebviewViewProvider {
             <input type="checkbox" id="archivesOnly" ${archivesOnly ? 'checked' : ''} />
             <span class="slider"></span>
         </label>
-        <label for="archivesOnly" class="switch-label">Search within archives?</label>
+        <label for="archivesOnly" class="switch-label">Search within archives</label>
     </div>
     <div id="status" class="status"></div>
     <script>

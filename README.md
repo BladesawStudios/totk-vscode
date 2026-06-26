@@ -20,9 +20,9 @@
 
 The **T**ears of the **K**ingdom **V**isual **S**tudio **C**ode Extension or **TKVSC** is a Visual Studio Code extension for editing and browsing **Tears of the Kingdom** (**TotK**) game files.
 
-Our core design philosophy creating this extension is **centralization of tooling concerns**, and **automating the boilerplate of the design process**.
-
 <sup></sub>It also pairs well with **TKMM!**</sup></sub>
+
+**TKVSC Website**: https://tkvsc.dev/
 
 **TKVSC** GameBanana page: https://gamebanana.com/tools/22893
 
