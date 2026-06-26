@@ -114,7 +114,7 @@ Game addons register a profile so TKVSC knows how to validate dumps, compress `.
       "id": "splatoon3",
       "gameProfile": {
         "displayName": "Splatoon 3",
-        "romfsSentinel": "Pack/TitleBG.pack",
+        "romfsSentinel": "Pack/Bootup.Nin_NX_NVN.pack.zs",
         "compressionBackend": "plain-zstd-yaz0",
         "romfsSettingsKey": "splatoon3.romfsPath",
         "indexing": {
