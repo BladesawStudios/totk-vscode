@@ -1,115 +1,251 @@
 <h1>Tears of the Kingdom Visual Studio Code Extension (TKVSC)</h1>
 
-<p>The <strong>T</strong>ears of the <strong>K</strong>ingdom <strong>V</strong>isual <strong>S</strong>tudio <strong>C</strong>ode Extension or <strong>TKVSC</strong> is a Visual Studio Code extension for editing and browsing <strong>Tears of the Kingdom</strong> (<strong>TotK</strong>) game files.</p>
+<p>
+  The <strong>T</strong>ears of the <strong>K</strong>ingdom
+  <strong>V</strong>isual <strong>S</strong>tudio <strong>C</strong>ode
+  Extension or <strong>TKVSC</strong> is a Visual Studio Code extension for
+  editing and browsing
+  <strong>Tears of the Kingdom</strong> (<strong>TotK</strong>) game files.
+</p>
 
-<p>Our core design philosophy creating this extension is <strong>centralization of tooling concerns</strong>, and <strong>automating the boilerplate of the design process</strong>.</p>
+<p>
+  <sup>It also pairs well with <strong>TKMM!</strong></sup>
+</p>
 
-<p><sup>It also pairs well with <strong>TKMM!</strong></sup></p>
+<p>
+  <strong>TKVSC Website</strong>:
+  <a href="https://tkvsc.dev/">https://tkvsc.dev/</a>
+</p>
 
-<ul>
-    <li><strong>TKVSC GameBanana page:</strong> <a href="https://gamebanana.com/tools/22893">https://gamebanana.com/tools/22893</a></li>
-    <li><strong>Game Dump Guide</strong> (required): <a href="https://gamebanana.com/tuts/19858">https://gamebanana.com/tuts/19858</a></li>
-</ul>
+<p>
+  <strong>Game Dump Guide</strong> (required):
+  <a href="https://gamebanana.com/tuts/19858"
+    >https://gamebanana.com/tuts/19858</a
+  >
+</p>
 
-<h2>⚠️ DISCLAIMER ⚠️</h2>
-<p><strong>!! WE ARE NOT RESPONSIBLE IF YOUR MOD BREAKS. THIS TOOL IS IN ACTIVE BETA AND THINGS WILL BREAK. MAKE FREQUENT BACKUPS !!</strong></p>
+<h2>DISCLAIMER</h2>
+<p>
+  <strong
+    >WE ARE NOT RESPONSIBLE IF YOUR MOD BREAKS. THIS TOOL IS IN ACTIVE BETA AND
+    THINGS WILL BREAK. MAKE FREQUENT BACKUPS</strong
+  >
+</p>
 
-<hr>
+<hr />
 
 <h2>Features</h2>
-<p>Preview and edit subfiles of SARC and BNTX archives.</p>
+<p>Preview and edit subfiles of SARC and BNTX archives</p>
 
-<p><img src="https://github.com/TKVSC-Team/totk-vscode/blob/main/graphics/Promo/SARC_Edit.png?raw=true" alt="SARC Edit Preview" width="720"></p>
+<p>
+  <img
+    src="https://github.com/TKVSC-Team/totk-vscode/blob/main/graphics/Promo/SARC_Edit.png?raw=true"
+    alt="SARC Edit Preview"
+    width="720"
+  />
+</p>
 
 <h3>Supported Filetypes</h3>
+
 <h4>Text Editor</h4>
 <ul>
-    <li>BYML</li>
-    <li>BGYML</li>
-    <li>AAMP</li>
-    <li>MSBT</li>
-    <li>ASB (Changes automatically applied to corresponding BAEV)</li>
-    <li>BAEV (Changes automatically applied to corresponding ASB)</li>
-    <li>XLINK</li>
-    <li>PCHTXT</li>
-    <li>TKMM Config Files</li>
+  <li>BYML</li>
+  <li>BGYML</li>
+  <li>AAMP</li>
+  <li>MSBT</li>
+  <li>ASB (Changes automatically applied to corresponding BAEV)</li>
+  <li>BAEV (Changes automatically applied to corresponding ASB)</li>
+  <li>XLINK</li>
+  <li>PCHTXT</li>
+  <li>TKMM Config Files</li>
 </ul>
 
-<h3>Activity Bar Tabs</h3>
-<p><img src="https://github.com/TKVSC-Team/totk-vscode/blob/main/graphics/Promo/ActivityBarGuide.png?raw=true" alt="Activity Bar Guide" width="400"></p>
-
-<p><strong>Your Mods</strong></p>
+<h4>Texture Viewer/Replacer</h4>
 <ul>
-    <li>Add the current folder open in VS Code to a list of Project Folders.</li>
+  <li>BNTX</li>
+  <li>Tex2Go</li>
+  <li>
+    <strong>Unsupported</strong>
+    <ul>
+      <li>VSP</li>
+    </ul>
+  </li>
+</ul>
+
+<h4>Audio Player</h4>
+<ul>
+  <li>Bars</li>
+  <li>BFWAV</li>
+</ul>
+
+<hr />
+
+<h3>Activity Bar Tabs</h3>
+<p>
+  <img
+    src="https://github.com/TKVSC-Team/totk-vscode/blob/main/graphics/Promo/ActivityBarGuide.png?raw=true"
+    alt="Activity Bar Guide"
+    width="400"
+  />
+</p>
+
+<p><strong>Your Projects</strong></p>
+<ul>
+  <li>Add the current folder open in VS Code to a list of Project Folders</li>
 </ul>
 
 <p><strong>TotK Dump</strong></p>
 <ul>
-    <li>Browse your dump of TotK in Read-Only mode. Right-click to add a file to the correct romfs path within a Project Folder of your choosing.</li>
+  <li>
+    Browse your dump of TotK in Read-Only mode. Right click to add a file to the
+    correct romfs path within a Project Folder of your choosing
+  </li>
 </ul>
 
-<h3>Additional Capabilities</h3>
+<h3>Additional capabilities:</h3>
 <ul>
-    <li><strong>Nested Archives:</strong> Archives within archives (e.g., a <code>.sarc</code> inside a <code>.pack</code>) can be browsed and edited.</li>
-    <li><strong>Search:</strong> Search for romfs contents, including filenames inside of SARCs.</li>
-    <li><strong>Exporting:</strong> Right-click a file within an archive to export it to a Project Folder.</li>
-    <li><strong>File Templates:</strong> Rather than the typical method of copying, pasting, and wiping an existing file to make a new file of the same format, TKVSC can create empty files of formats supported by the editor.</li>
-    <li><strong>Previews:</strong> Preview <code>.bntx</code> subfiles and <code>.txtg</code> files as PNGs.</li>
-    <li><strong>TKMM Support:</strong> Visual editor for <a href="https://tkmm.org" target="_blank">TKMM</a> <code>.tkproj</code> files.</li>
-    <li><strong>External Programs:</strong> For files TKVSC does not support, such as <code>.bfres</code>, the user can choose external programs to open them in by default (separate from similar features in the OS).</li>
+  <li>
+    Archives within archives (e.g. a <code>.sarc</code> inside a
+    <code>.pack</code>) can be browsed and edited
+  </li>
+  <li>Search for romfs contents, including filenames inside of SARCs</li>
+  <li>
+    Right-click a file within an archive to export it to a Project Folder.
+  </li>
+  <li>
+    Rather than the typical method of copying, pasting, and wiping an existing
+    file to make a new file of the same format, TKVSC can create empty files of
+    formats supported by the editor.
+  </li>
+  <li>
+    Preview <code>.bntx</code> subfiles and <code>.txtg</code> files as PNGs
+  </li>
+  <li>
+    Visual editor for <a href="https://tkmm.org" target="_blank">TKMM</a>
+    <code>.tkproj</code> files
+  </li>
+  <li>
+    For files TKVSC does not support, such as <code>.bfres</code>, the user can
+    choose external programs to open them in by default (separate from similar
+    features in the OS).
+  </li>
 </ul>
 
-<p><img src="https://github.com/TKVSC-Team/totk-vscode/blob/main/graphics/Promo/tkproj_Edit.png?raw=true" alt="tkproj Edit Preview" width="800"></p>
+<p>
+  <img
+    src="https://github.com/TKVSC-Team/totk-vscode/blob/main/graphics/Promo/tkproj_Edit.png?raw=true"
+    alt="tkproj Edit Preview"
+    width="800"
+  />
+</p>
 
-<hr>
+<hr />
 
 <h2>Canonical Path Saving</h2>
-<p>The canonical path of a file is where the file exists in the game's memory, as opposed to the romfs path which describes its location within a game dump. Using the romfs file located at <code>\Pack\Actor\Armor_001_Head.pack.zs\Component\ArmorParam\Armor_001_Head.game__component__ArmorParam.bgyml</code> as an example, the canonical path would be <code>\Component\ArmorParam\Armor_001_Head.game__component__ArmorParam.bgyml</code>.</p>
+<p>
+  The canonical path of a file is where the file exists in the game's memory, as
+  opposed to the romfs path which describes its location within a game dump.
+  Using the romfs file located at
+  <code
+    >\Pack\Actor\Armor_001_Head.pack.zs\Component\ArmorParam\Armor_001_Head.game__component__ArmorParam.bgyml</code
+  >
+  as an example, the canonical path would be
+  <code
+    >\Component\ArmorParam\Armor_001_Head.game__component__ArmorParam.bgyml</code
+  >.
+</p>
 
-<p>Anyone who has made changes to an upgradeable armor set, or to any parameter file that is parented to a file used in another actor pack, is familiar with needing to make the same edits to an identically named file in several different locations in order for everything to work nicely ingame. TKVSC builds a database of all canonical paths in your game dump and in each of your mod projects and automatically saves changes to all instances of a file's canonical path, pulling files in from the game dump as needed when it isn't already present in your mod project.</p>
+<p>
+  Anyone who has made changes to an upgradeable armor set, or to any parameter
+  file that is parented to a file used in another actor pack, is familiar with
+  needing to make the same edits to an identically named file in several
+  different locations in order for everything to work nicely ingame. TKVSC
+  builds a database of all canonical paths in your game dump and in each of your
+  mod projects and automatically saves changes to all instances of a file's
+  canonical path, pulling files in from the game dump as needed when it isn't
+  already present in your mod project.
+</p>
 
-<p>To demonstrate with a direct comparison, modifying the defense of every level of the Champion's Leathers would take <strong>15 file modifications without TKVSC</strong>, and only <strong>5 with TKVSC</strong>.</p>
+<p>
+  To demonstrate with a direct comparison, modifying the defense of every level
+  of the Champion's Leathers would take
+  <strong>15 file modifications without TKVSC</strong>, and only
+  <strong>5 with TKVSC</strong>.
+</p>
 
-<hr>
+<hr />
 
 <h2>Planned Features</h2>
-<p><em>(If there are any features you don't see on here, feel free to make an issue on this GitHub!)</em></p>
+<p>
+  <em
+    >( if there are any features you don't see on here, feel free to make an
+    issue on this GitHub! )</em
+  >
+</p>
 
 <ul>
-    <li><strong>Node Based Editors:</strong> AINB, ASB, BAEV, and EVFL are all planned.</li>
-    <li><strong>BFRES Support:</strong> Preview, Editing.</li>
-    <li><strong>Audio Support:</strong> BARS, BWAV.</li>
-    <li><strong>Actor Tooling:</strong> Automating the process as much as possible.</li>
-    <li><strong>Search Engine:</strong> Full romfs file content string searching.</li>
-    <li><strong>Project Management:</strong> New project creation.</li>
-    <li><em>Note: PTCL/Effect support is being researched but not confirmed. This is uncharted territory.</em></li>
+  <li>Node Based Editors (AINB, ASB, BAEV, and EVFL are all planned.)</li>
+  <li>BFRES Support (Preview, Editing.)</li>
+  <li>Audio Support (BARS, BWAV.) (Read currently supported, write W.I.P)</li>
+  <li>Actor Tooling (Automating the process as much as possible.)</li>
+  <li>Full romfs file content string searching</li>
+  <li><sub>PTCL/Effect support is being researched but not confirmed.</sub></li>
 </ul>
 
-<hr>
+<hr />
 
 <h2>Setup</h2>
 
 <h3>Requirements</h3>
 <ul>
-    <li><a href="https://www.python.org/downloads/release/python-3130/" target="_blank">Python 3.13+</a></li>
-    <li>Node.js (if building extension from source)</li>
-    <li>Python 3.13+ venv (on Linux)</li>
-    <li>Valid TotK dump</li>
+  <li>
+    <a href="https://www.python.org/downloads/" target="_blank">Python 3.13+</a>
+  </li>
+  <li>
+    <a
+      href="https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170"
+      target="_blank"
+      >Microsoft C++ Redis</a
+    >
+  </li>
+  <li>Node.js (if building extension from source)</li>
+  <li>Python 3.13-venv (on Linux)</li>
+  <li>Valid TotK dump</li>
 </ul>
 
 <h3>Steps</h3>
 <ol>
-    <li>Install the extension (VSIX).</li>
-    <li>Follow the prompt to select your romfs dump path.</li>
+  <li>Install the extension (VSIX).</li>
+  <li>Follow the prompt to select your romfs dump path.</li>
 </ol>
 
-<h3>Python Troubleshooting</h3>
-<p><strong><code>python3</code> works in CMD but the extension cannot find Python?</strong> VS Code is often launched without your full user PATH (unlike a terminal you opened yourself). Fix:</p>
+<h3>Python troubleshooting</h3>
+<p>
+  <strong
+    ><code>python3</code> works in CMD but the extension cannot find
+    Python?</strong
+  >
+  VSCode is often launched without your full user PATH (unlike a terminal you
+  opened yourself). Fix:
+</p>
 
 <ol>
-    <li><strong>TKVSC: Select Python (from detected installs)</strong> - scans <code>where python3</code>, common install folders, and <code>py</code>.</li>
-    <li><strong>TKVSC: Browse for python.exe</strong> - point at the real interpreter (e.g., <code>%LocalAppData%\Programs\Python\Python314\python.exe</code>).</li>
-    <li><strong>Or set TKVSC → Python Path</strong> to that full path, then <strong>TKVSC: Set Up Python Environment</strong> again.</li>
+  <li>
+    <strong>TKVSC: Select Python (from detected installs)</strong> - scans
+    <code>where python3</code>, common install folders, and <code>py</code>.
+  </li>
+  <li>
+    <strong>TKVSC: Browse for python.exe</strong> - point at the real
+    interpreter (e.g.
+    <code>%LocalAppData%\Programs\Python\Python314\python.exe</code>).
+  </li>
+  <li>
+    Or set <strong>TKVSC → Python Path</strong> to that full path, then
+    <strong>TKVSC: Set Up Python Environment</strong> again.
+  </li>
 </ol>
 
-<p>If setup fails, run <strong>TKVSC: Set Up Python Environment</strong> from the Command Palette.</p>
+<p>
+  If setup fails, run <strong>TKVSC: Set Up Python Environment</strong> from the
+  Command Palette.
+</p>
