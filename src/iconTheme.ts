@@ -15,7 +15,7 @@ export async function migrateOffStandaloneIconTheme(
     const previous = context.globalState.get<string>(PREVIOUS_ICON_THEME_KEY);
     await workbench.update('iconTheme', previous ?? null, true);
     void vscode.window.showInformationMessage(
-        'TKVSC: Switched you off the partial TOTK icon theme. Pick your preferred File Icon Theme again - TOTK file icons still apply via language icons.',
+        'TKVSC: Switched you off the partial TotK icon theme. Pick your preferred File Icon Theme again - TotK file icons still apply via language icons.',
     );
 }
 
@@ -23,7 +23,7 @@ export function registerIconThemeCommands(context: vscode.ExtensionContext): voi
     context.subscriptions.push(
         vscode.commands.registerCommand('totk-editor.useTotkIcons', async () => {
             const choice = await vscode.window.showInformationMessage(
-                'TOTK file icons are applied via language icons on top of your current File Icon Theme. Do not select "TOTK File Icons" as your main theme, this will override all installed icons.',
+                'TotK file icons are applied via language icons on top of your current File Icon Theme. Do not select "TotK File Icons" as your main theme, this will override all installed icons.',
                 'Open File Icon Theme Picker',
             );
             if (choice === 'Open File Icon Theme Picker') {

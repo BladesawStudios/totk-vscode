@@ -199,7 +199,7 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
         <div class="header">
             <div>
                 <h1>${fileName}</h1>
-                <div class="info">TOTK Font Viewer</div>
+                <div class="info">TotK Font Viewer</div>
             </div>
             <div class="info">Standard TrueType / OpenType Extracted</div>
         </div>

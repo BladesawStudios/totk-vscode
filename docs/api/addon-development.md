@@ -56,7 +56,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 ## Declarative formats (`contributes.tkvsc`)
 
-Declare formats in your addon `package.json`. Core merges them with built-in TOTK formats and writes a handler manifest for the Python bridge.
+Declare formats in your addon `package.json`. Core merges them with built-in TotK formats and writes a handler manifest for the Python bridge.
 
 ```json
 {
@@ -143,7 +143,7 @@ Game addons register a profile so TKVSC knows how to validate dumps, compress `.
 
 Users switch the active profile with `TKVSC.activeGameId`. Each game gets its own search index under `globalStorage/indexes/{gameId}/`.
 
-TOTK remains the built-in default (`config/games/totk.json`); canonical path sync is TOTK-specific and should be disabled for other games.
+TotK remains the built-in default (`config/games/totk.json`); canonical path sync is TotK-specific and should be disabled for other games.
 
 ## Project adapters (`ProjectAdapter`)
 

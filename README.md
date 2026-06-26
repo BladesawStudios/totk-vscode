@@ -51,6 +51,16 @@ Preview and edit subfiles of SARC and BNTX archives
 - PCHTXT
 - TKMM Config Files
 
+#### Texture Viewer/Replacer
+- BNTX
+- Tex2Go
+- **Unsupported**
+- - VSP
+
+#### Audio Player
+- Bars
+- BFWAV
+
 ---
 
 ### Activity Bar Tabs
@@ -58,11 +68,11 @@ Preview and edit subfiles of SARC and BNTX archives
  <img src="https://github.com/TKVSC-Team/totk-vscode/blob/main/graphics/Promo/ActivityBarGuide.png?raw=true" width="400vh">
 
 
-**Your Mods**
+**Your Projects**
 - Add the current folder open in VS Code to a list of Project Folders
 
-**TOTK Dump**
-- Browse your dump of TOTK in Read-Only mode. Right click to add a file to the correct romfs path within a Project Folder of your choosing
+**TotK Dump**
+- Browse your dump of TotK in Read-Only mode. Right click to add a file to the correct romfs path within a Project Folder of your choosing
 
 ### Additional capabilities:
 
@@ -90,11 +100,11 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 
 - Node Based Editors (AINB, ASB, BAEV, and EVFL are all planned.)
 - BFRES Support (Preview, Editing.)
-- Audio Support (BARS, BWAV.)
+- Audio Support (BARS, BWAV.) (Read currently supported, write W.I.P)
 - Actor Tooling (Automating the process as much as possible.)
 - Full romfs file content string searching
-- New project creation
-- <sub></sup>PTCL/Effect support is being researched but not confirmed. This is uncharted territory.</sup></sub>
+
+- <sub></sup>PTCL/Effect support is being researched but not confirmed.</sup></sub>
 
 ## Setup
 
@@ -103,7 +113,7 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 * [Microsoft C++ Redis](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
 * Node.js (if building extension from source)
 * Python 3.13-venv (on Linux)
-* Valid TOTK dump
+* Valid TotK dump
 
 ### Steps
 1. Install the extension (VSIX).
@@ -115,7 +125,7 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 **`python3` works in CMD but the extension cannot find Python?** VSCode is often launched without your full user PATH (unlike a terminal you opened yourself). Fix:
 
 1. **TKVSC: Select Python (from detected installs)** - scans `where python3`, common install folders, and `py`.
-2. **TKVSC: Browse for python.exe** - point at the real interpreter (e.g. `%LocalAppData%\Programs\Python\Python312\python.exe`).
+2. **TKVSC: Browse for python.exe** - point at the real interpreter (e.g. `%LocalAppData%\Programs\Python\Python314\python.exe`).
 3. Or set **TKVSC → Python Path** to that full path, then **TKVSC: Set Up Python Environment** again.
 
 If setup fails, run **TKVSC: Set Up Python Environment** from the Command Palette.
@@ -129,7 +139,7 @@ npm install
 npm run package:vsix
 ```
 
-That produces `totk-vscode-0.0.1.vsix` (version comes from `package.json`).
+That produces `totk-vscode-0.0.3-beta.1.vsix` (version comes from `package.json`).
 
 
 ### Contributing:

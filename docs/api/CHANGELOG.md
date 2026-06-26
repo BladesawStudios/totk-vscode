@@ -55,7 +55,7 @@ Reference docs: [v1.md](v1.md)
 - `contributes.tkvsc.gameProfile` and `archivePatterns` manifest fields
 - `GameProfile` registry - RomFS sentinel, compression backend, per-game settings key
 - `ArchiveRegistry` - per-game archive file patterns
-- Per-game index paths: `globalStorage/indexes/{gameId}/` (auto-migrates legacy TOTK indexes)
+- Per-game index paths: `globalStorage/indexes/{gameId}/` (auto-migrates legacy TotK indexes)
 - Python compression backend dispatch (`totk-zstd`, `plain-zstd-yaz0`)
 - Bridge env: `TKVSC_ROMFS`, `TKVSC_GAME_ID`, `TKVSC_COMPRESSION_BACKEND`, `TKVSC_ARCHIVE_EXTENSIONS`
 - Setting: `TKVSC.activeGameId` (default `totk`)
@@ -63,8 +63,8 @@ Reference docs: [v1.md](v1.md)
 **Notes**
 
 - `api.apiVersion` remains `1`.
-- TOTK built-in profile: [`config/games/totk.json`](../../config/games/totk.json).
-- `TKVSC.romfsPath` remains the TOTK dump path; game addons use `TKVSC.<gameId>.romfsPath` via `romfsSettingsKey`.
+- TotK built-in profile: [`config/games/totk.json`](../../config/games/totk.json).
+- `TKVSC.romfsPath` remains the TotK dump path; game addons use `TKVSC.<gameId>.romfsPath` via `romfsSettingsKey`.
 - Canonical save propagation is disabled when `indexing.enableCanonicalPaths` is `false`.
 
 ---
@@ -93,7 +93,7 @@ Reference docs: [v1.md](v1.md)
 
 - `onDidReady` replays for dependent addons that subscribe after `activate()` resolves
 - `contributes.tkvsc.archivePatterns` at manifest root merges onto `gameProfile.archivePatterns`
-- `getDiskArchivePath()` uses per-game archive patterns instead of a hardcoded TOTK extension list
+- `getDiskArchivePath()` uses per-game archive patterns instead of a hardcoded TotK extension list
 - `getProjectRoots()` returns logical active project paths (multi-mod aware)
 - `detectProjectAdapterAsync()` added for async `isProjectRoot` adapters
 - `TKVSC.activeGameId` changes refresh the archive pattern registry

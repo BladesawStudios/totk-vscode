@@ -1,4 +1,4 @@
-"""Reader/renderer for TOTK TXTG (TexToGo) textures."""
+"""Reader/renderer for TotK TXTG (TexToGo) textures."""
 
 from __future__ import annotations
 
@@ -181,7 +181,7 @@ def read_txtg_texture_result(txtg_data: bytes, texture_name: str) -> dict:
     decode_error: str | None = None
     png_path = None
 
-    # TOTK textures sometimes disguise ASTC 8x8 as ASTC 4x4. We use ASTC 4x4 block size to decode.
+    # TotK textures sometimes disguise ASTC 8x8 as ASTC 4x4. We use ASTC 4x4 block size to decode.
     is_astc_8x8 = False
     if "ASTC_8x8" in fmt_name and decoder_key == "astc":
         is_astc_8x8 = True
@@ -353,7 +353,7 @@ def read_txtg_texture_result(txtg_data: bytes, texture_name: str) -> dict:
     return result
 
 
-"""Editor for TOTK TXTG (TexToGo) textures."""
+"""Editor for TotK TXTG (TexToGo) textures."""
 
 import struct
 

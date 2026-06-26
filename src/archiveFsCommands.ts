@@ -195,7 +195,7 @@ async function resolveTargetFolder(item?: ArchiveTreeItem): Promise<vscode.Uri |
     const items = selectedItems(item);
     const target = items[0];
     if (!target?.resourceUri) {
-        void vscode.window.showWarningMessage('Select a folder in TOTK Archives first.');
+        void vscode.window.showWarningMessage('Select a folder in Your Projects first.');
         return undefined;
     }
 

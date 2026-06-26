@@ -52,7 +52,7 @@ export async function addDumpEntryToProject(
         : resolveRomfsPath() || resolveRomfsForProject(projectRoot);
     if (!dumpRoot) {
         void vscode.window.showErrorMessage(
-            'TKVSC: Set **totk-editor.romfsPath** to your game dump folder first.',
+            'TKVSC: Set **TKVSC.romfsPath** to your game dump folder first.',
         );
         return false;
     }
@@ -94,7 +94,7 @@ export async function addDumpEntryToProject(
 export async function pickProjectRoot(projects: ProjectRoot[]): Promise<string | undefined> {
     if (projects.length === 0) {
         void vscode.window.showWarningMessage(
-            'No archive projects open. Add a project in **TOTK Archives** first.',
+            'No archive projects open. Add a project in **Your Projects** first.',
         );
         return undefined;
     }

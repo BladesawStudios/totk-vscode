@@ -130,7 +130,7 @@ export async function configureFilteringRules(
             targetProjectPath = containingProject.fsPath;
         } else {
             if (projectRoots.length === 0) {
-                void vscode.window.showWarningMessage('No open projects. Add a project to TOTK Archives first.');
+                void vscode.window.showWarningMessage('No open projects. Add a project to Your Projects first.');
                 return;
             }
             if (projectRoots.length === 1) {

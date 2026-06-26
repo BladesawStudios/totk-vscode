@@ -235,7 +235,7 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
             return children;
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            void vscode.window.showErrorMessage(`TOTK Archives: ${message}`);
+            void vscode.window.showErrorMessage(`Your Projects: ${message}`);
             return [];
         }
     }
@@ -456,13 +456,13 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
             const folder = vscode.workspace.workspaceFolders?.[0];
             if (!folder) {
                 void vscode.window.showWarningMessage(
-                    'TOTK Archives: Open a folder in the workspace first.',
+                    'Your Projects: Open a folder in the workspace first.',
                 );
                 return;
             }
             if (folder.uri.scheme !== 'file') {
                 void vscode.window.showWarningMessage(
-                    'TOTK Archives: Workspace is not a normal folder on disk.',
+                    'Your Projects: Workspace is not a normal folder on disk.',
                 );
                 return;
             }
@@ -544,13 +544,13 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
             batches = await importProjectsFromAdapters();
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            void vscode.window.showErrorMessage(`TOTK Archives: Failed to import projects: ${message}`);
+            void vscode.window.showErrorMessage(`Your Projects: Failed to import projects: ${message}`);
             return;
         }
 
         if (batches.length === 0) {
             void vscode.window.showWarningMessage(
-                'TOTK Archives: No external project lists found. Open projects in TKMM (or register a project adapter) first.',
+                'Your Projects: No external project lists found. Open projects in TKMM (or register a project adapter) first.',
             );
             return;
         }
@@ -563,7 +563,7 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
             }
             if (paths.length > 0) {
                 void vscode.window.showInformationMessage(
-                    `TOTK Archives: Imported ${paths.length} project(s) from ${adapter.getImportSourceLabel?.() ?? adapter.displayName}.`,
+                    `Your Projects: Imported ${paths.length} project(s) from ${adapter.getImportSourceLabel?.() ?? adapter.displayName}.`,
                 );
             }
         }
@@ -780,7 +780,7 @@ export async function migrateSarcWorkspaceFolders(
     }
 
     void vscode.window.showInformationMessage(
-        'TKVSC: Archive browsing moved to the **TOTK Archives** sidebar tab. Your workspace uses normal files again.',
+        'TKVSC: Archive browsing moved to the **Your Projects** sidebar tab. Your workspace uses normal files again.',
     );
 }
 

@@ -1785,7 +1785,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         const fileUri = await vscode.window.showOpenDialog({
             canSelectMany: false,
             filters: {
-                'TOTK Files': [
+                'TotK Files': [
                     ...coreFilterExtensions,
                     'zs',
                     ...aampFilterExtensions,
@@ -1836,7 +1836,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         const fileUri = await vscode.window.showOpenDialog({
             canSelectMany: false,
             filters: {
-                'TOTK Archives': ['pack', 'sarc', 'genvb', 'blarc', 'bfarc', 'bntx', 'zs'],
+                'TotK Archives': ['pack', 'sarc', 'genvb', 'blarc', 'bfarc', 'bntx', 'zs'],
             },
         });
 

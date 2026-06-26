@@ -10,7 +10,7 @@ _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _YAZ0_MAGIC = b"Yaz0"
 
 _ROMFS_HELP = (
-    "Set totk-editor.romfsPath to your extracted game RomFS folder "
+    "Set TKVSC.romfsPath to your extracted game RomFS folder "
     "(must contain Pack/ZsDic.pack.zs)."
 )
 

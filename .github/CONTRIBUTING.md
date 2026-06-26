@@ -20,7 +20,6 @@ Thanks for your interest in contributing! Here's what you need to know.
 
 - TypeScript source lives in `src/`, Python scripts in `python/`, and local dependencies in `vendor/`
 - Follow the existing patterns in the file you're editing
-- Run `npm run fix` before submitting - this runs both TypeScript and Python linting and formatting in one step
 
 ## Addon API documentation
 

@@ -1,4 +1,4 @@
-"""TOTK ZsDic dictionary ZSTD backend."""
+"""TotK ZsDic dictionary ZSTD backend."""
 
 from zstd_totk import compress_container, decompress_container
 
