@@ -6,7 +6,7 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bwav_io import read_bwav_to_temp_wav
+from bwav_io import is_dummy_bwav, read_bwav_to_temp_wav
 from zstd_totk import decompress_container
 
 _BARS_MAGIC = b"BARS"
@@ -301,16 +301,8 @@ def parse_bars(data: bytes) -> BarsFile:
                 bwav_off = -1
             elif data[bwav_off : bwav_off + 4] != b"BWAV":
                 bwav_off = -1
-            else:
-                bom = data[bwav_off + 4 : bwav_off + 6]
-                import struct
-
-                if bom == b"\xfe\xff":
-                    blocks = struct.unpack(">H", data[bwav_off + 12 : bwav_off + 14])[0]
-                else:
-                    blocks = struct.unpack("<H", data[bwav_off + 12 : bwav_off + 14])[0]
-                if blocks == 0:
-                    bwav_off = -1
+            elif is_dummy_bwav(data[bwav_off:]):
+                bwav_off = -1
 
         metadata = _parse_amta(data, amta_off)
         entries.append(

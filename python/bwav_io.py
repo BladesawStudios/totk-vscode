@@ -2,12 +2,13 @@
 
 import base64
 import os
+import struct
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from zstd_totk import decompress_container
+from compression import decompress_container
 
 _BWAV_MAGIC = b"BWAV"
 _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
@@ -29,6 +30,37 @@ def is_bwav_binary(file_data: bytes) -> bool:
     except ValueError:
         data = file_data
     return len(data) >= 4 and data[:4] == _BWAV_MAGIC
+
+
+def _bwav_endian(data: bytes) -> str:
+    bom = data[4:6]
+    if bom == b"\xfe\xff":
+        return ">"
+    return "<"
+
+
+def is_dummy_bwav(
+    file_data: bytes,
+    logical_path: str = "",
+    romfs_path: str = "",
+) -> bool:
+    """True when a BWAV has no playable sample data (empty prefetch / placeholder clip)."""
+    try:
+        data, _, _ = decompress_container(file_data, logical_path, romfs_path)
+    except ValueError:
+        data = file_data
+
+    if len(data) < 0x1C or data[:4] != _BWAV_MAGIC:
+        return False
+
+    endian = _bwav_endian(data)
+    channel_count = struct.unpack_from(f"{endian}H", data, 0x0E)[0]
+    if channel_count == 0:
+        return True
+
+    # First channel header starts at 0x10; file-local sample count is at +0x0C.
+    file_samples = struct.unpack_from(f"{endian}I", data, 0x1C)[0]
+    return file_samples == 0
 
 
 def _platform_subdir_and_name() -> tuple[str, str]:

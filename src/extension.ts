@@ -39,6 +39,7 @@ import { registerDocumentLanguageModes } from './languageModes';
 import { getCoreExtensions } from './coreFsExtensions';
 import {
     initAddonRegistries,
+    refreshAddonManifests,
     registerBridgeHandler,
     registerFormatHandler,
     registerGameProfileApi,
@@ -1847,6 +1848,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     });
 
     context.subscriptions.push(openArchive);
+
+    refreshAddonManifests(context);
 
     return tkvscApi;
 }

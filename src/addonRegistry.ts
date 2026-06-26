@@ -127,23 +127,33 @@ export function registerProjectAdapterApi(
     });
 }
 
+export function refreshAddonManifests(context: vscode.ExtensionContext): void {
+    scanAddonManifests(context);
+    initArchiveRegistry();
+    writeHandlerManifest(context.globalStorageUri.fsPath);
+}
+
 export function initAddonRegistries(
     context: vscode.ExtensionContext,
 ): void {
     initProjectAdapterRegistry();
     initGameProfileRegistry(context.extensionPath);
     initFormatRegistryOnly(context.extensionPath);
-    scanAddonManifests(context);
-    initArchiveRegistry();
-    writeHandlerManifest(context.globalStorageUri.fsPath);
+    refreshAddonManifests(context);
 
     context.subscriptions.push(
+        vscode.extensions.onDidChange(() => {
+            refreshAddonManifests(context);
+        }),
         vscode.workspace.onDidChangeConfiguration((event) => {
             if (event.affectsConfiguration('TKVSC.extraAampExtensions')) {
                 writeHandlerManifest(context.globalStorageUri.fsPath);
             }
         }),
     );
+
+    // Game addons may load after TKVSC's first scan (common in Extension Development Host).
+    void Promise.resolve().then(() => refreshAddonManifests(context));
 }
 
 export function initFormatRegistryOnly(extensionPath: string): void {

@@ -4,7 +4,7 @@
   "publisher": "TKVSC-Team",
   "displayName": "TKVSC",
   "description": "Canonically Amazing",
-  "version": "0.0.3-beta.1",
+  "version": "0.0.3-beta.2",
   "repository": {
     "type": "git",
     "url": "https://github.com/TKVSC-Team/totk-vscode"
@@ -321,7 +321,7 @@
       },
       {
         "command": "totk-editor.addDumpToProject",
-        "title": "Add to Project\u2026"
+        "title": "Add to Project…"
       },
       {
         "command": "totk-editor.archiveAddToActiveOption",
@@ -329,11 +329,11 @@
       },
       {
         "command": "totk-editor.archiveAddToOption",
-        "title": "Add to Option\u2026"
+        "title": "Add to Option…"
       },
       {
         "command": "totk-editor.configureFilteringRules",
-        "title": "Blacklist (Filter Rule)\u2026"
+        "title": "Blacklist (Filter Rule)…"
       },
       {
         "command": "totk-editor.archiveDelete",

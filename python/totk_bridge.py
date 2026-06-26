@@ -1322,13 +1322,10 @@ def main():
                         file_data = f.read()
                     bwav_name = archive_path
 
-                # Check dummy clip
-                if len(file_data) > 0x12:
-                    block_count = struct.unpack_from("<H", file_data, 0x12)[0]
-                    if block_count == 0:
-                        raise ValueError(
-                            "This BWAV is a dummy clip (0 blocks) and contains no audio data."
-                        )
+                if bwav_io.is_dummy_bwav(file_data, bwav_name, romfs_path):
+                    raise ValueError(
+                        "This BWAV is a dummy clip (0 samples) and contains no audio data."
+                    )
 
                 # Decode to wav and extract loops
                 wav_path, loop_start, loop_end = bwav_io.read_bwav_to_temp_wav(
