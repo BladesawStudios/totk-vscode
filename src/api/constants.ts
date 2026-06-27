@@ -18,6 +18,7 @@ export const TKVSC_ARCHIVE_CONTEXT = {
     archiveDir: 'archiveDir',
     archiveVirtualDir: 'archiveVirtualDir',
     archiveFile: 'archiveFile',
+    archiveTkproj: 'archiveTkproj',
     archiveVirtualFile: 'archiveVirtualFile',
     archivePackage: 'archivePackage',
     archiveRomfsDir: 'archiveRomfsDir',

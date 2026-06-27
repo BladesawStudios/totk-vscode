@@ -609,17 +609,17 @@
         },
         {
           "command": "totk-editor.archiveRename",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
           "group": "7_modification@1"
         },
         {
           "command": "totk-editor.archiveDelete",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
           "group": "7_modification@2"
         },
         {
           "command": "totk-editor.archiveReplaceFile",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile)",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile)",
           "group": "7_modification@3"
         },
         {
@@ -629,7 +629,7 @@
         },
         {
           "command": "totk-editor.archiveCopy",
-          "when": "view == totk-editor.archives && (viewItem == archiveRoot || viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir)",
+          "when": "view == totk-editor.archives && (viewItem == archiveRoot || viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir)",
           "group": "9_cutcopypaste@1"
         },
         {
@@ -639,7 +639,7 @@
         },
         {
           "command": "totk-editor.archiveCut",
-          "when": "view == totk-editor.archives && (viewItem == archiveRoot || viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir)",
+          "when": "view == totk-editor.archives && (viewItem == archiveRoot || viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir)",
           "group": "9_cutcopypaste@2"
         },
         {
@@ -649,7 +649,7 @@
         },
         {
           "command": "totk-editor.archiveExport",
-          "when": "view == totk-editor.archives && (viewItem == archiveVirtualFile || viewItem == archiveFile || viewItem == archivePackage)",
+          "when": "view == totk-editor.archives && (viewItem == archiveVirtualFile || viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archivePackage)",
           "group": "5_export@1"
         },
         {
@@ -679,7 +679,7 @@
         },
         {
           "command": "totk-editor.configureFilteringRules",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage)",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage)",
           "group": "8_filter@1"
         },
         {

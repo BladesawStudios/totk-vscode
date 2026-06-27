@@ -52,6 +52,8 @@ export class TkmmProjectAdapter implements ProjectAdapter {
                 return path.dirname(path.dirname(path.dirname(resourceFsPath)));
             case this.contextValues.optionGroup:
                 return path.dirname(path.dirname(resourceFsPath));
+            case TKVSC_ARCHIVE_CONTEXT.archiveTkproj:
+                return path.dirname(resourceFsPath);
             default:
                 return undefined;
         }

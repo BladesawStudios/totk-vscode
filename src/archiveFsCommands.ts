@@ -150,6 +150,7 @@ async function initialContentForNewFile(name: string): Promise<Uint8Array | unde
 function isDiskMutableItem(item: ArchiveTreeItem): boolean {
     return (
         item.contextValue === 'archiveFile' ||
+        item.contextValue === 'archiveTkproj' ||
         item.contextValue === 'archiveVirtualFile' ||
         item.contextValue === 'archivePackage' ||
         item.contextValue === 'archiveDir' ||
@@ -202,6 +203,7 @@ async function resolveTargetFolder(item?: ArchiveTreeItem): Promise<vscode.Uri |
 
     if (
         target.contextValue === 'archiveFile' ||
+        target.contextValue === 'archiveTkproj' ||
         target.contextValue === 'archiveVirtualFile' ||
         target.contextValue === 'archivePackage'
     ) {

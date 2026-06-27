@@ -738,7 +738,11 @@ function archiveContextValue(name: string, isDirectory: boolean, fsPath: string)
     if (isArchiveFile(name)) {
         value = 'archivePackage';
     } else if (!isDirectory) {
-        value = isPathInsideArchive(fsPath) ? 'archiveVirtualFile' : 'archiveFile';
+        if (isTkprojFile(name) && !isPathInsideArchive(fsPath)) {
+            value = 'archiveTkproj';
+        } else {
+            value = isPathInsideArchive(fsPath) ? 'archiveVirtualFile' : 'archiveFile';
+        }
     } else {
         value = isPathInsideArchive(fsPath) ? 'archiveVirtualDir' : 'archiveDir';
     }
