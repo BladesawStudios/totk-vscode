@@ -47,6 +47,9 @@ function parseGameProfile(raw: unknown): GameProfileRegistration | undefined {
     if (isStringArray(obj.archivePatterns)) {
         profile.archivePatterns = obj.archivePatterns;
     }
+    if (typeof obj.msbtConfigPath === 'string' && obj.msbtConfigPath.trim()) {
+        profile.msbtConfigPath = obj.msbtConfigPath.trim();
+    }
     if (obj.indexing && typeof obj.indexing === 'object') {
         const indexing = obj.indexing as Record<string, unknown>;
         profile.indexing = {

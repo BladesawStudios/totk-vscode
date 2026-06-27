@@ -24,5 +24,6 @@
   },
   "archivePatterns": [
     "\\.(pack|sarc|genvb|blarc|bfarc|bntx)(\\.zs)?$"
-  ]
+  ],
+  "msbtConfigPath": "vendor/TotK.gcf"
 }

@@ -1,3 +1,8 @@
+"""Generate python/msbt_tags.py from a .gcf file (dev helper).
+
+Runtime MSBT decoding loads tags directly from the active game's .gcf via msbt_config.py.
+"""
+
 import yaml
 
 config_path = "../vendor/TotK.gcf"

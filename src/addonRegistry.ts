@@ -53,7 +53,7 @@ function applyManifestContribution(
             ),
         };
         if (profile.id) {
-            registry.registerProfile(profile, source);
+            registry.registerProfile(profile, source, { extensionRoot });
         }
     } else if (contribution.id && contribution.archivePatterns?.length) {
         const existing = registry.getProfile(contribution.id);
@@ -109,8 +109,12 @@ export function registerBridgeHandler(
 export function registerGameProfileApi(
     context: vscode.ExtensionContext,
     registration: GameProfileRegistration,
+    options?: { extensionRoot?: string },
 ): vscode.Disposable {
-    registerGameProfile(registration);
+    registerGameProfile(registration, {
+        extensionRoot: options?.extensionRoot,
+        coreExtensionPath: context.extensionPath,
+    });
     initArchiveRegistry();
     writeHandlerManifest(context.globalStorageUri.fsPath);
     return new vscode.Disposable(() => {

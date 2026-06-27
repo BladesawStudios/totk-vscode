@@ -1,66 +1,16 @@
 import shlex
 import struct
 
-from msbt_tags import MSBT_TAGS_BY_ID, MSBT_TAGS_BY_NAME
-
-
-def _decode_str_arg(raw: str):
-    """Strip the leading Nintendo ctrl char from a decoded str argument.
-
-    Returns (visible_text, ctrl_char).  ctrl_char is '' if absent.
-    """
-    if raw and ord(raw[0]) < 0x20:
-        return raw[1:], raw[0]
-    return raw, ""
-
-
-def _decode_str_args_block(data: bytes, count: int) -> list[str]:
-    usable = len(data) & ~1
-    chars = []
-    for i in range(0, usable, 2):
-        chars.append(data[i] | (data[i + 1] << 8))
-
-    results: list[str] = []
-    ci = 0  # character index
-
-    for _arg_idx in range(count):
-        if ci >= len(chars):
-            results.append("")
-            continue
-
-        ch = chars[ci]
-
-        if ch == 0x0000:
-            # Empty argument.
-            results.append("")
-            ci += 1
-            continue
-
-        has_ctrl = ch < 0x0020
-        if has_ctrl:
-            ci += 1
-
-        text_chars: list[str] = []
-        while ci < len(chars):
-            ch = chars[ci]
-            if ch == 0x0000:
-                ci += 1
-                break
-            if ch < 0x0020:
-                break
-            text_chars.append(chr(ch))
-            ci += 1
-        results.append("".join(text_chars))
-
-    return results
+from msbt_config import get_msbt_tag_tables
 
 
 def command_to_tag(magic, group, type_, hexdata):
+    msbt_tags_by_id, _ = get_msbt_tag_tables()
     key = f"{group}_{type_}"
-    if key not in MSBT_TAGS_BY_ID:
+    if key not in msbt_tags_by_id:
         return f"{{cmd:{magic}:{group}:{type_}:{hexdata}}}"
 
-    tag_def = MSBT_TAGS_BY_ID[key]
+    tag_def = msbt_tags_by_id[key]
     tag_name = tag_def["name"]
     args_def = tag_def.get("arguments", [])
 
@@ -151,15 +101,16 @@ def command_to_tag(magic, group, type_, hexdata):
 
 
 def tag_to_command(tag_content):
+    _, msbt_tags_by_name = get_msbt_tag_tables()
     parts = shlex.split(tag_content)
     if not parts:
         return None
 
     tag_name = parts[0]
-    if tag_name not in MSBT_TAGS_BY_NAME:
+    if tag_name not in msbt_tags_by_name:
         return None
 
-    tag_def = MSBT_TAGS_BY_NAME[tag_name]
+    tag_def = msbt_tags_by_name[tag_name]
     group = tag_def["group"]
     type_ = tag_def["type"]
     magic = "0xe"
@@ -218,3 +169,54 @@ def tag_to_command(tag_content):
             b.extend(b"\x00\x00")
 
     return str(magic), group, type_, b.hex()
+
+
+def _decode_str_arg(raw: str):
+    """Strip the leading Nintendo ctrl char from a decoded str argument.
+
+    Returns (visible_text, ctrl_char).  ctrl_char is '' if absent.
+    """
+    if raw and ord(raw[0]) < 0x20:
+        return raw[1:], raw[0]
+    return raw, ""
+
+
+def _decode_str_args_block(data: bytes, count: int) -> list[str]:
+    usable = len(data) & ~1
+    chars = []
+    for i in range(0, usable, 2):
+        chars.append(data[i] | (data[i + 1] << 8))
+
+    results: list[str] = []
+    ci = 0  # character index
+
+    for _arg_idx in range(count):
+        if ci >= len(chars):
+            results.append("")
+            continue
+
+        ch = chars[ci]
+
+        if ch == 0x0000:
+            # Empty argument.
+            results.append("")
+            ci += 1
+            continue
+
+        has_ctrl = ch < 0x0020
+        if has_ctrl:
+            ci += 1
+
+        text_chars: list[str] = []
+        while ci < len(chars):
+            ch = chars[ci]
+            if ch == 0x0000:
+                ci += 1
+                break
+            if ch < 0x0020:
+                break
+            text_chars.append(chr(ch))
+            ci += 1
+        results.append("".join(text_chars))
+
+    return results

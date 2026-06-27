@@ -831,7 +831,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         onDidReadyEmitter,
         registerFormatHandler: (registration) => registerFormatHandler(context, registration),
         registerBridgeHandler: (registration) => registerBridgeHandler(context, registration),
-        registerGameProfile: (registration) => registerGameProfileApi(context, registration),
+        registerGameProfile: (registration, options) =>
+            registerGameProfileApi(context, registration, options),
         getActiveGameProfile: () => getActiveGameProfile(),
         getGameProfile: (gameId) => getGameProfileRegistry().getProfile(gameId),
         registerProjectAdapter: (adapter) => registerProjectAdapterApi(adapter),

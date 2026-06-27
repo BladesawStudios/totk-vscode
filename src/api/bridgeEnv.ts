@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import {
     getActiveGameProfile,
+    getActiveMsbtConfigPath,
     getGameProfileRegistry,
     resolveRomfsPathForGame,
 } from '../gameProfile';
@@ -14,6 +15,7 @@ export function getBridgeEnv(): NodeJS.ProcessEnv {
     const extraAamp = config.get<string[]>('extraAampExtensions', []);
     const manifestPath = getHandlerManifestPath() ?? '';
     const archiveExtensions = profile.indexing?.archiveExtensions ?? [];
+    const msbtConfigPath = getActiveMsbtConfigPath();
     return {
         ...process.env,
         TOTK_EDITOR_ROMFS: romfsPath,
@@ -22,6 +24,7 @@ export function getBridgeEnv(): NodeJS.ProcessEnv {
         TKVSC_COMPRESSION_BACKEND: profile.compressionBackend,
         TKVSC_ARCHIVE_EXTENSIONS: archiveExtensions.join(','),
         TKVSC_HANDLER_MANIFEST: manifestPath,
+        ...(msbtConfigPath ? { TKVSC_MSBT_CONFIG: msbtConfigPath } : {}),
         TOTK_TAG_PRODUCT_FORMAT: config.get<string>('tagProductFormat', 'json'),
         TOTK_EXTRA_AAMP_EXTS: extraAamp.map((ext) => ext.replace(/^\./, '')).join(','),
         TOTK_BYML_INLINE_CONTAINER_MAX_COUNT: String(

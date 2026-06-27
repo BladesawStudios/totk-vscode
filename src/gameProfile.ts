@@ -21,10 +21,21 @@ export interface GameProfileRegistration {
     legacyRomfsSettingsKeys?: string[];
     indexing?: GameIndexingConfig;
     archivePatterns?: string[];
+    /** Game config (.gcf) with MSBT tag definitions. Relative to the registering extension root. */
+    msbtConfigPath?: string;
 }
 
 export interface GameProfile extends GameProfileRegistration {
     source: GameProfileSource;
+    /** Absolute path to the resolved MSBT `.gcf` file. */
+    msbtConfigResolvedPath?: string;
+}
+
+export interface GameProfileRegisterOptions {
+    /** Extension root used to resolve a relative `msbtConfigPath`. */
+    extensionRoot?: string;
+    /** TKVSC core extension root (TotK default config fallback). */
+    coreExtensionPath?: string;
 }
 
 const DEFAULT_TOTK_PROFILE: GameProfileRegistration = {
@@ -37,6 +48,7 @@ const DEFAULT_TOTK_PROFILE: GameProfileRegistration = {
         enableRomfsSearch: true,
         enableCanonicalPaths: true,
     },
+    msbtConfigPath: 'vendor/TotK.gcf',
 };
 
 const DEFAULT_ARCHIVE_EXTENSIONS = [
@@ -57,20 +69,26 @@ const DEFAULT_ARCHIVE_EXTENSIONS = [
 class GameProfileRegistry {
     private readonly profiles = new Map<string, GameProfile>();
     private initialized = false;
+    private coreExtensionPath = '';
 
     initBuiltin(extensionPath: string): void {
         this.profiles.clear();
+        this.coreExtensionPath = extensionPath;
         const totkPath = path.join(extensionPath, 'config', 'games', 'totk.json');
         if (fs.existsSync(totkPath)) {
             const raw = JSON.parse(fs.readFileSync(totkPath, 'utf8')) as GameProfileRegistration;
-            this.registerProfile(raw, 'builtin');
+            this.registerProfile(raw, 'builtin', { coreExtensionPath: extensionPath });
         } else {
-            this.registerProfile(DEFAULT_TOTK_PROFILE, 'builtin');
+            this.registerProfile(DEFAULT_TOTK_PROFILE, 'builtin', { coreExtensionPath: extensionPath });
         }
         this.initialized = true;
     }
 
-    registerProfile(registration: GameProfileRegistration, source: GameProfileSource = 'api'): void {
+    registerProfile(
+        registration: GameProfileRegistration,
+        source: GameProfileSource = 'api',
+        options?: GameProfileRegisterOptions,
+    ): void {
         if (!registration.id) {
             return;
         }
@@ -82,10 +100,16 @@ class GameProfileRegistry {
                     ? [...registration.indexing.archiveExtensions]
                     : [...DEFAULT_ARCHIVE_EXTENSIONS],
         };
+        const msbtConfigResolvedPath = resolveMsbtConfigPath(
+            registration,
+            options?.coreExtensionPath ?? this.coreExtensionPath,
+            options?.extensionRoot,
+        );
         this.profiles.set(registration.id, {
             ...registration,
             indexing,
             source,
+            msbtConfigResolvedPath,
         });
     }
 
@@ -166,6 +190,15 @@ class GameProfileRegistry {
         return profile?.indexing?.archiveExtensions ?? [...DEFAULT_ARCHIVE_EXTENSIONS];
     }
 
+    getMsbtConfigPath(gameId?: string): string {
+        const profile = gameId ? this.profiles.get(gameId) : this.getActiveProfile();
+        if (profile?.msbtConfigResolvedPath && fs.existsSync(profile.msbtConfigResolvedPath)) {
+            return profile.msbtConfigResolvedPath;
+        }
+        const fallback = path.join(this.coreExtensionPath, 'vendor', 'TotK.gcf');
+        return fs.existsSync(fallback) ? fallback : profile?.msbtConfigResolvedPath ?? '';
+    }
+
     ensureInitialized(): void {
         if (!this.initialized) {
             throw new Error('GameProfileRegistry not initialized');
@@ -175,6 +208,38 @@ class GameProfileRegistry {
 
 const registry = new GameProfileRegistry();
 
+function resolveMsbtConfigPath(
+    registration: GameProfileRegistration,
+    coreExtensionPath: string,
+    extensionRoot?: string,
+): string | undefined {
+    const configured = registration.msbtConfigPath?.trim();
+    const candidates: string[] = [];
+
+    if (configured) {
+        if (path.isAbsolute(configured)) {
+            candidates.push(configured);
+        } else {
+            if (extensionRoot) {
+                candidates.push(path.join(extensionRoot, configured));
+            }
+            if (coreExtensionPath) {
+                candidates.push(path.join(coreExtensionPath, configured));
+            }
+        }
+    } else if (registration.id === 'totk' && coreExtensionPath) {
+        candidates.push(path.join(coreExtensionPath, 'vendor', 'TotK.gcf'));
+    }
+
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            return path.normalize(candidate);
+        }
+    }
+
+    return candidates[0] ? path.normalize(candidates[0]) : undefined;
+}
+
 export function initGameProfileRegistry(extensionPath: string): void {
     registry.initBuiltin(extensionPath);
 }
@@ -183,8 +248,15 @@ export function getGameProfileRegistry(): GameProfileRegistry {
     return registry;
 }
 
-export function registerGameProfile(registration: GameProfileRegistration): void {
-    registry.registerProfile(registration, 'api');
+export function registerGameProfile(
+    registration: GameProfileRegistration,
+    options?: GameProfileRegisterOptions,
+): void {
+    registry.registerProfile(registration, 'api', options);
+}
+
+export function getActiveMsbtConfigPath(): string {
+    return registry.getMsbtConfigPath();
 }
 
 export function getActiveGameProfile(): GameProfile {

@@ -46,7 +46,10 @@ export interface TkvscApi {
     /** @see docs/api/v1.md#registerbridgehandlerregistration */
     registerBridgeHandler(registration: BridgeHandlerRegistration): vscode.Disposable;
     /** @see docs/api/v1.md#registergameprofileregistration */
-    registerGameProfile(registration: GameProfileRegistration): vscode.Disposable;
+    registerGameProfile(
+        registration: GameProfileRegistration,
+        options?: { extensionRoot?: string },
+    ): vscode.Disposable;
     /** @see docs/api/v1.md#getactivegameprofile */
     getActiveGameProfile(): GameProfile;
     /** @see docs/api/v1.md#getgameprofilegameid */
@@ -70,7 +73,10 @@ export interface CreateTkvscApiOptions {
     onDidReadyEmitter: TkvscReadyEmitter;
     registerFormatHandler: (registration: FormatRegistration) => vscode.Disposable;
     registerBridgeHandler: (registration: BridgeHandlerRegistration) => vscode.Disposable;
-    registerGameProfile: (registration: GameProfileRegistration) => vscode.Disposable;
+    registerGameProfile: (
+        registration: GameProfileRegistration,
+        options?: { extensionRoot?: string },
+    ) => vscode.Disposable;
     getActiveGameProfile: () => GameProfile;
     getGameProfile: (gameId: string) => GameProfile | undefined;
     registerProjectAdapter: (adapter: ProjectAdapter) => vscode.Disposable;
