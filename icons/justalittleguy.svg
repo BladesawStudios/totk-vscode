@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Animation_1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #f4d3b3;
+        stroke: #19bf55;
+        stroke-linecap: round;
+        stroke-miterlimit: 10;
+        stroke-width: 3px;
+      }
+
+      .cls-2 {
+        fill: #19bf55;
+      }
+    </style>
+  </defs>
+  <circle class="cls-2" cx="16" cy="7" r="5"/>
+  <line class="cls-1" x1="16" y1="9" x2="16" y2="19.5"/>
+  <line class="cls-1" x1="23" y1="29" x2="16" y2="19"/>
+  <line class="cls-1" x1="9" y1="29" x2="16" y2="19"/>
+  <line class="cls-1" x1="8" y1="14.5" x2="24" y2="14.5"/>
+</svg>
