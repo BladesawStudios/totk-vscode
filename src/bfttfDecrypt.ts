@@ -117,3 +117,26 @@ export function getFontFaceCss(data: Uint8Array, base64Font: string): string {
             src: url(data:${mime};base64,${base64Font}) format('${format}');
         }`;
 }
+
+export function getFontFormatLabel(fsPath: string, data: Uint8Array): string {
+    const lower = fsPath.replace(/\\/g, '/').toLowerCase();
+    if (lower.endsWith('.bfotf') || lower.endsWith('.bfttf')) {
+        return 'TotK Font';
+    }
+    if (lower.endsWith('.ttf')) {
+        return 'TrueType Font';
+    }
+    if (lower.endsWith('.otf')) {
+        return 'OpenType Font';
+    }
+    if (data.length >= 4) {
+        const magic = readU32Be(data, 0);
+        if (magic === 0x00010000) {
+            return 'TrueType Font';
+        }
+        if (magic === 0x4f54544f) {
+            return 'OpenType Font';
+        }
+    }
+    return 'Font';
+}

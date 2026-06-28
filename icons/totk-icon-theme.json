@@ -155,7 +155,9 @@
     "txtg.zs": "_totk_texture",
     "tkvsc": "_totk_tkvsc",
     "bfttf": "_totk_font",
-    "bfotf": "_totk_font"
+    "bfotf": "_totk_font",
+    "ttf": "_totk_font",
+    "otf": "_totk_font"
   },
   "fileNames": {
     ".tkproj": "_totk_tkproj",

@@ -63,13 +63,19 @@
       },
       {
         "viewType": "totk-editor.fontViewer",
-        "displayName": "TotK Font Viewer",
+        "displayName": "Font Viewer",
         "selector": [
           {
             "filenamePattern": "*.bfttf"
           },
           {
             "filenamePattern": "*.bfotf"
+          },
+          {
+            "filenamePattern": "*.ttf"
+          },
+          {
+            "filenamePattern": "*.otf"
           }
         ],
         "priority": "default"
@@ -209,10 +215,13 @@
         "id": "totk-font",
         "extensions": [
           ".bfttf",
-          ".bfotf"
+          ".bfotf",
+          ".ttf",
+          ".otf"
         ],
         "aliases": [
-          "TotK Font"
+          "TotK Font",
+          "Font"
         ],
         "icon": {
           "light": "./icons/font.svg",

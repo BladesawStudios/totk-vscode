@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getFontFaceCss, prepareFontBytes } from './bfttfDecrypt';
+import { getFontFaceCss, getFontFormatLabel, prepareFontBytes } from './bfttfDecrypt';
 
 export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
     public static register(context: vscode.ExtensionContext, getRawBytes?: (uri: vscode.Uri) => Promise<Uint8Array>): vscode.Disposable {
@@ -38,6 +38,7 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
             const base64Font = Buffer.from(fileData).toString('base64');
             const fileName = document.uri.path.split('/').pop() || 'font';
             const fontFaceCss = getFontFaceCss(fileData, base64Font);
+            const formatLabel = getFontFormatLabel(document.uri.fsPath, fileData);
 
             let uniqueUnicodes: number[] = [];
             try {
@@ -61,13 +62,25 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
                 console.warn('opentype.js failed to parse font for unicode extraction:', err);
             }
 
-            webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview, fontFaceCss, fileName, uniqueUnicodes);
+            webviewPanel.webview.html = this.getHtmlForWebview(
+                webviewPanel.webview,
+                fontFaceCss,
+                fileName,
+                formatLabel,
+                uniqueUnicodes,
+            );
         } catch (e) {
             webviewPanel.webview.html = `<body><h3>Error loading font: ${String(e)}</h3></body>`;
         }
     }
 
-    private getHtmlForWebview(webview: vscode.Webview, fontFaceCss: string, fileName: string, unicodes: number[]): string {
+    private getHtmlForWebview(
+        webview: vscode.Webview,
+        fontFaceCss: string,
+        fileName: string,
+        formatLabel: string,
+        unicodes: number[],
+    ): string {
         const unicodesJson = JSON.stringify(unicodes);
         return `<!DOCTYPE html>
 <html lang="en">
@@ -198,9 +211,9 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
         <div class="header">
             <div>
                 <h1>${fileName}</h1>
-                <div class="info">TotK Font Viewer</div>
+                <div class="info">Font Viewer</div>
             </div>
-            <div class="info">Standard TrueType / OpenType Extracted</div>
+            <div class="info">${formatLabel}</div>
         </div>
         
         <div style="margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--vscode-descriptionForeground); text-transform: uppercase;">
