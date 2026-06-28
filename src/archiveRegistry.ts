@@ -72,6 +72,10 @@ class ArchiveRegistry {
             return fsPath;
         }
 
+        const isWindowsDrive = /^[a-zA-Z]:/.test(normalized);
+        const isUnc = !isWindowsDrive && normalized.startsWith('//');
+        const isUnixAbsolute = !isWindowsDrive && !isUnc && normalized.startsWith('/');
+
         const segments = normalized.split('/').filter(Boolean);
         if (segments.length === 0) {
             return fsPath;
@@ -90,8 +94,14 @@ class ArchiveRegistry {
 
         const toDiskPath = (endIndex: number): string => {
             const prefix = segments.slice(0, endIndex + 1).join('/');
-            if (/^[a-zA-Z]:/.test(normalized)) {
+            if (isWindowsDrive) {
                 return prefix.replace(/\//g, path.sep);
+            }
+            if (isUnc) {
+                return `//${prefix}`;
+            }
+            if (isUnixAbsolute) {
+                return `/${prefix}`;
             }
             return prefix;
         };
