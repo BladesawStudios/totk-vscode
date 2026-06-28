@@ -4,7 +4,7 @@
   "publisher": "TKVSC-Team",
   "displayName": "TKVSC",
   "description": "Canonically Amazing",
-  "version": "0.0.3-beta.4",
+  "version": "0.0.3-beta.5",
   "repository": {
     "type": "git",
     "url": "https://github.com/TKVSC-Team/totk-vscode"
@@ -482,7 +482,7 @@
       "totk-editor": [
         {
           "id": "totk-editor.archives",
-          "name": ""
+          "name": "Your Projects"
         }
       ],
       "totk-editor-dump": [

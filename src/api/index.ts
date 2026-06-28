@@ -5,7 +5,7 @@ import {
     TKVSC_EXTENSION_ID,
     TKVSC_VIEWS,
 } from './constants';
-import { readRawBytes, writeRawBytes } from './rawFileIo';
+import { readFontBytes, readRawBytes, writeRawBytes } from './rawFileIo';
 import { resolveProjectRoot } from './resolveProjectRoot';
 import type { CreateTkvscApiOptions, TkvscApi } from './types';
 
@@ -21,7 +21,7 @@ import type { CreateTkvscApiOptions, TkvscApi } from './types';
 export { TKVSC_API_VERSION, TKVSC_ARCHIVE_CONTEXT, TKVSC_EXTENSION_ID, TKVSC_VIEWS } from './constants';
 export { TkvscReadyEmitter } from './readyEvent';
 export { getBridgeEnv } from './bridgeEnv';
-export { readRawBytes, writeRawBytes } from './rawFileIo';
+export { readFontBytes, readRawBytes, writeRawBytes } from './rawFileIo';
 export { resolveProjectRoot } from './resolveProjectRoot';
 export type { TkvscApi, TkvscBridgeAccess, TkvscTreeItemLike } from './types';
 export type { FormatRegistration, BridgeHandlerRegistration } from '../formatRegistry';

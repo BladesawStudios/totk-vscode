@@ -103,6 +103,7 @@ import {
 import {
     createTkvscApi,
     getBridgeEnv,
+    readFontBytes,
     readRawBytes,
     TkvscReadyEmitter,
     TKVSC_EXTENSION_ID,
@@ -179,7 +180,7 @@ class SarcProvider implements vscode.FileSystemProvider {
             content: Uint8Array;
             textContent?: string;
         }) => Promise<void>,
-    ) {}
+    ) { }
 
     private requirePython(): string {
         const python = this.getPython();
@@ -327,7 +328,7 @@ class SarcProvider implements vscode.FileSystemProvider {
 
         const normalized = fsPath.replace(/\\/g, '/');
         const lower = normalized.toLowerCase();
-        
+
         if (this.virtualDirectories.has(lower)) {
             return { type: vscode.FileType.Directory, ctime: 0, mtime: 0, size: 0 };
         }
@@ -339,7 +340,7 @@ class SarcProvider implements vscode.FileSystemProvider {
 
         const diskArchive = this.getDiskArchive(fsPath);
         const locator = this.getLocator(fsPath, diskArchive);
-        
+
         if (!locator) {
             return this.statDiskPath(diskArchive);
         }
@@ -633,7 +634,7 @@ class SarcProvider implements vscode.FileSystemProvider {
         const normalizedPath = fsPath.replace(/\\/g, '/');
         const lowerPath = normalizedPath.toLowerCase();
         let deletedVirtual = false;
-        
+
         if (this.virtualDirectories.has(lowerPath)) {
             this.virtualDirectories.delete(lowerPath);
             deletedVirtual = true;
@@ -647,7 +648,7 @@ class SarcProvider implements vscode.FileSystemProvider {
 
         const diskArchive = this.getDiskArchive(fsPath);
         const filePath = this.getLocator(fsPath, diskArchive);
-        
+
         try {
             await runBridgeJsonAsync<{ success: boolean }>(
                 this.requirePython(),
@@ -712,7 +713,7 @@ class SarcProvider implements vscode.FileSystemProvider {
         }
         const oldLocator = this.getLocator(oldPath, oldDiskArchive);
         const newLocator = this.getLocator(newPath, newDiskArchive);
-        
+
         try {
             await runBridgeJsonAsync<{ success: boolean }>(
                 this.requirePython(),
@@ -742,7 +743,7 @@ function cleanupOldTempFiles() {
         const tmpdir = os.tmpdir();
         const files = fs.readdirSync(tmpdir);
         const prefixes = ['totk-tex-', 'totk-txtg-', 'totk-tool-', 'totk-cvt-', 'totk-xlnk-'];
-        
+
         for (const file of files) {
             if (prefixes.some(p => file.startsWith(p))) {
                 try {
@@ -766,10 +767,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
     const onDidReadyEmitter = new TkvscReadyEmitter();
     context.subscriptions.push(onDidReadyEmitter);
-    
+
     // Clean up leftover temp files from previous sessions
     cleanupOldTempFiles();
-    
+
     initAddonRegistries(context);
     void migrateLegacyIndexFiles(context.globalStorageUri.fsPath);
     initTextureViewer(context.extensionUri);
@@ -779,15 +780,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     setCanonicalIndexExtensionPath(context.extensionPath);
     setProjectCanonicalOverlayExtensionPath(context.extensionPath);
     logger.info('TKVSC dependencies initialized.');
-    
+
     const output: vscode.OutputChannel = {
         name: 'TKVSC',
         append: (value: string) => logger.info(value),
         appendLine: (value: string) => logger.info(value),
-        clear: () => {},
+        clear: () => { },
         show: () => logger.show(),
-        hide: () => {},
-        dispose: () => {}
+        hide: () => { },
+        dispose: () => { }
     } as any;
 
     context.subscriptions.push(
@@ -814,7 +815,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     context.subscriptions.push(TkprojEditorProvider.register(context));
     context.subscriptions.push(TkvscEditorProvider.register(context));
     context.subscriptions.push(BwavEditorProvider.register(context));
-    
+
     const bridgePath = path.join(context.extensionPath, 'python', 'totk_bridge.py');
     const getPython = () => getCachedPythonExecutable() ?? '';
     const rawFileIoContext = { bridgePath, getPython, getBridgeEnv };
@@ -841,7 +842,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         getProjectAdapters: () => getProjectAdapters(),
     });
 
-    const getRawFontBytes = (uri: vscode.Uri) => readRawBytes(uri, rawFileIoContext);
+    const getRawFontBytes = (uri: vscode.Uri) => readFontBytes(uri, rawFileIoContext);
     context.subscriptions.push(FontViewerProvider.register(context, getRawFontBytes));
     context.subscriptions.push(InfoJsonEditorProvider.register(context));
 
@@ -1318,7 +1319,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         const updateArgs = isTxtgFile(uri.fsPath)
                             ? ['update-txtg-metadata', diskArchive, filePath, payloadStr]
                             : ['update-metadata', diskArchive, filePath, payloadStr];
-                        
+
                         const result = await runBridgeReadAsync(
                             python,
                             bridgePath,
@@ -1328,7 +1329,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         if (result && (result as any).error) {
                             throw new Error((result as any).error);
                         }
-                        
+
                         // Automatically refresh the texture viewer to show the applied changes
                         void vscode.commands.executeCommand('totk-editor.openBntxTexture', uri);
                     };
@@ -1427,7 +1428,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     ['list-bars', diskArchive, filePath],
                     getBridgeEnv(),
                 );
-                
+
                 if (raw && (raw as any).entries) {
                     const barsName = path.basename(uri.fsPath) || 'audio.bars';
                     openBarsViewer(barsName, uri.toString(), (raw as any).entries, async (index: number, usePrefetch: boolean) => {
@@ -1639,12 +1640,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             const originalName = path.basename(singleUri.fsPath);
             const extMatch = originalName.match(/(\.[a-zA-Z0-9]+)$/);
             let ext = extMatch ? extMatch[1] : '';
-            
+
             // Handle extensionless files inside BNTX (they are just the texture names)
             if (!ext && (singleUri.fsPath.includes('.bntx') || singleUri.fsPath.includes('.bftex') || singleUri.fsPath.includes('.nutexb'))) {
                 ext = '.bftex';
             }
-            
+
             const filters = getFiltersForExtension(ext);
 
             const destUri = await vscode.window.showSaveDialog({
@@ -1666,7 +1667,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             try {
                 const diskArchive = getDiskArchivePath(singleUri.fsPath);
                 const locator = getLocatorInsideDiskArchive(singleUri.fsPath, diskArchive);
-                
+
                 // Get the target format extension
                 const targetExt = path.extname(destUri.fsPath).toLowerCase();
 
@@ -1677,11 +1678,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     undefined,
                     getBridgeEnv(),
                 );
-                
+
                 if (bridgeResult.error) {
                     throw new Error(bridgeResult.error);
                 }
-                
+
                 const exportedPath = bridgeResult.path;
                 const data = await fs.promises.readFile(exportedPath);
                 try {
@@ -1689,7 +1690,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 } catch {
                     // best effort
                 }
-                
+
                 await vscode.workspace.fs.writeFile(destUri, data);
                 void vscode.window.showInformationMessage(`Exported to ${destUri.fsPath}`);
             } catch (error) {

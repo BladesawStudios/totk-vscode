@@ -718,6 +718,24 @@ def main():
                 out.write(decompressed)
             print(json.dumps({"path": tmp_path}))
 
+        elif command == "read-font-disk":
+            from archive_resolve import decrypt_bfttf
+
+            file_path = sys.argv[2]
+            file_data = Path(file_path).read_bytes()
+            logical_path = file_path.replace("\\", "/")
+            if logical_path.lower().endswith(".zs"):
+                file_data, _, _ = decompress_container(file_data, logical_path, romfs_path)
+                logical_path = logical_path[:-3]
+            if logical_path.lower().endswith((".bfotf", ".bfttf")):
+                file_data = decrypt_bfttf(file_data)
+            safe_name = Path(logical_path).name or "font.bin"
+            safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in safe_name)
+            fd, tmp_path = tempfile.mkstemp(prefix="totk-font-", suffix=f"-{safe_name}")
+            with os.fdopen(fd, "wb") as out:
+                out.write(file_data)
+            print(json.dumps({"path": tmp_path}))
+
         elif command == "compress-file":
             input_path = sys.argv[2]
             logical_path = sys.argv[3] if len(sys.argv) > 3 else input_path

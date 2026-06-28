@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { getFontFaceCss, prepareFontBytes } from './bfttfDecrypt';
 
 export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
     public static register(context: vscode.ExtensionContext, getRawBytes?: (uri: vscode.Uri) => Promise<Uint8Array>): vscode.Disposable {
@@ -23,7 +24,7 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
 
     async resolveCustomEditor(document: vscode.CustomDocument, webviewPanel: vscode.WebviewPanel, token: vscode.CancellationToken): Promise<void> {
         webviewPanel.webview.options = { enableScripts: true };
-        
+
         try {
             let fileData: Uint8Array;
             if (this.getRawBytes) {
@@ -31,16 +32,18 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
             } else {
                 fileData = await vscode.workspace.fs.readFile(document.uri);
             }
-            
+
+            fileData = prepareFontBytes(fileData, document.uri.fsPath);
+
             const base64Font = Buffer.from(fileData).toString('base64');
             const fileName = document.uri.path.split('/').pop() || 'font';
+            const fontFaceCss = getFontFaceCss(fileData, base64Font);
 
             let uniqueUnicodes: number[] = [];
             try {
                 const opentype = require('opentype.js');
-                const buffer = fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength);
-                const font = opentype.parse(buffer);
-                
+                const font = opentype.parse(Buffer.from(fileData));
+
                 const unicodes = new Set<number>();
                 for (let i = 0; i < font.glyphs.length; i++) {
                     const glyph = font.glyphs.get(i);
@@ -58,13 +61,13 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
                 console.warn('opentype.js failed to parse font for unicode extraction:', err);
             }
 
-            webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview, base64Font, fileName, uniqueUnicodes);
+            webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview, fontFaceCss, fileName, uniqueUnicodes);
         } catch (e) {
             webviewPanel.webview.html = `<body><h3>Error loading font: ${String(e)}</h3></body>`;
         }
     }
 
-    private getHtmlForWebview(webview: vscode.Webview, base64Font: string, fileName: string, unicodes: number[]): string {
+    private getHtmlForWebview(webview: vscode.Webview, fontFaceCss: string, fileName: string, unicodes: number[]): string {
         const unicodesJson = JSON.stringify(unicodes);
         return `<!DOCTYPE html>
 <html lang="en">
@@ -72,11 +75,7 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        @font-face {
-            font-family: 'PreviewFont';
-            src: url(data:font/otf;base64,${base64Font}) format('opentype'),
-                 url(data:font/truetype;base64,${base64Font}) format('truetype');
-        }
+        ${fontFaceCss}
         * { box-sizing: border-box; }
         body {
             font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
