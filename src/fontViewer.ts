@@ -2,8 +2,12 @@ import * as vscode from 'vscode';
 import { getFontFaceCss, getFontFormatLabel, prepareFontBytes } from './bfttfDecrypt';
 
 export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
+    private static providerInstance: FontViewerProvider | undefined;
+    private readonly openPanels = new Map<string, vscode.WebviewPanel>();
+
     public static register(context: vscode.ExtensionContext, getRawBytes?: (uri: vscode.Uri) => Promise<Uint8Array>): vscode.Disposable {
         const provider = new FontViewerProvider(context, getRawBytes);
+        FontViewerProvider.providerInstance = provider;
         return vscode.window.registerCustomEditorProvider(FontViewerProvider.viewType, provider, {
             webviewOptions: {
                 retainContextWhenHidden: true,
@@ -11,7 +15,19 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
         });
     }
 
-    private static readonly viewType = 'totk-editor.fontViewer';
+    static readonly viewType = 'totk-editor.fontViewer';
+
+    static async refresh(uri: vscode.Uri): Promise<void> {
+        if (FontViewerProvider.providerInstance) {
+            await FontViewerProvider.providerInstance.refreshUri(uri);
+            return;
+        }
+        await vscode.commands.executeCommand('vscode.openWith', uri, FontViewerProvider.viewType);
+    }
+
+    private static panelKey(uri: vscode.Uri): string {
+        return uri.fsPath.replace(/\\/g, '/').toLowerCase();
+    }
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -22,23 +38,45 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
         return { uri, dispose: () => { } };
     }
 
+    async refreshUri(uri: vscode.Uri): Promise<void> {
+        const key = FontViewerProvider.panelKey(uri);
+        const panel = this.openPanels.get(key);
+        if (panel) {
+            await this.renderCustomEditor(uri, panel.webview);
+            panel.reveal();
+            return;
+        }
+        await vscode.commands.executeCommand('vscode.openWith', uri, FontViewerProvider.viewType);
+    }
+
     async resolveCustomEditor(document: vscode.CustomDocument, webviewPanel: vscode.WebviewPanel, token: vscode.CancellationToken): Promise<void> {
-        webviewPanel.webview.options = { enableScripts: true };
+        const key = FontViewerProvider.panelKey(document.uri);
+        this.openPanels.set(key, webviewPanel);
+        webviewPanel.onDidDispose(() => {
+            if (this.openPanels.get(key) === webviewPanel) {
+                this.openPanels.delete(key);
+            }
+        });
+        await this.renderCustomEditor(document.uri, webviewPanel.webview);
+    }
+
+    private async renderCustomEditor(uri: vscode.Uri, webview: vscode.Webview): Promise<void> {
+        webview.options = { enableScripts: true };
 
         try {
             let fileData: Uint8Array;
             if (this.getRawBytes) {
-                fileData = await this.getRawBytes(document.uri);
+                fileData = await this.getRawBytes(uri);
             } else {
-                fileData = await vscode.workspace.fs.readFile(document.uri);
+                fileData = await vscode.workspace.fs.readFile(uri);
             }
 
-            fileData = prepareFontBytes(fileData, document.uri.fsPath);
+            fileData = prepareFontBytes(fileData, uri.fsPath);
 
             const base64Font = Buffer.from(fileData).toString('base64');
-            const fileName = document.uri.path.split('/').pop() || 'font';
+            const fileName = uri.path.split('/').pop() || 'font';
             const fontFaceCss = getFontFaceCss(fileData, base64Font);
-            const formatLabel = getFontFormatLabel(document.uri.fsPath, fileData);
+            const formatLabel = getFontFormatLabel(uri.fsPath, fileData);
 
             let uniqueUnicodes: number[] = [];
             try {
@@ -62,15 +100,15 @@ export class FontViewerProvider implements vscode.CustomReadonlyEditorProvider {
                 console.warn('opentype.js failed to parse font for unicode extraction:', err);
             }
 
-            webviewPanel.webview.html = this.getHtmlForWebview(
-                webviewPanel.webview,
+            webview.html = this.getHtmlForWebview(
+                webview,
                 fontFaceCss,
                 fileName,
                 formatLabel,
                 uniqueUnicodes,
             );
         } catch (e) {
-            webviewPanel.webview.html = `<body><h3>Error loading font: ${String(e)}</h3></body>`;
+            webview.html = `<body><h3>Error loading font: ${String(e)}</h3></body>`;
         }
     }
 

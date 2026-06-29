@@ -9,6 +9,7 @@ import { resolveRomfsPath } from './romfs';
 import { addDumpEntryToProject, resolveRomfsForProject } from './addToProject';
 import { isPathInsideRomfsFolder } from './projectPaths';
 import { askForProjectOption, getActiveProjectOption, isAdapterOptionFolderContextValue, isAdapterOptionsContextValue } from './projectAdapters/registry';
+import { isFontFilePath } from './fontReplace';
 
 let archiveTreeView: vscode.TreeView<ArchiveTreeItem> | undefined;
 
@@ -1170,6 +1171,10 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                 const targetUri = entry.resourceUri;
                 if (isBntxOrTexToGo(targetUri)) {
                     await vscode.commands.executeCommand('totk-editor.importTextureDds', targetUri);
+                    return;
+                }
+                if (isFontFilePath(targetUri.fsPath)) {
+                    await vscode.commands.executeCommand('totk-editor.importFontReplacement', targetUri);
                     return;
                 }
 

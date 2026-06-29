@@ -719,7 +719,7 @@ def main():
             print(json.dumps({"path": tmp_path}))
 
         elif command == "read-font-disk":
-            from archive_resolve import decrypt_bfttf
+            from bfttf_io import decrypt_bfttf
 
             file_path = sys.argv[2]
             file_data = Path(file_path).read_bytes()
@@ -734,6 +734,26 @@ def main():
             fd, tmp_path = tempfile.mkstemp(prefix="totk-font-", suffix=f"-{safe_name}")
             with os.fdopen(fd, "wb") as out:
                 out.write(file_data)
+            print(json.dumps({"path": tmp_path}))
+
+        elif command == "prepare-font-replacement":
+            from archive_resolve import read_fs_path_bytes
+            from bfttf_io import prepare_font_replacement
+
+            import_path = sys.argv[2]
+            target_path = sys.argv[3]
+            import_data = Path(import_path).read_bytes()
+            target_existing = None
+            try:
+                target_existing = read_fs_path_bytes(target_path, romfs_path)
+            except Exception:
+                target_existing = None
+            out = prepare_font_replacement(import_data, import_path, target_path, target_existing)
+            safe_name = Path(target_path).name or "font.bin"
+            safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in safe_name)
+            fd, tmp_path = tempfile.mkstemp(prefix="totk-font-out-", suffix=f"-{safe_name}")
+            with os.fdopen(fd, "wb") as out_file:
+                out_file.write(out)
             print(json.dumps({"path": tmp_path}))
 
         elif command == "compress-file":

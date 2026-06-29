@@ -12,47 +12,7 @@ _BNTX_SEGMENT = re.compile(r"\.bntx(\.zs)?$", re.IGNORECASE)
 _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 
 
-def decrypt_bfttf(data: bytes) -> bytes:
-    if len(data) <= 8:
-        return data
-    magic = data[:4]
-    if magic == b"\xd9\x9b\x87\x1a":
-        base_key = 2785117442
-    elif magic == b"\x36\xf8\x1a\x1e":
-        base_key = 1231165446
-    elif magic == b"\xf3\x68\xde\xc1":
-        base_key = 2364726489
-    else:
-        return data
-
-    first_chunk = int.from_bytes(data[8:12], byteorder="big")
-    possible_magics = [
-        0x4F54544F,
-        0x00010000,
-        0x774F4646,
-        0x774F4632,
-        0x74727565,
-        0x74746366,
-    ]
-
-    file_size_val = len(data) - 8
-    derived_key = base_key ^ file_size_val
-    if (first_chunk ^ derived_key) in possible_magics:
-        key_val = derived_key
-    elif (first_chunk ^ base_key) in possible_magics:
-        key_val = base_key
-    else:
-        key_val = base_key
-        for pm in possible_magics:
-            if (first_chunk ^ pm) ^ base_key < 0x0FFFFFFF:
-                key_val = first_chunk ^ pm
-                break
-
-    out = bytearray(len(data) - 8)
-    key_bytes = key_val.to_bytes(4, byteorder="big")
-    for i in range(8, len(data)):
-        out[i - 8] = data[i] ^ key_bytes[i % 4]
-    return bytes(out)
+from bfttf_io import decrypt_bfttf
 
 
 def _is_archive_name(name: str) -> bool:
@@ -61,6 +21,76 @@ def _is_archive_name(name: str) -> bool:
 
 def _is_bntx_name(name: str) -> bool:
     return bool(_BNTX_SEGMENT.search(name.replace("\\", "/")))
+
+
+def get_disk_archive_path(fs_path: str) -> str:
+    normalized = fs_path.replace("\\", "/").rstrip("/")
+    if not normalized:
+        return fs_path
+
+    is_windows_drive = bool(re.match(r"^[A-Za-z]:", normalized))
+    is_unc = not is_windows_drive and normalized.startswith("//")
+    is_unix_absolute = not is_windows_drive and not is_unc and normalized.startswith("/")
+
+    segments = [segment for segment in normalized.split("/") if segment]
+    if not segments:
+        return fs_path
+
+    last_archive_index = -1
+    for index, segment in enumerate(segments):
+        if _is_archive_name(segment):
+            last_archive_index = index
+
+    if last_archive_index < 0:
+        return fs_path
+
+    def to_disk_path(end_index: int) -> str:
+        prefix = "/".join(segments[: end_index + 1])
+        if is_windows_drive:
+            return prefix.replace("/", "\\")
+        if is_unc:
+            return f"//{prefix}"
+        if is_unix_absolute:
+            return f"/{prefix}"
+        return prefix
+
+    for index in range(last_archive_index, -1, -1):
+        if not _is_archive_name(segments[index]):
+            continue
+        disk_path = to_disk_path(index)
+        if Path(disk_path).exists():
+            return disk_path
+
+    return to_disk_path(last_archive_index)
+
+
+def is_path_inside_archive(file_path: str) -> bool:
+    normalized = file_path.replace("\\", "/").rstrip("/")
+    segments = [segment for segment in normalized.split("/") if segment]
+    for index, segment in enumerate(segments):
+        if not _is_archive_name(segment):
+            continue
+        if index < len(segments) - 1:
+            return True
+    return False
+
+
+def get_locator_inside_disk_archive(fs_path: str, disk_archive: str) -> str:
+    rest = fs_path[len(disk_archive) :]
+    if rest.startswith(("/", "\\")):
+        rest = rest[1:]
+    return rest.replace("\\", "/")
+
+
+def read_fs_path_bytes(fs_path: str, romfs_path: str = "") -> bytes:
+    if not is_path_inside_archive(fs_path):
+        return Path(fs_path).read_bytes()
+
+    disk_archive = get_disk_archive_path(fs_path)
+    locator = get_locator_inside_disk_archive(fs_path, disk_archive)
+    if not locator or disk_archive == fs_path:
+        return Path(fs_path).read_bytes()
+    return read_archive_file_bytes(disk_archive, locator, romfs_path)
 
 
 def _normalize_path(path: str) -> str:

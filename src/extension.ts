@@ -10,6 +10,7 @@ import {
     runBridgeJsonAsync,
     runBridgeReadAsync,
     runBridgeReadContentAsync,
+    runBridgePrepareFontReplacementAsync,
     runBridgeReplaceBntxPayloadAsync,
     runBridgeReplaceTxtgPayloadAsync,
 } from './bridge';
@@ -81,6 +82,7 @@ import { getAampExtensions } from './aampExtensions';
 import { TkprojEditorProvider } from './tkprojEditor';
 import { TkvscEditorProvider } from './tkvscEditor';
 import { FontViewerProvider } from './fontViewer';
+import { FONT_IMPORT_FILTERS, isFontFilePath } from './fontReplace';
 import { InfoJsonEditorProvider } from './infoJsonEditor';
 import { BwavEditorProvider } from './bwavEditor';
 import { openHexEditor } from './editors/hexEditor';
@@ -105,6 +107,7 @@ import {
     getBridgeEnv,
     readFontBytes,
     readRawBytes,
+    writeRawBytes,
     TkvscReadyEmitter,
     TKVSC_EXTENSION_ID,
     type TkvscApi,
@@ -1346,6 +1349,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         }),
     );
 
+    const importFontIntoTarget = async (uri: vscode.Uri): Promise<void> => {
+        const python = getPython();
+        if (!python) {
+            await promptPythonSetup(context);
+            return;
+        }
+        const isReadOnly = uri.scheme === 'totk-dump' || uri.scheme === 'sarc-dump';
+        if (isReadOnly) {
+            void vscode.window.showWarningMessage('This font is read-only and cannot be replaced.');
+            return;
+        }
+
+        const picked = await vscode.window.showOpenDialog({
+            canSelectMany: false,
+            canSelectFiles: true,
+            canSelectFolders: false,
+            title: 'Import Font (replace)',
+            openLabel: 'Replace With This Font',
+            filters: FONT_IMPORT_FILTERS,
+        });
+        const importPath = picked?.[0]?.fsPath;
+        if (!importPath) {
+            return;
+        }
+
+        try {
+            const targetPath = uri.fsPath;
+            const pickedPath = importPath;
+
+            const replacement = await runBridgePrepareFontReplacementAsync(
+                python,
+                bridgePath,
+                pickedPath,
+                targetPath,
+                getBridgeEnv(),
+            );
+
+            await writeRawBytes(uri, replacement, rawFileIoContext);
+            void vscode.window.showInformationMessage('Font replaced successfully.');
+            await FontViewerProvider.refresh(uri);
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            void vscode.window.showErrorMessage(`Font import failed: ${msg}`);
+        }
+    };
+
     const importDdsIntoTexture = async (uri: vscode.Uri): Promise<void> => {
         const python = getPython();
         if (!python) {
@@ -1395,6 +1444,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             void vscode.window.showErrorMessage(`DDS import failed: ${msg}`);
         }
     };
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('totk-editor.importFontReplacement', async (uri?: vscode.Uri) => {
+            if (!uri) {
+                uri = vscode.window.activeTextEditor?.document.uri
+                    ?? getArchiveSelection()?.[0]?.resourceUri;
+            }
+            if (!uri) {
+                void vscode.window.showErrorMessage('No font selected to replace.');
+                return;
+            }
+            await importFontIntoTarget(uri);
+        }),
+    );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('totk-editor.importTextureDds', async (uri: vscode.Uri) => {

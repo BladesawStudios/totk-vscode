@@ -2,7 +2,6 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile, isBwavAudioFile, isBarsAudioArchive } from './archives';
 import { registerArchiveFileCommands, ArchiveTreeDragDrop, setArchiveTreeView } from './archiveFsCommands';
-import { isPathInsideRomfsFolder } from './projectPaths';
 import {
     detectProjectAdapter,
     getActiveProjectOption,
@@ -745,9 +744,6 @@ function archiveContextValue(name: string, isDirectory: boolean, fsPath: string)
         }
     } else {
         value = isPathInsideArchive(fsPath) ? 'archiveVirtualDir' : 'archiveDir';
-    }
-    if (isPathInsideRomfsFolder(fsPath)) {
-        value = value.replace(/^archive/, 'archiveRomfs');
     }
     return value;
 }

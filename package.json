@@ -471,6 +471,10 @@
       {
         "command": "totk-editor.importTextureDds",
         "title": "Import DDS (Replace Texture)..."
+      },
+      {
+        "command": "totk-editor.importFontReplacement",
+        "title": "Import Font (Replace)..."
       }
     ],
     "viewsContainers": {
@@ -668,12 +672,12 @@
         },
         {
           "command": "totk-editor.archiveAddToActiveOption",
-          "when": "view == totk-editor.archives && (viewItem == archiveRomfsFile || viewItem == archiveRomfsVirtualFile || viewItem == archiveRomfsPackage || viewItem == archiveRomfsDir || viewItem == archiveRomfsVirtualDir)",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir) && resourcePath =~ /(?:^|[\\\\/])romfs(?:[\\\\/]|$)/i",
           "group": "2_add@1"
         },
         {
           "command": "totk-editor.archiveAddToOption",
-          "when": "view == totk-editor.archives && (viewItem == archiveRomfsFile || viewItem == archiveRomfsVirtualFile || viewItem == archiveRomfsPackage || viewItem == archiveRomfsDir || viewItem == archiveRomfsVirtualDir)",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir) && resourcePath =~ /(?:^|[\\\\/])romfs(?:[\\\\/]|$)/i",
           "group": "2_add@2"
         },
         {
@@ -700,6 +704,18 @@
           "command": "totk-editor.importTextureDds",
           "when": "view == totk-editor.archives && (viewItem == archiveVirtualFile || (viewItem == archiveFile && resourceExtname == .txtg))",
           "group": "5_export@2"
+        },
+        {
+          "command": "totk-editor.importFontReplacement",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile) && (resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf)",
+          "group": "7_modification@5"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "totk-editor.importFontReplacement",
+          "when": "resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf",
+          "group": "1_font@1"
         }
       ],
       "explorer/context": [
@@ -712,6 +728,11 @@
           "command": "totk-editor.explorerExport",
           "when": "resourceExtname == .txtg || resourceExtname == .bntx || resourceExtname == .bftex || resourceExtname == .byml || resourceExtname == .bgyml || resourceExtname == .bfmdl || resourceExtname == .bfska",
           "group": "5_export@1"
+        },
+        {
+          "command": "totk-editor.importFontReplacement",
+          "when": "resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf",
+          "group": "7_modification@1"
         }
       ]
     },

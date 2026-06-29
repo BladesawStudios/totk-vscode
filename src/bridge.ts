@@ -362,3 +362,26 @@ export async function runBridgeReplaceTxtgPayloadAsync(
         env,
     );
 }
+
+export async function runBridgePrepareFontReplacementAsync(
+    pythonExecutable: string,
+    bridgePath: string,
+    importPath: string,
+    targetPath: string,
+    env?: NodeJS.ProcessEnv,
+): Promise<Buffer> {
+    const result = await runBridgeJsonAsync<{ path: string }>(
+        pythonExecutable,
+        bridgePath,
+        ['prepare-font-replacement', importPath, targetPath],
+        undefined,
+        env,
+    );
+    const raw = await fs.promises.readFile(result.path);
+    try {
+        await fs.promises.unlink(result.path);
+    } catch {
+        // Best-effort temp cleanup.
+    }
+    return raw;
+}
