@@ -263,6 +263,11 @@
     ],
     "commands": [
       {
+        "command": "totk-editor.selectActiveGame",
+        "title": "TKVSC: Select Active Game",
+        "icon": "$(chevron-down)"
+      },
+      {
         "command": "totk-editor.openPack",
         "title": "TKVSC: Open Archive (.pack, .sarc, .genvb, .blarc, .bfarc, .bntx)",
         "icon": "$(package)"
@@ -524,6 +529,16 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "totk-editor.selectActiveGame",
+          "when": "view == totk-editor.archives",
+          "group": "navigation@0"
+        },
+        {
+          "command": "totk-editor.selectActiveGame",
+          "when": "view == totk-editor.gameDump",
+          "group": "navigation@0"
+        },
         {
           "command": "totk-editor.canonicalSyncOn",
           "when": "view == totk-editor.archives && config.TKVSC.enableCanonicalSavePropagation",

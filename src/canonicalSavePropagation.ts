@@ -11,6 +11,7 @@ import {
     importArchiveCanonicalOverlay,
     queryProjectCanonicalArchives,
 } from './projectCanonicalOverlay';
+import { readTkvscConfig } from './tkvscConfig';
 
 export interface ProjectRootInfo {
     fsPath: string;
@@ -227,23 +228,6 @@ async function ensureArchiveInProject(
     return { ready: true, copied: true };
 }
 
-interface TkvscConfig {
-    canonicalSyncBlacklistPrefixes?: string[];
-    canonicalSyncFileExtensionBlacklist?: string[];
-}
-
-function loadTkvscConfig(projectRoot: string): TkvscConfig {
-    try {
-        const configPath = path.join(projectRoot, '.tkvsc');
-        if (fs.existsSync(configPath)) {
-            const raw = fs.readFileSync(configPath, 'utf8');
-            return JSON.parse(raw) as TkvscConfig;
-        }
-    } catch (e) {
-        // Suppress or ignore
-    }
-    return {};
-}
 
 export async function propagateCanonicalSave(
     options: CanonicalSavePropagationOptions,
@@ -265,7 +249,7 @@ export async function propagateCanonicalSave(
     }
 
     // Load and merge project-specific exclusions from .tkvsc
-    const projectConfig = loadTkvscConfig(activeProjectRoot.fsPath);
+    const projectConfig = readTkvscConfig(activeProjectRoot.fsPath);
     const mergedBlacklistPrefixes = [...options.blacklistPrefixes];
     if (projectConfig.canonicalSyncBlacklistPrefixes) {
         mergedBlacklistPrefixes.push(...projectConfig.canonicalSyncBlacklistPrefixes);

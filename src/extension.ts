@@ -68,6 +68,7 @@ import {
 } from './archiveTree';
 import { getArchiveSelection } from './archiveFsCommands';
 import { getDumpSelection, registerGameDumpTree, type DumpTreeItem } from './dumpTree';
+import { registerGamePicker } from './gamePicker';
 import { createReadonlyArchiveFs } from './readonlyArchiveFs';
 import { resolveRomfsPath } from './romfs';
 import {
@@ -1025,19 +1026,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         return romfsIndexBuildPromise;
     };
 
-    const buildCanonicalIndex = async (force = false): Promise<void> => {
+    const buildCanonicalIndex = async (force = false): Promise<boolean> => {
         if (canonicalIndexBuildPromise) {
-            return canonicalIndexBuildPromise;
+            await canonicalIndexBuildPromise;
+            return false;
         }
         const profile = getActiveGameProfile();
         if (!profile.indexing?.enableCanonicalPaths) {
-            return;
+            return false;
         }
         const romfsPath = resolveRomfsPath();
         const pythonExe = getPython();
         const gameId = activeGameId();
         if (!romfsPath || !pythonExe) {
-            return;
+            return false;
         }
         if (!force && !shouldRebuildIndex(
             canonicalIndexPath(),
@@ -1047,9 +1049,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             CANONICAL_INDEX_STATE_KEY,
             canonicalIndexStatePath(),
         )) {
-            return;
+            return false;
         }
 
+        let rebuilt = false;
         canonicalIndexBuildPromise = Promise.resolve(vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
@@ -1077,7 +1080,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     );
                     logger.info('Canonical path index built successfully.');
                     invalidateCanonicalPathIndex();
+                    // A fresh base index invalidates project import markers.
                     await clearProjectImportState(projectCanonicalOverlayPath);
+                    rebuilt = true;
                 } catch (err) {
                     logger.error('Failed to build canonical path index:', err as Error);
                 } finally {
@@ -1085,7 +1090,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 }
             }
         ));
-        return canonicalIndexBuildPromise;
+        await canonicalIndexBuildPromise;
+        return rebuilt;
     };
 
     const runCanonicalPropagation = async (info: {
@@ -1619,6 +1625,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     gameDumpTree = registerGameDumpTree(context, archiveTree, (projectRoot) =>
         importKnownProjectCanonicalPaths(projectRoot ? { projectRoots: [projectRoot] } : undefined),
     );
+    registerGamePicker(context, archiveTree, gameDumpTree);
     gameDumpTree.setExternalIndexPath(romfsIndexPath());
     void ensureProjectCanonicalOverlayExists(projectCanonicalOverlayPath);
     await migrateSarcWorkspaceFolders(archiveTree);
@@ -1667,8 +1674,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             ) {
                 initArchiveRegistry();
                 gameDumpTree?.setExternalIndexPath(romfsIndexPath());
+                gameDumpTree?.onRomfsPathChanged();
                 void buildRomfsIndex();
-                void buildCanonicalIndex().then(() => importKnownProjectCanonicalPaths());
+                void buildCanonicalIndex().then((rebuilt) => {
+                    // Project overlay import is only needed after a rebuild clears import state.
+                    if (rebuilt) {
+                        return importKnownProjectCanonicalPaths();
+                    }
+                    return undefined;
+                });
                 invalidateCanonicalPathIndex();
             }
         }),

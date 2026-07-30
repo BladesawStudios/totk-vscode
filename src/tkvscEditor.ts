@@ -1,9 +1,6 @@
 import * as vscode from 'vscode';
-
-interface TkvscData {
-    canonicalSyncBlacklistPrefixes?: string[];
-    canonicalSyncFileExtensionBlacklist?: string[];
-}
+import type { TkvscConfig } from './tkvscConfig';
+import { DEFAULT_PROJECT_GAME_ID } from './tkvscConfig';
 
 export class TkvscEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = 'totk-editor.tkvscEditor';
@@ -27,7 +24,7 @@ export class TkvscEditorProvider implements vscode.CustomTextEditorProvider {
         const update = () => {
             try {
                 const text = document.getText().trim();
-                const data = text ? (JSON.parse(text) as TkvscData) : {};
+                const data = text ? (JSON.parse(text) as TkvscConfig) : {};
                 webviewPanel.webview.html = buildHtml(data);
             } catch {
                 webviewPanel.webview.html = buildErrorHtml(document.getText());
@@ -48,8 +45,8 @@ export class TkvscEditorProvider implements vscode.CustomTextEditorProvider {
         }) => {
             if (msg.type === 'add' && msg.settingName && msg.value) {
                 const text = document.getText().trim();
-                const data = text ? (JSON.parse(text) as TkvscData) : {};
-                const key = msg.settingName as keyof TkvscData;
+                const data = text ? (JSON.parse(text) as TkvscConfig) : {};
+                const key = msg.settingName as 'canonicalSyncBlacklistPrefixes' | 'canonicalSyncFileExtensionBlacklist';
                 if (!data[key]) {
                     data[key] = [];
                 }
@@ -60,12 +57,21 @@ export class TkvscEditorProvider implements vscode.CustomTextEditorProvider {
             }
             if (msg.type === 'delete' && msg.settingName && msg.value) {
                 const text = document.getText().trim();
-                const data = text ? (JSON.parse(text) as TkvscData) : {};
-                const key = msg.settingName as keyof TkvscData;
+                const data = text ? (JSON.parse(text) as TkvscConfig) : {};
+                const key = msg.settingName as 'canonicalSyncBlacklistPrefixes' | 'canonicalSyncFileExtensionBlacklist';
                 if (data[key]) {
                     data[key] = data[key]!.filter(v => v !== msg.value);
                 }
                 await writeBack(document, data);
+            }
+            if (msg.type === 'setGameId' && typeof msg.value === 'string') {
+                const text = document.getText().trim();
+                const data = text ? (JSON.parse(text) as TkvscConfig) : {};
+                const next = msg.value.trim() || DEFAULT_PROJECT_GAME_ID;
+                data.gameId = next;
+                await writeBack(document, data);
+                await document.save();
+                void vscode.commands.executeCommand('totk-editor.refreshArchives');
             }
         });
 
@@ -73,7 +79,7 @@ export class TkvscEditorProvider implements vscode.CustomTextEditorProvider {
     }
 }
 
-async function writeBack(document: vscode.TextDocument, data: TkvscData): Promise<void> {
+async function writeBack(document: vscode.TextDocument, data: TkvscConfig): Promise<void> {
     const edit = new vscode.WorkspaceEdit();
     edit.replace(
         document.uri,
@@ -94,7 +100,8 @@ function escHtml(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function buildHtml(data: TkvscData): string {
+function buildHtml(data: TkvscConfig): string {
+    const gameId = data.gameId?.trim() || DEFAULT_PROJECT_GAME_ID;
     const prefixes = data.canonicalSyncBlacklistPrefixes ?? [];
     const suffixes = data.canonicalSyncFileExtensionBlacklist ?? [];
 
@@ -162,6 +169,11 @@ function buildHtml(data: TkvscData): string {
         border-bottom: 1px solid var(--vscode-panel-border, #333);
     }
     .section-body { padding: 16px; }
+    .section-hint {
+        font-size: 12px;
+        color: var(--vscode-descriptionForeground, #999);
+        margin-bottom: 12px;
+    }
     .rules-list {
         display: flex;
         flex-direction: column;
@@ -247,7 +259,18 @@ function buildHtml(data: TkvscData): string {
 </head>
 <body>
     <h1>.tkvsc Configuration Editor</h1>
-    <div class="subtitle">Manage project-specific blacklisting rules for canonical save propagation. Excluded patterns will not be synchronized to this project.</div>
+    <div class="subtitle">Project metadata for TKVSC, including game association and canonical-save blacklist rules.</div>
+
+    <div class="section">
+        <div class="section-header">Game</div>
+        <div class="section-body">
+            <div class="section-hint">Profile ID this project belongs to (e.g. <code>totk</code>). Your Projects only shows this project when the matching game is active.</div>
+            <div class="add-form">
+                <input type="text" id="gameId-input" class="input-add" value="${escHtml(gameId)}" placeholder="totk" onkeydown="if(event.key === 'Enter') saveGameId()" />
+                <button class="btn-add" onclick="saveGameId()">Save</button>
+            </div>
+        </div>
+    </div>
 
     <div class="section">
         <div class="section-header">Folder Prefix Exclusions</div>
@@ -289,6 +312,11 @@ function buildHtml(data: TkvscData): string {
 
         function deleteRule(settingName, value) {
             vscode.postMessage({ type: 'delete', settingName, value });
+        }
+
+        function saveGameId() {
+            const input = document.getElementById('gameId-input');
+            vscode.postMessage({ type: 'setGameId', value: input.value });
         }
     </script>
 </body>

@@ -1,18 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
-import { logger } from './logger';
 import { resolveRomfsPath } from './romfs';
 import { isWithinRoot, resolveProjectRomfsMount } from './projectPaths';
+import { readTkvscConfig, writeTkvscConfig } from './tkvscConfig';
 
 export interface ProjectRoot {
     fsPath: string;
     label: string;
-}
-
-interface TkvscConfig {
-    canonicalSyncBlacklistPrefixes?: string[];
-    canonicalSyncFileExtensionBlacklist?: string[];
 }
 
 export async function configureFilteringRules(
@@ -201,16 +195,7 @@ async function updateTkvscConfigArray(
     settingName: 'canonicalSyncBlacklistPrefixes' | 'canonicalSyncFileExtensionBlacklist',
     ruleValue: string
 ): Promise<void> {
-    const configPath = path.join(projectPath, '.tkvsc');
-    let config: TkvscConfig = {};
-    try {
-        if (fs.existsSync(configPath)) {
-            const raw = fs.readFileSync(configPath, 'utf8');
-            config = JSON.parse(raw) as TkvscConfig;
-        }
-    } catch (e) {
-        logger.error('Failed to parse existing .tkvsc:', e as Error);
-    }
+    const config = readTkvscConfig(projectPath);
 
     if (!config.canonicalSyncBlacklistPrefixes) {
         config.canonicalSyncBlacklistPrefixes = [];
@@ -226,9 +211,7 @@ async function updateTkvscConfigArray(
     }
 
     targetArray.push(ruleValue);
-
-    // Write back
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    writeTkvscConfig(projectPath, config);
     void vscode.window.showInformationMessage(`Successfully added project exclusion: '${ruleValue}' to .tkvsc`);
 }
 

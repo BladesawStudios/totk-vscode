@@ -104,6 +104,22 @@ Reference docs: [v1.md](v1.md)
 
 ---
 
+## v1 - Per-project gameId (additive)
+
+**Added**
+
+- `.tkvsc` `gameId` field (defaults to `totk` when missing)
+- View-title command `totk-editor.selectActiveGame` on Your Projects and Game Dump
+- Your Projects / `getProjectRoots()` filtered to projects whose `gameId` matches `TKVSC.activeGameId`
+- New/imported projects stamp the current active game into `.tkvsc`; existing stored roots migrate to `totk`
+
+**Notes**
+
+- Changing the active game via the picker updates `TKVSC.activeGameId` globally; both sidebars stay in sync
+- Manual edits to `.tkvsc` `gameId` are preserved (never overwritten on import/touch)
+
+---
+
 ## Template for future entries
 
 ```markdown

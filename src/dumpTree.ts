@@ -21,6 +21,10 @@ export function getDumpSelection(): DumpTreeItem[] {
     return [...(dumpTreeView?.selection ?? [])];
 }
 
+export function getDumpTreeView(): vscode.TreeView<DumpTreeItem> | undefined {
+    return dumpTreeView;
+}
+
 export class DumpTreeItem extends vscode.TreeItem {
     constructor(
         public readonly entryName: string,
@@ -619,7 +623,10 @@ export function registerGameDumpTree(
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {
-            if (event.affectsConfiguration('TKVSC.romfsPath')) {
+            if (
+                event.affectsConfiguration('TKVSC.romfsPath')
+                || event.affectsConfiguration('TKVSC.activeGameId')
+            ) {
                 provider.onRomfsPathChanged();
             }
         }),

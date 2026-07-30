@@ -12,6 +12,22 @@
 				"${workspaceFolder}/dist/**/*.js"
 			],
 			"preLaunchTask": "npm: compile"
+		},
+		{
+			"name": "Run Extension (with addons)",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"--extensionDevelopmentPath=${workspaceFolder}",
+				"--extensionDevelopmentPath=${workspaceFolder}/../tkvsc-addons/splatoon3-support",
+				"--extensionDevelopmentPath=${workspaceFolder}/../tkvsc-addons/tkmm-cli"
+			],
+			"outFiles": [
+				"${workspaceFolder}/dist/**/*.js",
+				"${workspaceFolder}/../tkvsc-addons/splatoon3-support/dist/**/*.js",
+				"${workspaceFolder}/../tkvsc-addons/tkmm-cli/dist/**/*.js"
+			],
+			"preLaunchTask": "compile-with-addons"
 		}
 	]
 }

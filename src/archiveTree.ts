@@ -9,10 +9,13 @@ import {
     resolveProjectRootFromTreeItem,
 } from './projectAdapters/registry';
 import type { ProjectAdapter } from './projectAdapters/types';
+import { getActiveGameId } from './gameProfile';
+import { DEFAULT_PROJECT_GAME_ID, ensureProjectGameId, getProjectGameId } from './tkvscConfig';
 
 const STORAGE_KEY = 'totk-editor.archiveRoots';
 
 let extensionUri: vscode.Uri | undefined;
+let archiveTreeView: vscode.TreeView<ArchiveTreeItem> | undefined;
 
 function isTkprojFile(name: string): boolean {
     return name.toLowerCase().endsWith('.tkproj');
@@ -87,7 +90,23 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
     private hasMultipleMods: Set<string> = new Set();
     
     public get workspaceRoots(): vscode.Uri[] {
+        return this.getVisibleRoots();
+    }
+
+    /** All stored roots across games (unfiltered). */
+    public get allRoots(): vscode.Uri[] {
         return this.roots;
+    }
+
+    private resolveConfigRoot(root: vscode.Uri): string {
+        return this.logicalRoots.get(root.fsPath) || root.fsPath;
+    }
+
+    private getVisibleRoots(): vscode.Uri[] {
+        const activeGameId = getActiveGameId();
+        return this.roots.filter(
+            (root) => getProjectGameId(this.resolveConfigRoot(root)) === activeGameId,
+        );
     }
 
     private sortRoots(): void {
@@ -114,6 +133,14 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         }
         
         this.sortRoots();
+        this.migrateExistingProjectGameIds();
+    }
+
+    /** Existing stored projects without gameId are assumed TotK. */
+    private migrateExistingProjectGameIds(): void {
+        for (const root of this.roots) {
+            ensureProjectGameId(this.resolveConfigRoot(root), DEFAULT_PROJECT_GAME_ID);
+        }
     }
 
     getTreeItem(element: ArchiveTreeItem): vscode.TreeItem {
@@ -122,7 +149,7 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
 
     async getChildren(element?: ArchiveTreeItem): Promise<ArchiveTreeItem[]> {
         if (!element) {
-            return this.roots.map(
+            return this.getVisibleRoots().map(
                 (root) => {
                     const logicalPath = this.logicalRoots.get(root.fsPath) || root.fsPath;
                     return new ArchiveTreeItem(
@@ -317,6 +344,9 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         }
         
         await this.persistLogicalRoots();
+
+        const configRoot = this.logicalRoots.get(fileRootPath) || fileRootPath;
+        ensureProjectGameId(configRoot, getActiveGameId());
         
         this.onDidChangeTreeDataEmitter.fire(undefined);
         this.onDidChangeRootsEmitter.fire();
@@ -358,7 +388,7 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
     }
 
     getProjectRoots(): { fsPath: string; label: string }[] {
-        return this.roots.map((root) => {
+        return this.getVisibleRoots().map((root) => {
             const logicalPath = this.logicalRoots.get(root.fsPath);
             const activePath = logicalPath || root.fsPath;
             return {
@@ -366,6 +396,13 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                 label: path.basename(activePath),
             };
         });
+    }
+
+    /** Re-filter visible projects after active game or .tkvsc gameId changes. */
+    onActiveGameChanged(): void {
+        this.getActiveProject();
+        this.onDidChangeTreeDataEmitter.fire(undefined);
+        this.onDidChangeRootsEmitter.fire();
     }
 
     setActiveProject(fsPath: string | undefined): void {
@@ -436,6 +473,10 @@ export async function focusArchiveSidebar(): Promise<void> {
     await vscode.commands.executeCommand('totk-editor.archives.focus');
 }
 
+export function getArchiveTreeView(): vscode.TreeView<ArchiveTreeItem> | undefined {
+    return archiveTreeView;
+}
+
 export { getTkmmRecentJsonPath } from './projectAdapters/tkmmAdapter';
 
 export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTreeProvider {
@@ -449,8 +490,17 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
         dragAndDropController: new ArchiveTreeDragDrop(),
         canSelectMany: true,
     });
+    archiveTreeView = treeView;
     setArchiveTreeView(treeView);
     context.subscriptions.push(treeView);
+
+    context.subscriptions.push(
+        vscode.workspace.onDidSaveTextDocument((document) => {
+            if (path.basename(document.uri.fsPath).toLowerCase() === '.tkvsc') {
+                provider.onActiveGameChanged();
+            }
+        }),
+    );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('totk-editor.refreshArchives', () => {
