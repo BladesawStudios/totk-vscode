@@ -13,6 +13,7 @@ import oead
 from aamp_io import (
     is_aamp_binary,
     read_aamp_content,
+    register_custom_hash_names,
     write_aamp_bytes,
 )
 from archive_resolve import (
@@ -646,6 +647,7 @@ def main():
     try:
         command = sys.argv[1]
         romfs_path = get_romfs_path()
+        register_custom_hash_names()
 
         if command == "build-romfs-index":
             from romfs_index import build_romfs_index

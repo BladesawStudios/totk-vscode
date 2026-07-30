@@ -1,6 +1,8 @@
 """Resolve nested .pack / .sarc / .genvb / .blarc / .bntx paths to an open SARC and in-archive prefix."""
 
+import os
 import re
+import tempfile
 from pathlib import Path
 
 import oead
@@ -124,7 +126,20 @@ def _save_sarc_bytes(
             was_zstd=True,
             was_yaz0=False,
         )
-    Path(archive_path).write_bytes(out_bytes)
+    target = Path(archive_path)
+    fd, tmp_path = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(out_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, target)
+    except BaseException:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _get_file_bytes(sarc, internal_path: str) -> bytes:

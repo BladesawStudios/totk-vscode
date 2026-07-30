@@ -160,9 +160,10 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
             const activeOption = getActiveProjectOption(this.context, optionsProjectRoot);
             const cv = projectAdapter.contextValues;
 
-            const children = await Promise.all(entries
+            const results = await Promise.all(entries
                 .sort(compareEntriesFoldersFirstKeepingArchivesMixed)
                 .map(async ([name, fileType]) => {
+                  try {
                     const childUri = vscode.Uri.joinPath(element.resourceUri, name);
                     const isDirectory = fileType === vscode.FileType.Directory || isArchiveFile(name);
                     
@@ -229,10 +230,15 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                     if (contextValue === 'archiveProjectDirActive') {
                         item.description = '(Project Root)';
                     }
-                    
+
                     return item;
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    console.error(`Your Projects: failed to load "${name}": ${message}`);
+                    return undefined;
+                  }
                 }));
-            return children;
+            return results.filter((item): item is ArchiveTreeItem => item !== undefined);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             void vscode.window.showErrorMessage(`Your Projects: ${message}`);

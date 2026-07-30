@@ -2,6 +2,8 @@
 
 import json
 import os
+import sys
+import zlib
 from pathlib import Path
 
 import oead
@@ -20,6 +22,37 @@ def get_extra_aamp_extensions() -> frozenset[str]:
 
 def all_aamp_extensions() -> frozenset[str]:
     return AAMP_EXTENSIONS | get_extra_aamp_extensions()
+
+
+def register_custom_hash_names() -> None:
+    """Registers user-supplied hash->name pairs (`TKVSC.aampHashNames`) with oead's
+    default AAMP name table, so custom/modded hashes resolve to their real name
+    instead of a raw number when AAMP files are converted to text."""
+    path = os.environ.get("TKVSC_AAMP_HASH_NAMES", "").strip()
+    if not path or not os.path.isfile(path):
+        return
+    try:
+        hash_names: dict[str, str] = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"Failed to read AAMP hash names from {path}: {e}", file=sys.stderr)
+        return
+
+    name_table = oead.aamp.get_default_name_table()
+    for hash_key, name in hash_names.items():
+        if not name:
+            continue
+        name_table.add_name(name)
+        try:
+            declared_hash = int(hash_key, 0)
+        except ValueError:
+            continue
+        actual_hash = zlib.crc32(name.encode("utf-8"))
+        if declared_hash != actual_hash:
+            print(
+                f"AAMP hash name mismatch: \"{name}\" hashes to 0x{actual_hash:08x}, "
+                f"not {hash_key} as declared in TKVSC.aampHashNames",
+                file=sys.stderr,
+            )
 
 
 def file_extension(logical_path: str) -> str:

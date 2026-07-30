@@ -854,6 +854,14 @@
           "default": [],
           "markdownDescription": "Additional file extensions (without dot) treated as **AAMP** parameter files, e.g. `bcustom`. See `aamp-extensions.json` in the extension folder for the built-in list."
         },
+        "TKVSC.aampHashNames": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "markdownDescription": "Custom AAMP hash-to-name mappings, so custom/modded entries display their real name instead of a raw hash number. Key is the hash (hex like `0xcfea8e66` or decimal), value is the original name whose CRC32 produces that hash, e.g. `\"0xcfea8e66\": \"GuardianBeam\"`."
+        },
         "TKVSC.enableCanonicalSavePropagation": {
           "type": "boolean",
           "default": true,

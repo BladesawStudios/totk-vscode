@@ -18,6 +18,7 @@ import {
     type BridgeHandlerRegistration,
 } from './formatRegistry';
 import { writeHandlerManifest } from './handlerManifest';
+import { writeAampHashNames } from './aampHashNames';
 import { initProjectAdapterRegistry, registerProjectAdapter } from './projectAdapters/registry';
 import type { ProjectAdapter } from './projectAdapters/types';
 
@@ -144,6 +145,7 @@ export function initAddonRegistries(
     initGameProfileRegistry(context.extensionPath);
     initFormatRegistryOnly(context.extensionPath);
     refreshAddonManifests(context);
+    writeAampHashNames(context.globalStorageUri.fsPath);
 
     context.subscriptions.push(
         vscode.extensions.onDidChange(() => {
@@ -152,6 +154,9 @@ export function initAddonRegistries(
         vscode.workspace.onDidChangeConfiguration((event) => {
             if (event.affectsConfiguration('TKVSC.extraAampExtensions')) {
                 writeHandlerManifest(context.globalStorageUri.fsPath);
+            }
+            if (event.affectsConfiguration('TKVSC.aampHashNames')) {
+                writeAampHashNames(context.globalStorageUri.fsPath);
             }
         }),
     );

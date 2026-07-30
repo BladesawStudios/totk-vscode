@@ -205,8 +205,7 @@ async function resolveTargetFolder(item?: ArchiveTreeItem): Promise<vscode.Uri |
     if (
         target.contextValue === 'archiveFile' ||
         target.contextValue === 'archiveTkproj' ||
-        target.contextValue === 'archiveVirtualFile' ||
-        target.contextValue === 'archivePackage'
+        target.contextValue === 'archiveVirtualFile'
     ) {
         return parentDirectoryUri(target.resourceUri);
     }
@@ -214,7 +213,8 @@ async function resolveTargetFolder(item?: ArchiveTreeItem): Promise<vscode.Uri |
     if (
         target.contextValue === 'archiveDir' ||
         target.contextValue === 'archiveRoot' ||
-        target.contextValue === 'archiveVirtualDir'
+        target.contextValue === 'archiveVirtualDir' ||
+        target.contextValue === 'archivePackage'
     ) {
         return target.resourceUri;
     }
