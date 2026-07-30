@@ -8,8 +8,6 @@ import tempfile
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 
-import oead
-
 _SCRIPT_DIR = Path(__file__).resolve().parent
 
 
