@@ -659,7 +659,7 @@ export function registerGameDumpTree(
                 );
                 if (entries.length === 0) {
                     void vscode.window.showWarningMessage(
-                        'Select one or more files in TotK Dump first.',
+                        'Select one or more files in Game Dump first.',
                     );
                     return;
                 }
@@ -718,7 +718,7 @@ export function registerGameDumpTree(
                 );
                 if (entries.length === 0) {
                     void vscode.window.showWarningMessage(
-                        'Select one or more files in TotK Dump first.',
+                        'Select one or more files in Game Dump first.',
                     );
                     return;
                 }

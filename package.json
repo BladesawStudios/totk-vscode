@@ -491,7 +491,7 @@
         },
         {
           "id": "totk-editor-dump",
-          "title": "TotK Dump",
+          "title": "Game Dump",
           "icon": "icons/dump.svg"
         }
       ]

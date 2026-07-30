@@ -1,7 +1,7 @@
 # TKVSC Settings
 
 ## RomFS Dump Path
-The absolute path to your TotK Dump's romfs folder (the folder does not need to be named romfs).
+The absolute path to your Game Dump's romfs folder (the folder does not need to be named romfs).
 
 For example: `C:\Users\Aster\Zelda\TotK Dumps\140\romfs`
 

@@ -70,7 +70,7 @@ Preview and edit subfiles of SARC and BNTX archives
 **Your Projects**
 - Add the current folder open in VS Code to a list of Project Folders
 
-**TotK Dump**
+**Game Dump**
 - Browse your dump of TotK in Read-Only mode. Right click to add a file to the correct romfs path within a Project Folder of your choosing
 
 ### Additional capabilities:
