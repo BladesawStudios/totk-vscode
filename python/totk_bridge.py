@@ -20,6 +20,7 @@ from archive_resolve import (
     delete_archive_entry,
     list_archive_files,
     load_sarc_file,
+    make_sarc_writer,
     read_archive_file_bytes,
     rename_archive_entry,
     write_archive_file_bytes,
@@ -595,19 +596,19 @@ def write_file_content(
     if kind == "byml":
         orig = get_original_bytes()
         new_bytes = write_byml_bytes(orig, editor_text, logical_path, romfs_path)
-        writer = oead.SarcWriter.from_sarc(sarc)
+        writer = make_sarc_writer(sarc)
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
     elif kind == "msbt":
         orig = get_original_bytes()
         new_bytes = write_msbt_bytes(orig, editor_text, logical_path, romfs_path)
-        writer = oead.SarcWriter.from_sarc(sarc)
+        writer = make_sarc_writer(sarc)
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
     elif kind == "aamp":
         orig = get_original_bytes()
         new_bytes = write_aamp_bytes(orig, editor_text, logical_path, romfs_path)
-        writer = oead.SarcWriter.from_sarc(sarc)
+        writer = make_sarc_writer(sarc)
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
     elif kind == "asb":
@@ -625,7 +626,7 @@ def write_file_content(
     elif kind == "xlnk":
         orig = get_original_bytes()
         new_bytes = write_xlnk_bytes(orig, editor_text, logical_path, romfs_path)
-        writer = oead.SarcWriter.from_sarc(sarc)
+        writer = make_sarc_writer(sarc)
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
     elif kind:
@@ -634,7 +635,7 @@ def write_file_content(
         if is_addon_handler_kind(kind):
             orig = get_original_bytes()
             new_bytes = write_addon_bytes(kind, orig, editor_text, logical_path, romfs_path)
-            writer = oead.SarcWriter.from_sarc(sarc)
+            writer = make_sarc_writer(sarc)
             writer.files[logical_path] = new_bytes
             save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
         else:

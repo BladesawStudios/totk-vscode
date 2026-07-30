@@ -13,6 +13,12 @@ import oead
 _SCRIPT_DIR = Path(__file__).resolve().parent
 
 
+def _make_writer(sarc):
+    from archive_resolve import make_sarc_writer
+
+    return make_sarc_writer(sarc)
+
+
 def _ensure_asb_toolkit_on_path() -> None:
     from vendor_sys import add_vendor_to_path
 
@@ -183,7 +189,7 @@ def write_asb_bytes(
         new_asb_bytes = Path(tmp_dir, f"{asb_file.filename}.asb").read_bytes()
         new_asb_bytes = _compress_bytes(new_asb_bytes, internal_path, romfs_path, was_zstd)
 
-        writer = oead.SarcWriter.from_sarc(sarc)
+        writer = _make_writer(sarc)
         writer.files[internal_path] = new_asb_bytes
 
         baev_internal = _sibling_baev_path(internal_path)
@@ -200,7 +206,7 @@ def write_asb_bytes(
             )
             writer.files[baev_internal] = new_baev_bytes
 
-        return writer.write()[1]
+        return bytes(writer.write()[1])
 
 
 def write_baev_bytes(
@@ -225,9 +231,9 @@ def write_baev_bytes(
         new_baev_bytes = Path(tmp_dir, f"{baev_file.filename}.baev").read_bytes()
         new_baev_bytes = _compress_bytes(new_baev_bytes, internal_path, romfs_path, was_zstd)
 
-        writer = oead.SarcWriter.from_sarc(sarc)
+        writer = _make_writer(sarc)
         writer.files[internal_path] = new_baev_bytes
-        return writer.write()[1]
+        return bytes(writer.write()[1])
 
 
 def read_asb_content_disk(file_path: str, romfs_path: str = "") -> str:

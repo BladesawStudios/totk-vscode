@@ -142,6 +142,23 @@ def _save_sarc_bytes(
         raise
 
 
+def make_sarc_writer(sarc: oead.Sarc) -> oead.SarcWriter:
+    """Build a SarcWriter that preserves Switch-safe data alignment.
+
+    ``SarcWriter.from_sarc`` copies endianness and calls ``guess_min_alignment()``.
+    That guess uses *absolute* file offsets (data_offset + relative start), whose GCD
+    often collapses to 4 even when Nintendo built the archive with 8-byte payload
+    alignment. Rewriting with min_alignment=4 under-pads file data; NX Editor and
+    similar tools "fix" the archive on save by rewriting with proper alignment.
+    """
+    writer = oead.SarcWriter.from_sarc(sarc)
+    guessed = int(sarc.guess_min_alignment())
+    # Switch little-endian SARCs (TotK / Splatoon / etc.) use at least 8.
+    floor = 8 if sarc.get_endianness() == oead.Endianness.Little else 4
+    writer.set_min_alignment(max(guessed, floor))
+    return writer
+
+
 def _get_file_bytes(sarc, internal_path: str) -> bytes:
     entry = sarc.get_file(internal_path)
     if entry is None:
@@ -153,13 +170,13 @@ def _get_file_bytes(sarc, internal_path: str) -> bytes:
 
 
 def _write_file_bytes(sarc: oead.Sarc, internal_path: str, data: bytes) -> bytes:
-    writer = oead.SarcWriter.from_sarc(sarc)
-    writer.files[internal_path] = data
-    return writer.write()[1]
+    writer = make_sarc_writer(sarc)
+    writer.files[internal_path] = bytes(data)
+    return bytes(writer.write()[1])
 
 
 def _delete_path(sarc: oead.Sarc, internal_path: str) -> bytes:
-    writer = oead.SarcWriter.from_sarc(sarc)
+    writer = make_sarc_writer(sarc)
     target = internal_path.strip("/")
     prefix = f"{target}/"
     to_delete = [name for name in writer.files.keys() if name == target or name.startswith(prefix)]
@@ -167,11 +184,11 @@ def _delete_path(sarc: oead.Sarc, internal_path: str) -> bytes:
         raise FileNotFoundError(target)
     for name in to_delete:
         del writer.files[name]
-    return writer.write()[1]
+    return bytes(writer.write()[1])
 
 
 def _rename_path(sarc: oead.Sarc, old_path: str, new_path: str) -> bytes:
-    writer = oead.SarcWriter.from_sarc(sarc)
+    writer = make_sarc_writer(sarc)
     old_target = old_path.strip("/")
     new_target = new_path.strip("/")
     old_prefix = f"{old_target}/"
@@ -197,7 +214,7 @@ def _rename_path(sarc: oead.Sarc, old_path: str, new_path: str) -> bytes:
         writer.files[destination] = bytes(writer.files[source])
         del writer.files[source]
 
-    return writer.write()[1]
+    return bytes(writer.write()[1])
 
 
 def _next_archive_index(segments: list[str]) -> int:
