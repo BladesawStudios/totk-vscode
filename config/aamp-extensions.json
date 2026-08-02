@@ -35,5 +35,7 @@
   "bevent",
   "bmodel",
   "bphysics",
-  "bshop"
+  "bshop",
+  "bgparamlist",
+  "baglofx"
 ]
