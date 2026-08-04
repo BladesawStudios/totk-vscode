@@ -49,7 +49,7 @@ def register_custom_hash_names() -> None:
         actual_hash = zlib.crc32(name.encode("utf-8"))
         if declared_hash != actual_hash:
             print(
-                f"AAMP hash name mismatch: \"{name}\" hashes to 0x{actual_hash:08x}, "
+                f'AAMP hash name mismatch: "{name}" hashes to 0x{actual_hash:08x}, '
                 f"not {hash_key} as declared in TKVSC.aampHashNames",
                 file=sys.stderr,
             )
