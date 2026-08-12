@@ -1,0 +1,115 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "XLink",
+  "scopeName": "source.xlink",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#section" },
+    { "include": "#condition" },
+    { "include": "#entry" },
+    { "include": "#assignment" },
+    { "include": "#value" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.number-sign.xlink",
+      "match": "#.*$"
+    },
+    "section": {
+      "name": "entity.name.tag.section.xlink",
+      "match": "\\b(Metadata|ParamDefines|SystemUserParams|CustomUserParams|SystemAssetParams|CustomAssetParams|TriggerParams|Users|UserParams|LocalProperties|ActionSlots|Properties|AlwaysTriggers|AssetCallTables|Cases|Children|Points|OverwriteParams)\\b(?=\\s*\\{)"
+    },
+    "entry": {
+      "comment": "A named call table / trigger / user entry: Name[0xdeadbeef]",
+      "match": "(\\\"[^\\\"]*\\\"|[^\\s\\\"=!<>(){}\\[\\]@,#:]+)(\\[)(0x[0-9a-fA-F]+)(\\])",
+      "captures": {
+        "1": { "name": "entity.name.function.xlink" },
+        "2": { "name": "punctuation.definition.hash.begin.xlink" },
+        "3": { "name": "constant.numeric.hex.xlink" },
+        "4": { "name": "punctuation.definition.hash.end.xlink" }
+      }
+    },
+    "condition": {
+      "comment": "Switch/random case conditions: (<value> > 0.5) => Name, or (_) => Name",
+      "patterns": [
+        {
+          "name": "variable.language.value.xlink",
+          "match": "<value>"
+        },
+        {
+          "name": "keyword.operator.comparison.xlink",
+          "match": "(?<=\\s)(==|!=|<=|>=|<|>)(?=\\s)"
+        },
+        {
+          "name": "keyword.operator.arrow.xlink",
+          "match": "=>"
+        },
+        {
+          "name": "constant.language.wildcard.xlink",
+          "match": "\\(\\s*_\\s*\\)"
+        }
+      ]
+    },
+    "assignment": {
+      "comment": "Key = value (keys may be prefixed with @ for unknown/raw fields)",
+      "match": "^\\s*(@?[A-Za-z_][A-Za-z0-9_]*)\\s*(=)",
+      "captures": {
+        "1": { "name": "variable.other.property.xlink" },
+        "2": { "name": "keyword.operator.assignment.xlink" }
+      }
+    },
+    "value": {
+      "patterns": [
+        { "include": "#string" },
+        { "include": "#container-type" },
+        { "include": "#special-value" },
+        { "include": "#property-ref" },
+        { "include": "#constant" },
+        { "include": "#number" }
+      ]
+    },
+    "string": {
+      "name": "string.quoted.double.xlink",
+      "begin": "\"",
+      "end": "\"",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.xlink" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.xlink" } },
+      "patterns": [
+        {
+          "name": "constant.character.escape.xlink",
+          "match": "\\\\(u\\{[0-9a-fA-F]+\\}|.)"
+        }
+      ]
+    },
+    "container-type": {
+      "comment": "Asset call table types",
+      "name": "support.class.container.xlink",
+      "match": "\\b(Asset|Blend|BlendBy|Sequence|Grid|Jump|Random|RandomNoRepeat|Switch)\\b"
+    },
+    "special-value": {
+      "comment": "Composite value markers and the enum-ish values the parser accepts",
+      "name": "support.type.xlink",
+      "match": "\\b(CURVE|RANDOM|ARRANGE|Standard|Constant|Update|NoUpdate|Linear|InflectedPolynomial|IncreasingPolynomial|DecreasingPolynomial|FrameWindow|Always|OnLeave|Previous|ForceContinue|ELink|SLink|None|PriorityThenOldest|PriorityThenNewest|OldestThenPriority|NewestThenPriority|SpatialPriorityThenOldest|SpatialPriorityThenNewest|OldestThenSpatialPriority|NewestThenSpatialPriority)\\b"
+    },
+    "property-ref": {
+      "comment": "Property scopes: Local::Name, Global::Name, ActionSlot::Name",
+      "match": "\\b(Local|Global|ActionSlot)(::)",
+      "captures": {
+        "1": { "name": "storage.modifier.scope.xlink" },
+        "2": { "name": "punctuation.separator.scope.xlink" }
+      }
+    },
+    "constant": {
+      "name": "constant.language.xlink",
+      "match": "\\b(true|false|null)\\b"
+    },
+    "number": {
+      "patterns": [
+        { "name": "constant.numeric.hex.xlink", "match": "\\b0x[0-9a-fA-F]+\\b" },
+        { "name": "constant.numeric.binary.xlink", "match": "\\b0b[01]+\\b" },
+        { "name": "constant.numeric.float.xlink", "match": "(?<![\\w.])[-+]?[0-9]+\\.[0-9]*(e[-+]?[0-9]+)?\\b" },
+        { "name": "constant.numeric.integer.xlink", "match": "(?<![\\w.])[-+]?[0-9]+\\b" }
+      ]
+    }
+  }
+}

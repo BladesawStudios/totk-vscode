@@ -37,6 +37,7 @@ import {
 } from './archives';
 import { initArchiveRegistry } from './archiveRegistry';
 import { registerDocumentLanguageModes } from './languageModes';
+import { registerXlnkEditorSettings } from './xlnkEditorSettings';
 import { getCoreExtensions } from './coreFsExtensions';
 import {
     initAddonRegistries,
@@ -816,6 +817,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     );
 
     registerDocumentLanguageModes(context);
+    registerXlnkEditorSettings(context);
     context.subscriptions.push(TkprojEditorProvider.register(context));
     context.subscriptions.push(TkvscEditorProvider.register(context));
     context.subscriptions.push(BwavEditorProvider.register(context));

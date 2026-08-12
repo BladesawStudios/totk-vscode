@@ -44,7 +44,7 @@ const LANGUAGE_BY_HANDLER: Record<string, string> = {
     msbt: 'msbt',
     asb: 'json',
     baev: 'json',
-    xlnk: 'yaml',
+    xlnk: 'totk-xlnk',
 };
 
 const BUILTIN_HANDLERS = new Set(['byml', 'msbt', 'aamp', 'asb', 'baev', 'xlnk']);

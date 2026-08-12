@@ -160,7 +160,7 @@ Companion VS Code extensions can extend TKVSC via the exported API. See [docs/ap
 **Bryn** - [ASB Splatoon 3 Formats](https://github.com/FemBryn/asb-Spl3)
 
 ### Third-Parties
-**dt13245**: [ASB fork](https://github.com/TKVSC-Team/asb), [AINB fork](https://github.com/TKVSC-Team/AINB), and [XLink2](https://github.com/dt-12345/xlink2) (legacy version) binaries integrated into codebase\
+**dt13245**: [ASB fork](https://github.com/TKVSC-Team/asb), [AINB fork](https://github.com/TKVSC-Team/AINB), and [XLink2](https://github.com/dt-12345/xlink2) (v1.1.4) binaries integrated into codebase\
 **P1gyy**: [pymsbt fork](https://github.com/TKVSC-Team/pymsbt) integrated into codebase\
 **AeonSake**: [MSBT Editor](https://gitlab.com/AeonSake/msbt-editor) - TotK Config included\
 **LordBubbles**: [TKMM](https://tkmm.org/) - Assistance with implementing TKMM compatibility\

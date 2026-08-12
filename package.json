@@ -206,6 +206,7 @@
           "belnk",
           "bslnk"
         ],
+        "configuration": "./config/xlink-language-configuration.json",
         "icon": {
           "light": "./icons/xlnk.svg",
           "dark": "./icons/xlnk.svg"
@@ -259,6 +260,11 @@
         "language": "pchtxt",
         "scopeName": "source.pchtxt",
         "path": "./syntaxes/pchtxt.tmLanguage.json"
+      },
+      {
+        "language": "totk-xlnk",
+        "scopeName": "source.xlink",
+        "path": "./syntaxes/xlink.tmLanguage.json"
       }
     ],
     "commands": [
@@ -876,6 +882,19 @@
           "default": 1,
           "markdownDescription": "The maximum number of child nodes allowed in a list/array or map/hash for it to still be formatted as an inline container (e.g. `[1]` or `{a: 1}`)."
         },
+        "TKVSC.xlnkSyntaxHighlighting": {
+          "type": "string",
+          "enum": [
+            "always",
+            "smallFilesOnly"
+          ],
+          "enumDescriptions": [
+            "Always highlight, even for the multi-million-line game databases. Costs memory and can make scrolling sluggish.",
+            "Let VS Code turn highlighting off for large files, keeping the editor fast."
+          ],
+          "default": "smallFilesOnly",
+          "markdownDescription": "Syntax highlighting for decoded **XLNK** (`.belnk`/`.bslnk`) files. VS Code disables highlighting above 20 MB or 300,000 lines, which covers the full `elink2`/`slink2` databases. Setting this to `always` lifts that limit for XLNK files only. Takes effect the next time the file is opened."
+        },
         "TKVSC.extraAampExtensions": {
           "type": "array",
           "items": {
@@ -1030,6 +1049,11 @@
       "[msbt]": {
         "editor.insertSpaces": true,
         "editor.tabSize": 2
+      },
+      "[totk-xlnk]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2,
+        "editor.largeFileOptimizations": false
       }
     }
   },

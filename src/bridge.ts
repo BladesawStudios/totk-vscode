@@ -212,7 +212,7 @@ export async function runBridgeReadAsync(
     return runBridgeJsonAsync<BridgeReadResult>(pythonExecutable, bridgePath, args, undefined, env);
 }
 
-/** Read editable file text from the bridge (supports spill files for large XLNK YAML). */
+/** Read editable file text from the bridge (supports spill files for large XLNK text). */
 export function runBridgeReadContent(
     pythonExecutable: string,
     bridgePath: string,
