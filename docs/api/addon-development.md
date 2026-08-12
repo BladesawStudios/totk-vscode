@@ -86,7 +86,10 @@ Python module contract (addon-provided):
 ```python
 def read_content(file_data: bytes, logical_path: str, romfs_path: str = "") -> str: ...
 
-def write_content(original: bytes, editor_text: str, logical_path: str, romfs_path: str = "") -> bytes: ...
+
+def write_content(
+    original: bytes, editor_text: str, logical_path: str, romfs_path: str = ""
+) -> bytes: ...
 ```
 
 Function names default to `read_content` / `write_content` and can be overridden per handler.
