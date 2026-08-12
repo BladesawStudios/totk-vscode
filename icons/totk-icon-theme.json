@@ -19,6 +19,9 @@
     "_totk_xlnk": {
       "iconPath": "./xlnk.svg"
     },
+    "_totk_ainb": {
+      "iconPath": "./nodes.svg"
+    },
     "_totk_asb": {
       "iconPath": "./armature.svg"
     },
@@ -75,8 +78,12 @@
     "bslnk": "_totk_xlnk",
     "belnk.zs": "_totk_xlnk",
     "bslnk.zs": "_totk_xlnk",
+    "ainb": "_totk_ainb",
+    "ainb.zs": "_totk_ainb",
     "asb": "_totk_asb",
+    "asb.zs": "_totk_asb",
     "baev": "_totk_baev",
+    "baev.zs": "_totk_baev",
     "aamp": "_totk_aamp",
     "aamp.zs": "_totk_aamp",
     "baglblm": "_totk_aamp",
@@ -167,6 +174,7 @@
     "byml": "_totk_byml",
     "bgyml": "_totk_bgyml",
     "msbt": "_totk_msbt",
+    "totk-ainb": "_totk_ainb",
     "totk-xlnk": "_totk_xlnk",
     "totk-tkvsc": "_totk_tkvsc",
     "totk-font": "_totk_font"

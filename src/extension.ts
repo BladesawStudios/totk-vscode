@@ -86,6 +86,7 @@ import { TkvscEditorProvider } from './tkvscEditor';
 import { FontViewerProvider } from './fontViewer';
 import { FONT_IMPORT_FILTERS, isFontFilePath } from './fontReplace';
 import { InfoJsonEditorProvider } from './infoJsonEditor';
+import { AinbEditorProvider } from './ainbEditor';
 import { BwavEditorProvider } from './bwavEditor';
 import { openHexEditor } from './editors/hexEditor';
 import { setExtensionPath } from './romfsIndex';
@@ -821,6 +822,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     context.subscriptions.push(TkprojEditorProvider.register(context));
     context.subscriptions.push(TkvscEditorProvider.register(context));
     context.subscriptions.push(BwavEditorProvider.register(context));
+    context.subscriptions.push(AinbEditorProvider.register(context));
 
     const bridgePath = path.join(context.extensionPath, 'python', 'totk_bridge.py');
     const getPython = () => getCachedPythonExecutable() ?? '';

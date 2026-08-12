@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 
-_BUILTIN_KINDS = frozenset({"byml", "msbt", "aamp", "asb", "baev", "xlnk"})
+_BUILTIN_KINDS = frozenset({"byml", "msbt", "aamp", "ainb", "asb", "baev", "xlnk"})
 
 _EMPTY_MANIFEST: dict = {
     "version": 1,

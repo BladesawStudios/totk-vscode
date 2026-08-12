@@ -546,6 +546,10 @@ def read_file_content(file_data: bytes, logical_path: str, sarc=None, romfs_path
         return read_msbt_content(file_data, logical_path, romfs_path)
     if kind == "aamp":
         return read_aamp_content(file_data, logical_path, romfs_path)
+    if kind == "ainb":
+        from ainb_io import read_ainb_content
+
+        return read_ainb_content(file_data, logical_path, romfs_path)
     if kind == "asb":
         if sarc is not None:
             return read_asb_content(file_data, logical_path, sarc, romfs_path)
@@ -558,7 +562,7 @@ def read_file_content(file_data: bytes, logical_path: str, sarc=None, romfs_path
         return read_xlnk_content(file_data, logical_path, romfs_path)
     return (
         f"<Binary Data: {len(file_data)} bytes. "
-        "Editable types: .byml, .bgyml, .msbt, .asb, .baev, .belnk, .bslnk, "
+        "Editable types: .byml, .bgyml, .msbt, .ainb, .asb, .baev, .belnk, .bslnk, "
         "AAMP (many extensions - see aamp-extensions.json)>"
     )
 
@@ -608,6 +612,14 @@ def write_file_content(
     elif kind == "aamp":
         orig = get_original_bytes()
         new_bytes = write_aamp_bytes(orig, editor_text, logical_path, romfs_path)
+        writer = make_sarc_writer(sarc)
+        writer.files[logical_path] = new_bytes
+        save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
+    elif kind == "ainb":
+        from ainb_io import write_ainb_bytes
+
+        orig = get_original_bytes()
+        new_bytes = write_ainb_bytes(orig, editor_text, logical_path, romfs_path)
         writer = make_sarc_writer(sarc)
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
@@ -695,6 +707,10 @@ def main():
                         Path(file_path).read_bytes(), editor_text, file_path, romfs_path
                     )
                 )
+            elif kind == "ainb":
+                from ainb_io import write_ainb_disk
+
+                write_ainb_disk(file_path, editor_text, romfs_path)
             elif kind == "asb":
                 write_asb_disk(file_path, editor_text, romfs_path)
             elif kind == "baev":
