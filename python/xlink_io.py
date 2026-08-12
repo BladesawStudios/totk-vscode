@@ -80,9 +80,8 @@ def find_xlink_tool() -> str:
 def _game_args() -> list[str]:
     game_id = (os.environ.get("TKVSC_GAME_ID", "") or "totk").strip().lower()
     game = os.environ.get("TOTK_XLINK_GAME", "").strip() or _GAME_BY_ID.get(game_id, "EXKing")
-    platform = (
-        os.environ.get("TOTK_XLINK_PLATFORM", "").strip()
-        or _PLATFORM_BY_ID.get(game_id, "NX")
+    platform = os.environ.get("TOTK_XLINK_PLATFORM", "").strip() or _PLATFORM_BY_ID.get(
+        game_id, "NX"
     )
     return ["-g", game, "-p", platform]
 
