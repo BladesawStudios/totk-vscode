@@ -159,7 +159,7 @@ Companion VS Code extensions can extend TKVSC via the exported API. See [docs/ap
 **Aster** - Graphics, Documentation
 
 ### Contributors
-**Clonephaze** - [GitHub Template Refactor](https://github.com/TKVSC-Team/totk-vscode/pull/62)
+**Clonephaze** - [GitHub Template Refactor](https://github.com/TKVSC-Team/totk-vscode/pull/62)\
 **Bryn** - [ASB Splatoon 3 Formats](https://github.com/FemBryn/asb-Spl3)
 
 ### Third-Parties
