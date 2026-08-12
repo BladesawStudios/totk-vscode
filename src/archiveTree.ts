@@ -10,9 +10,16 @@ import {
 } from './projectAdapters/registry';
 import type { ProjectAdapter } from './projectAdapters/types';
 import { getActiveGameId } from './gameProfile';
-import { DEFAULT_PROJECT_GAME_ID, ensureProjectGameId, getProjectGameId } from './tkvscConfig';
+import {
+    DEFAULT_PROJECT_GAME_ID,
+    ensureProjectGameId,
+    getProjectGameId,
+    projectRootExists,
+} from './tkvscConfig';
+import { logger } from './logger';
 
 const STORAGE_KEY = 'totk-editor.archiveRoots';
+const MISSING_ROOT_CONTEXT = 'archiveRootMissing';
 
 let extensionUri: vscode.Uri | undefined;
 let archiveTreeView: vscode.TreeView<ArchiveTreeItem> | undefined;
@@ -25,6 +32,11 @@ function isTkvscFile(name: string): boolean {
     return name.toLowerCase() === '.tkvsc';
 }
 
+function isMissingPathError(error: unknown): boolean {
+    const code = (error as { code?: string } | undefined)?.code;
+    return code === 'FileNotFound' || code === 'ENOENT' || code === 'EntryNotFound';
+}
+
 export function toSarcUri(fileUri: vscode.Uri): vscode.Uri {
     return fileUri.with({ scheme: 'sarc' });
 }
@@ -34,16 +46,21 @@ export class ArchiveTreeItem extends vscode.TreeItem {
         public readonly entryName: string,
         public readonly resourceUri: vscode.Uri,
         collapsibleState: vscode.TreeItemCollapsibleState,
-        options?: { isRoot?: boolean; contextValue?: string; isActive?: boolean },
+        options?: { isRoot?: boolean; contextValue?: string; isActive?: boolean; isMissing?: boolean },
     ) {
         super(entryName, collapsibleState);
         this.resourceUri = resourceUri;
         this.id = resourceUri.toString();
         this.contextValue =
-            options?.contextValue ?? (options?.isRoot ? 'archiveRoot' : undefined);
+            options?.contextValue
+            ?? (options?.isRoot ? (options.isMissing ? MISSING_ROOT_CONTEXT : 'archiveRoot') : undefined);
         if (options?.isRoot) {
-            this.description = path.dirname(resourceUri.fsPath);
-            this.tooltip = resourceUri.fsPath;
+            this.description = options.isMissing
+                ? `${path.dirname(resourceUri.fsPath)} (missing)`
+                : path.dirname(resourceUri.fsPath);
+            this.tooltip = options.isMissing
+                ? `${resourceUri.fsPath}\n\nThis folder no longer exists on disk. Restore it, or remove the project from this list.`
+                : resourceUri.fsPath;
             if (options.isActive) {
                 this.iconPath = new vscode.ThemeIcon('star-full');
             }
@@ -74,6 +91,13 @@ export class ArchiveTreeItem extends vscode.TreeItem {
         } else if (isTkvscFile(entryName) && extensionUri) {
             this.iconPath = vscode.Uri.joinPath(extensionUri, 'icons', 'tkvsc.svg');
         }
+
+        if (options?.isMissing) {
+            this.iconPath = new vscode.ThemeIcon(
+                'warning',
+                new vscode.ThemeColor('problemsWarningIcon.foreground'),
+            );
+        }
     }
 }
 
@@ -99,7 +123,12 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
     }
 
     private resolveConfigRoot(root: vscode.Uri): string {
-        return this.logicalRoots.get(root.fsPath) || root.fsPath;
+        const logicalRoot = this.logicalRoots.get(root.fsPath);
+        // A stale mapping (mod subfolder deleted) falls back to the stored root.
+        if (logicalRoot && projectRootExists(logicalRoot)) {
+            return logicalRoot;
+        }
+        return root.fsPath;
     }
 
     private getVisibleRoots(): vscode.Uri[] {
@@ -139,8 +168,20 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
     /** Existing stored projects without gameId are assumed TotK. */
     private migrateExistingProjectGameIds(): void {
         for (const root of this.roots) {
-            ensureProjectGameId(this.resolveConfigRoot(root), DEFAULT_PROJECT_GAME_ID);
+            try {
+                ensureProjectGameId(this.resolveConfigRoot(root), DEFAULT_PROJECT_GAME_ID);
+            } catch (error) {
+                // Never let one unreachable project stop the tree (and the extension) from loading.
+                logger.debug(
+                    `Skipping gameId migration for ${root.fsPath}: ${(error as Error).message}`,
+                );
+            }
         }
+    }
+
+    /** True when the stored project folder is gone from disk. */
+    private isRootMissing(root: vscode.Uri): boolean {
+        return !projectRootExists(root.fsPath);
     }
 
     getTreeItem(element: ArchiveTreeItem): vscode.TreeItem {
@@ -151,15 +192,26 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         if (!element) {
             return this.getVisibleRoots().map(
                 (root) => {
-                    const logicalPath = this.logicalRoots.get(root.fsPath) || root.fsPath;
+                    const logicalPath = this.resolveConfigRoot(root);
+                    const isMissing = this.isRootMissing(root);
                     return new ArchiveTreeItem(
                         path.basename(root.fsPath),
                         root,
-                        vscode.TreeItemCollapsibleState.Collapsed,
-                        { isRoot: true, isActive: logicalPath === this.activeProjectRootUri },
+                        isMissing
+                            ? vscode.TreeItemCollapsibleState.None
+                            : vscode.TreeItemCollapsibleState.Collapsed,
+                        {
+                            isRoot: true,
+                            isActive: !isMissing && logicalPath === this.activeProjectRootUri,
+                            isMissing,
+                        },
                     );
                 }
             );
+        }
+
+        if (element.contextValue === MISSING_ROOT_CONTEXT) {
+            return [];
         }
 
         try {
@@ -267,6 +319,15 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                 }));
             return results.filter((item): item is ArchiveTreeItem => item !== undefined);
         } catch (error) {
+            if (isMissingPathError(error)) {
+                // The folder was removed while the tree was open: re-render it as missing
+                // instead of nagging with an error popup.
+                logger.debug(`Your Projects: folder no longer exists: ${element.resourceUri.fsPath}`);
+                if (element.contextValue === 'archiveRoot') {
+                    this.onDidChangeTreeDataEmitter.fire(undefined);
+                }
+                return [];
+            }
             const message = error instanceof Error ? error.message : String(error);
             void vscode.window.showErrorMessage(`Your Projects: ${message}`);
             return [];
@@ -371,6 +432,10 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
     async refresh(): Promise<void> {
         for (const root of this.roots) {
             const fileRootPath = root.fsPath;
+            if (!projectRootExists(fileRootPath)) {
+                // Keep the stored mapping: the folder may come back (e.g. external drive).
+                continue;
+            }
             const validMods = await findValidModFolders(root);
             if (validMods.length > 1) {
                 this.hasMultipleMods.add(fileRootPath);
@@ -387,15 +452,22 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         this.onDidChangeTreeDataEmitter.fire(undefined);
     }
 
+    /** Usable project roots. Projects whose folder is gone from disk are left out. */
     getProjectRoots(): { fsPath: string; label: string }[] {
-        return this.getVisibleRoots().map((root) => {
-            const logicalPath = this.logicalRoots.get(root.fsPath);
-            const activePath = logicalPath || root.fsPath;
-            return {
-                fsPath: activePath,
-                label: path.basename(activePath),
-            };
-        });
+        return this.getVisibleRoots()
+            .filter((root) => !this.isRootMissing(root))
+            .map((root) => {
+                const activePath = this.resolveConfigRoot(root);
+                return {
+                    fsPath: activePath,
+                    label: path.basename(activePath),
+                };
+            });
+    }
+
+    /** All stored projects whose folder no longer exists on disk. */
+    getMissingProjectRoots(): vscode.Uri[] {
+        return this.roots.filter((root) => this.isRootMissing(root));
     }
 
     /** Re-filter visible projects after active game or .tkvsc gameId changes. */
@@ -628,7 +700,29 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
         }
     };
 
+    const removeMissingProjects = async (): Promise<void> => {
+        const missing = provider.getMissingProjectRoots();
+        if (missing.length === 0) {
+            void vscode.window.showInformationMessage(
+                'Your Projects: No missing projects to remove.',
+            );
+            return;
+        }
+        const confirmed = await vscode.window.showWarningMessage(
+            `Remove ${missing.length} missing project(s) from Your Projects? Nothing on disk is deleted.`,
+            { modal: true, detail: missing.map((root) => root.fsPath).join('\n') },
+            'Remove',
+        );
+        if (confirmed !== 'Remove') {
+            return;
+        }
+        for (const root of missing) {
+            provider.removeRoot(root);
+        }
+    };
+
     context.subscriptions.push(
+        vscode.commands.registerCommand('totk-editor.removeMissingProjects', removeMissingProjects),
         vscode.commands.registerCommand('totk-editor.addWorkspaceToArchives', addWorkspaceToArchives),
         // Backwards-compat alias for an older mistyped command id.
         vscode.commands.registerCommand('totk-edit.addWorkspaceToArchives', addWorkspaceToArchives),

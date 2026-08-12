@@ -314,7 +314,12 @@
       },
       {
         "command": "totk-editor.removeArchiveRoot",
-        "title": "Remove from Projects"
+        "title": "Remove from Projects",
+        "icon": "$(close)"
+      },
+      {
+        "command": "totk-editor.removeMissingProjects",
+        "title": "TKVSC: Remove Missing Projects"
       },
       {
         "command": "totk-editor.refreshGameDump",
@@ -578,7 +583,12 @@
       "view/item/context": [
         {
           "command": "totk-editor.removeArchiveRoot",
-          "when": "view == totk-editor.archives && viewItem == archiveRoot"
+          "when": "view == totk-editor.archives && (viewItem == archiveRoot || viewItem == archiveRootMissing)"
+        },
+        {
+          "command": "totk-editor.removeArchiveRoot",
+          "when": "view == totk-editor.archives && viewItem == archiveRootMissing",
+          "group": "inline"
         },
         {
           "command": "totk-editor.setLogicalProjectRoot",

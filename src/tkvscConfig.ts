@@ -14,6 +14,14 @@ export function getTkvscConfigPath(projectRoot: string): string {
     return path.join(projectRoot, '.tkvsc');
 }
 
+export function projectRootExists(projectRoot: string): boolean {
+    try {
+        return fs.statSync(projectRoot).isDirectory();
+    } catch {
+        return false;
+    }
+}
+
 export function readTkvscConfig(projectRoot: string): TkvscConfig {
     try {
         const configPath = getTkvscConfigPath(projectRoot);
@@ -41,12 +49,23 @@ export function getProjectGameId(projectRoot: string): string {
 /**
  * Ensure `.tkvsc` has a `gameId`. Does not overwrite an existing value.
  * Creates the file when needed.
+ *
+ * Best effort: a project folder that is gone (or read-only) is skipped instead of
+ * throwing, so a stale stored project cannot break extension startup.
  */
 export function ensureProjectGameId(projectRoot: string, gameIdIfMissing: string): void {
+    if (!projectRootExists(projectRoot)) {
+        logger.debug(`Skipping .tkvsc gameId write, project folder is missing: ${projectRoot}`);
+        return;
+    }
     const config = readTkvscConfig(projectRoot);
     if (config.gameId?.trim()) {
         return;
     }
     config.gameId = gameIdIfMissing;
-    writeTkvscConfig(projectRoot, config);
+    try {
+        writeTkvscConfig(projectRoot, config);
+    } catch (e) {
+        logger.debug(`Failed to write .tkvsc for ${projectRoot}: ${(e as Error).message}`);
+    }
 }
