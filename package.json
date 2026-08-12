@@ -842,6 +842,11 @@
           "default": "totk",
           "markdownDescription": "Active game profile ID (`totk` by default). Controls compression backend, RomFS validation, and per-game index databases. Game addons register additional profiles via `contributes.tkvsc`."
         },
+        "TKVSC.defaultProjectAuthor": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Author name written to the `Author` field of newly created `.tkproj` files. Leave empty to use `Unknown`."
+        },
         "TKVSC.createRomfsOnImport": {
           "type": "boolean",
           "default": true,

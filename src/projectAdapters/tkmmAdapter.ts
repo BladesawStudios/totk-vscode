@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { TKVSC_ARCHIVE_CONTEXT } from '../api/constants';
 import { normalizePath } from '../projectPaths';
+import { createDefaultTkprojData } from '../tkprojDefaults';
 import type {
     ProjectAdapter,
     ProjectOptionPickResult,
@@ -328,9 +329,11 @@ export class TkmmProjectAdapter implements ProjectAdapter {
 
     async scaffoldNewProject(projectFolderUri: vscode.Uri): Promise<void> {
         await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(projectFolderUri, 'romfs'));
+        const projectName = path.basename(normalizePath(projectFolderUri.fsPath));
+        const defaultData = createDefaultTkprojData(projectName || undefined);
         await vscode.workspace.fs.writeFile(
             vscode.Uri.joinPath(projectFolderUri, this.projectMarkerFile!),
-            new Uint8Array(0),
+            Buffer.from(JSON.stringify(defaultData, null, 2), 'utf-8'),
         );
     }
 }

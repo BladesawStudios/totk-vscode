@@ -1,24 +1,5 @@
 import * as vscode from 'vscode';
-
-interface TkprojContributor {
-    Author: string;
-    Contribution: string;
-}
-
-interface TkprojData {
-    Mod: {
-        Name: string;
-        Author: string;
-        Version: string;
-        Description: string;
-        Id: string;
-        Contributors: TkprojContributor[];
-        Dependencies: string[];
-        Thumbnail?: { ThumbnailPath?: string };
-    };
-    Flags?: Record<string, unknown>;
-    [key: string]: unknown;
-}
+import { createDefaultTkprojData, type TkprojContributor, type TkprojData } from './tkprojDefaults';
 
 export class TkprojEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = 'totk-editor.tkprojEditor';
@@ -40,20 +21,7 @@ export class TkprojEditorProvider implements vscode.CustomTextEditorProvider {
         webviewPanel.webview.options = { enableScripts: true };
 
         if (document.getText().trim() === '') {
-            const defaultData: TkprojData = {
-                Mod: {
-                    Name: "New Project",
-                    Author: "Unknown",
-                    Version: "1.0.0",
-                    Description: "",
-                    Id: generateUlidNumber(),
-                    Contributors: [],
-                    Dependencies: []
-                },
-                Flags: {
-                    TrackRemovedRsDbEntries: false
-                }
-            };
+            const defaultData = createDefaultTkprojData();
             const edit = new vscode.WorkspaceEdit();
             edit.insert(document.uri, new vscode.Position(0, 0), JSON.stringify(defaultData, null, 2));
             await vscode.workspace.applyEdit(edit);
@@ -160,17 +128,6 @@ function buildErrorHtml(raw: string): string {
 
 function escHtml(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function generateUlidNumber(): string {
-    let id = '';
-    for (let i = 0; i < 26; i++) {
-        id += Math.floor(Math.random() * 10).toString();
-    }
-    if (id === '00000000000000000000000001') {
-        return generateUlidNumber();
-    }
-    return id;
 }
 
 function buildContributorRows(contributors: TkprojContributor[]): string {
