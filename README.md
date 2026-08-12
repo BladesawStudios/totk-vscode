@@ -60,6 +60,9 @@ Preview and edit subfiles of SARC and BNTX archives
 - Bars
 - BFWAV
 
+#### Font Viewer/Replacer
+- bfttf
+- bfotf
 ---
 
 ### Activity Bar Tabs
