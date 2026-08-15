@@ -100,7 +100,10 @@ def _read_params(reader: Reader, has_flags: bool) -> list:
         value_type = reader.u8()
         if has_flags:
             reader.skip(reader.u8())
-        entry = {"n": name, "t": VALUE_TYPES[value_type] if value_type < len(VALUE_TYPES) else "Int"}
+        entry = {
+            "n": name,
+            "t": VALUE_TYPES[value_type] if value_type < len(VALUE_TYPES) else "Int",
+        }
         if classname:
             entry["c"] = classname
         out.append(entry)
@@ -176,8 +179,10 @@ def main() -> int:
     out_path.write_bytes(gzip.compress(payload, 9))
 
     print(f"{len(definitions)} definitions")
-    print(f"{len(data) / 1e6:.1f} MB -> {len(payload) / 1e6:.2f} MB JSON -> "
-          f"{out_path.stat().st_size / 1e6:.2f} MB gzipped")
+    print(
+        f"{len(data) / 1e6:.1f} MB -> {len(payload) / 1e6:.2f} MB JSON -> "
+        f"{out_path.stat().st_size / 1e6:.2f} MB gzipped"
+    )
     print(f"wrote {out_path}")
     return 0
 
