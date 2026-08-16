@@ -53,7 +53,12 @@ import {
     getGameProfileRegistry,
     isRomfsPathValid,
 } from './gameProfile';
-import { getGameIndexPaths, INDEX_SCHEMA_VERSION, migrateLegacyIndexFiles } from './indexPaths';
+import {
+    getGameIndexPaths,
+    INDEX_SCHEMA_VERSION,
+    migrateLegacyIndexFiles,
+    setIndexStorageRoot,
+} from './indexPaths';
 import {
     detectProjectAdapter,
     detectProjectAdapterAsync,
@@ -778,6 +783,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     cleanupOldTempFiles();
 
     initAddonRegistries(context);
+    setIndexStorageRoot(context.globalStorageUri.fsPath);
     void migrateLegacyIndexFiles(context.globalStorageUri.fsPath);
     initTextureViewer(context.extensionUri);
     initAudioViewer(context.extensionUri);
@@ -1660,6 +1666,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         '.bgyml': { 'BYML': ['bgyml'], 'YAML': ['yaml'] },
         '.txtg': { 'TexToGo Image': ['txtg'], 'DDS': ['dds'], 'PNG': ['png'], 'JPEG': ['jpg'], 'TGA': ['tga'], 'BMP': ['bmp'] },
         '.msbt': { 'Message Text': ['msbt'], 'JSON': ['json'], 'Text': ['txt'] },
+        '.rsizetable': { 'Resource Size Table': ['rsizetable'], 'YAML': ['yaml'] },
     };
 
     const getFiltersForExtension = (ext: string): Record<string, string[]> => {

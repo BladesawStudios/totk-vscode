@@ -7,6 +7,7 @@ import {
 } from '../gameProfile';
 import { getHandlerManifestPath } from '../handlerManifest';
 import { getAampHashNamesPath } from '../aampHashNames';
+import { getIndexPathsForGame } from '../indexPaths';
 
 /** Bridge environment variables passed to `totk_bridge.py`. */
 export function getBridgeEnv(): NodeJS.ProcessEnv {
@@ -18,6 +19,7 @@ export function getBridgeEnv(): NodeJS.ProcessEnv {
     const aampHashNamesPath = getAampHashNamesPath() ?? '';
     const archiveExtensions = profile.indexing?.archiveExtensions ?? [];
     const msbtConfigPath = getActiveMsbtConfigPath();
+    const indexPaths = getIndexPathsForGame(profile.id);
     return {
         ...process.env,
         TOTK_EDITOR_ROMFS: romfsPath,
@@ -27,6 +29,9 @@ export function getBridgeEnv(): NodeJS.ProcessEnv {
         TKVSC_ARCHIVE_EXTENSIONS: archiveExtensions.join(','),
         TKVSC_HANDLER_MANIFEST: manifestPath,
         TKVSC_AAMP_HASH_NAMES: aampHashNamesPath,
+        TKVSC_ROMFS_INDEX: indexPaths?.romfsIndex ?? '',
+        TKVSC_CANONICAL_INDEX: indexPaths?.canonicalIndex ?? '',
+        TKVSC_RSTB_RESOLVE_NAMES: config.get<boolean>('rstbResolveHashNames', true) ? '1' : '0',
         ...(msbtConfigPath ? { TKVSC_MSBT_CONFIG: msbtConfigPath } : {}),
         TOTK_TAG_PRODUCT_FORMAT: config.get<string>('tagProductFormat', 'json'),
         TOTK_EXTRA_AAMP_EXTS: extraAamp.map((ext) => ext.replace(/^\./, '')).join(','),

@@ -39,6 +39,9 @@
     },
     "_totk_font": {
       "iconPath": "./font.svg"
+    },
+    "_totk_rstb": {
+      "iconPath": "./rstb.svg"
     }
   },
   "folderNames": {
@@ -164,7 +167,9 @@
     "bfttf": "_totk_font",
     "bfotf": "_totk_font",
     "ttf": "_totk_font",
-    "otf": "_totk_font"
+    "otf": "_totk_font",
+    "rsizetable": "_totk_rstb",
+    "rsizetable.zs": "_totk_rstb"
   },
   "fileNames": {
     ".tkproj": "_totk_tkproj",
@@ -177,6 +182,7 @@
     "totk-ainb": "_totk_ainb",
     "totk-xlnk": "_totk_xlnk",
     "totk-tkvsc": "_totk_tkvsc",
-    "totk-font": "_totk_font"
+    "totk-font": "_totk_font",
+    "totk-rstb": "_totk_rstb"
   }
 }

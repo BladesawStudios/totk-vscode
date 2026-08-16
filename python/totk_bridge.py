@@ -531,6 +531,8 @@ def _file_kind(
             return "aamp"
         if is_xlnk_binary(data):
             return "xlnk"
+        if data[:6] == b"RESTBL":
+            return "rstb"
     return None
 
 
@@ -560,10 +562,14 @@ def read_file_content(file_data: bytes, logical_path: str, sarc=None, romfs_path
         return read_baev_content_disk(logical_path, romfs_path)
     if kind == "xlnk":
         return read_xlnk_content(file_data, logical_path, romfs_path)
+    if kind == "rstb":
+        from rstb_io import read_rstb_content
+
+        return read_rstb_content(file_data, logical_path, romfs_path)
     return (
         f"<Binary Data: {len(file_data)} bytes. "
         "Editable types: .byml, .bgyml, .msbt, .ainb, .asb, .baev, .belnk, .bslnk, "
-        "AAMP (many extensions - see aamp-extensions.json)>"
+        ".rsizetable, AAMP (many extensions - see aamp-extensions.json)>"
     )
 
 
@@ -638,6 +644,14 @@ def write_file_content(
     elif kind == "xlnk":
         orig = get_original_bytes()
         new_bytes = write_xlnk_bytes(orig, editor_text, logical_path, romfs_path)
+        writer = make_sarc_writer(sarc)
+        writer.files[logical_path] = new_bytes
+        save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
+    elif kind == "rstb":
+        from rstb_io import write_rstb_bytes
+
+        orig = get_original_bytes()
+        new_bytes = write_rstb_bytes(orig, editor_text, logical_path, romfs_path)
         writer = make_sarc_writer(sarc)
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
@@ -718,6 +732,14 @@ def main():
             elif kind == "xlnk":
                 Path(file_path).write_bytes(
                     write_xlnk_bytes(
+                        Path(file_path).read_bytes(), editor_text, file_path, romfs_path
+                    )
+                )
+            elif kind == "rstb":
+                from rstb_io import write_rstb_bytes
+
+                Path(file_path).write_bytes(
+                    write_rstb_bytes(
                         Path(file_path).read_bytes(), editor_text, file_path, romfs_path
                     )
                 )
@@ -1169,6 +1191,15 @@ def main():
                         from aamp_io import read_aamp_content
 
                         yaml_text = read_aamp_content(file_data, internal_path, romfs_path)
+                        fd, yaml_path = tempfile.mkstemp(prefix="totk-cvt-", suffix=target_ext)
+                        os.close(fd)
+                        Path(yaml_path).write_text(yaml_text, encoding="utf-8")
+                        os.unlink(out_path)
+                        out_path = yaml_path
+                    elif kind == "rstb":
+                        from rstb_io import read_rstb_content
+
+                        yaml_text = read_rstb_content(file_data, logical_path, romfs_path)
                         fd, yaml_path = tempfile.mkstemp(prefix="totk-cvt-", suffix=target_ext)
                         os.close(fd)
                         Path(yaml_path).write_text(yaml_text, encoding="utf-8")

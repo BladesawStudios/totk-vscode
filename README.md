@@ -48,6 +48,7 @@ Preview and edit subfiles of SARC and BNTX archives
 - ASB (Changes automatically applied to corresponding BAEV)
 - BAEV (Changes automatically applied to corresponding ASB)
 - XLINK
+- RESTBL (`.rsizetable` resource size tables, with CRC32 hashes resolved to resource paths)
 - PCHTXT
 - TKMM Config Files
 

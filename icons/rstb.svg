@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="rstb" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #e08c2e;
+      }
+
+      .cls-2 {
+        fill: #f5d9b0;
+      }
+    </style>
+  </defs>
+  <rect class="cls-1" x="3" y="4" width="26" height="24" rx="4" ry="4"/>
+  <rect class="cls-2" x="6" y="8" width="9" height="3" rx="1" ry="1"/>
+  <rect class="cls-2" x="17" y="8" width="9" height="3" rx="1" ry="1"/>
+  <rect class="cls-2" x="6" y="14.5" width="9" height="3" rx="1" ry="1"/>
+  <rect class="cls-2" x="17" y="14.5" width="5" height="3" rx="1" ry="1"/>
+  <rect class="cls-2" x="6" y="21" width="9" height="3" rx="1" ry="1"/>
+  <rect class="cls-2" x="17" y="21" width="7" height="3" rx="1" ry="1"/>
+</svg>
