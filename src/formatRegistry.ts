@@ -46,9 +46,10 @@ const LANGUAGE_BY_HANDLER: Record<string, string> = {
     asb: 'json',
     baev: 'json',
     xlnk: 'totk-xlnk',
+    rstb: 'totk-rstb',
 };
 
-const BUILTIN_HANDLERS = new Set(['byml', 'msbt', 'aamp', 'ainb', 'asb', 'baev', 'xlnk']);
+const BUILTIN_HANDLERS = new Set(['byml', 'msbt', 'aamp', 'ainb', 'asb', 'baev', 'xlnk', 'rstb']);
 
 function normalizeExtension(ext: string): string {
     return ext.toLowerCase().replace(/^\./, '');

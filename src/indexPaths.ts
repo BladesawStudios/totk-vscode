@@ -11,6 +11,16 @@ export interface GameIndexPaths {
     canonicalIndexState: string;
 }
 
+let indexStorageRoot: string | undefined;
+
+export function setIndexStorageRoot(globalStorageFsPath: string): void {
+    indexStorageRoot = globalStorageFsPath;
+}
+
+export function getIndexPathsForGame(gameId: string): GameIndexPaths | undefined {
+    return indexStorageRoot ? getGameIndexPaths(indexStorageRoot, gameId) : undefined;
+}
+
 export function getGameIndexDir(globalStorageFsPath: string, gameId: string): string {
     return path.join(globalStorageFsPath, 'indexes', gameId);
 }

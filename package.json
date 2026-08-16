@@ -258,6 +258,23 @@
         }
       },
       {
+        "id": "totk-rstb",
+        "extensions": [
+          ".rsizetable",
+          ".rsizetable.zs"
+        ],
+        "aliases": [
+          "Resource Size Table",
+          "RESTBL",
+          "rsizetable"
+        ],
+        "configuration": "./config/language-configuration.json",
+        "icon": {
+          "light": "./icons/rstb.svg",
+          "dark": "./icons/rstb.svg"
+        }
+      },
+      {
         "id": "pchtxt",
         "extensions": [
           ".pchtxt"
@@ -281,6 +298,11 @@
       },
       {
         "language": "msbt",
+        "scopeName": "source.byml",
+        "path": "./syntaxes/byml.tmLanguage.json"
+      },
+      {
+        "language": "totk-rstb",
         "scopeName": "source.byml",
         "path": "./syntaxes/byml.tmLanguage.json"
       },
@@ -923,6 +945,11 @@
           "default": "smallFilesOnly",
           "markdownDescription": "Syntax highlighting for decoded **XLNK** (`.belnk`/`.bslnk`) files. VS Code disables highlighting above 20 MB or 300,000 lines, which covers the full `elink2`/`slink2` databases. Setting this to `always` lifts that limit for XLNK files only. Takes effect the next time the file is opened."
         },
+        "TKVSC.rstbResolveHashNames": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Resolve the CRC32 hashes in **RESTBL** (`.rsizetable`) files back to readable resource paths using the game dump indexes. Turn this off to show raw `0x` hashes instead, which opens large tables faster. Requires the Game Dump Search Index (**TKVSC: Rebuild Game Dump Search Index**)."
+        },
         "TKVSC.extraAampExtensions": {
           "type": "array",
           "items": {
@@ -1082,6 +1109,10 @@
         "editor.insertSpaces": true,
         "editor.tabSize": 2,
         "editor.largeFileOptimizations": false
+      },
+      "[totk-rstb]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
       }
     }
   },
