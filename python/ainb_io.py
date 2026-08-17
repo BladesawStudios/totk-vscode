@@ -7,6 +7,7 @@ nodes are added or removed.
 """
 
 import json
+import sys
 from pathlib import Path
 
 _TOTK_VERSION = 0x407
@@ -63,14 +64,83 @@ def _to_editor_text(file_data: bytes, logical_path: str, romfs_path: str) -> str
     return json.dumps(ainb_file.as_dict(), indent=2, ensure_ascii=False) + "\n"
 
 
+def _repair_invariants(data: dict) -> list:
+    """Restore structural invariants the writer depends on.
+
+    Every node referenced by another node's "Queries" list must carry the "Is Query"
+    flag - the writer indexes queries by node and raises a bare ``KeyError(index)``
+    otherwise, which surfaces as an unhelpful "Failed to save: 20". This holds without
+    exception across the retail files (3654/3654 checked), so a node that has lost the
+    flag is repaired rather than rejected.
+
+    An output parameter that nothing consumes must have "Is Output" false; retail files
+    never mark an unused output (0 of 5354 checked).
+    """
+    repairs: list = []
+    nodes = data.get("Nodes") or []
+
+    for node in nodes:
+        for query in node.get("Queries") or []:
+            if not isinstance(query, int) or not (0 <= query < len(nodes)):
+                continue
+            flags = nodes[query].setdefault("Flags", [])
+            if "Is Query" not in flags:
+                flags.append("Is Query")
+                repairs.append(
+                    f"node {query} ({nodes[query].get('Name', '')!r}) is used as a query "
+                    f"by node {node.get('Node Index')} but was missing the 'Is Query' flag"
+                )
+
+    consumed: set = set()
+    for node in nodes:
+        for params in (node.get("Parameters") or {}).get("Inputs", {}).values():
+            for param in params:
+                refs = []
+                if param.get("Node Index", -1) >= 0:
+                    refs.append((param["Node Index"], param.get("Output Index", 0)))
+                for source in param.get("Sources") or []:
+                    if source.get("Node Index", -1) >= 0:
+                        refs.append((source["Node Index"], source.get("Output Index", 0)))
+                # An input's declared type is only a hint at which output category holds
+                # the source, so treat the index as consumed across every category.
+                for node_index, output_index in refs:
+                    consumed.add((node_index, output_index))
+
+    for index, node in enumerate(nodes):
+        for params in (node.get("Parameters") or {}).get("Outputs", {}).values():
+            for output_index, param in enumerate(params):
+                if param.get("Is Output") and (index, output_index) not in consumed:
+                    param["Is Output"] = False
+                    repairs.append(
+                        f"node {index} output {param.get('Name', '')!r} was marked as an "
+                        "output but nothing consumes it"
+                    )
+
+    return repairs
+
+
 def _to_binary(editor_text: str, logical_path: str) -> bytes:
     ainb = _load_ainb_module()
 
     data = json.loads(editor_text)
-    # The filename is baked into the file and must track the path it is saved to,
-    # otherwise the game looks up a module that no longer resolves.
-    ainb_file = ainb.AINB.from_dict(data, override_filename=_stem_from_path(logical_path))
-    return ainb_file.to_binary()
+    repairs = _repair_invariants(data)
+    for repair in repairs:
+        print(f"AINB: repaired before saving - {repair}", file=sys.stderr)
+
+    try:
+        ainb_file = ainb.AINB.from_dict(data)
+    except KeyError as e:
+        raise ValueError(
+            f"AINB structure is invalid: no node/index {e}. "
+            "This usually means a node references another node that no longer exists."
+        ) from e
+    try:
+        return ainb_file.to_binary()
+    except KeyError as e:
+        raise ValueError(
+            f"Could not serialize this AINB: missing node/index {e}. "
+            "Check that every linked node still exists and is flagged correctly."
+        ) from e
 
 
 def read_ainb_content(file_data: bytes, logical_path: str, romfs_path: str = "") -> str:

@@ -151,7 +151,13 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
     }
     #graphWrap.panning { cursor: grabbing; }
     #graphWrap.linking { cursor: crosshair; }
-    #canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+    #canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+    /* Promoting the canvas to its own compositor layer makes panning cheap, but a
+       promoted layer keeps its texture rasterized at the scale it was created at and
+       just stretches it - which turns node text to mush once you zoom in. So the
+       promotion is only held while the view is actually moving; dropping it at rest
+       makes the browser re-rasterize at the current zoom, crisply. */
+    #canvas.interacting { will-change: transform; }
     #linkLayer { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
     #linkLayer path.hit { pointer-events: stroke; cursor: pointer; }
     #nodeLayer { position: absolute; left: 0; top: 0; }
@@ -202,6 +208,17 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
     .prow input.num { width: 62px; }
     .prow input.str { width: 110px; }
     .prow input.vec { width: 46px; }
+    .prow select.bbsel {
+        background: rgba(247,195,33,0.16); color: #f7c321;
+        border: 1px solid rgba(247,195,33,0.4); border-radius: 3px;
+        font-size: 11px; padding: 0 2px; height: 18px; max-width: 150px;
+    }
+    .prow .srcbtn {
+        background: rgba(255,255,255,0.09); color: var(--node-fg);
+        border: 1px solid rgba(255,255,255,0.16); border-radius: 3px;
+        font-size: 10px; line-height: 1; padding: 3px 4px; cursor: pointer;
+    }
+    .prow .srcbtn:hover { background: rgba(255,255,255,0.2); }
     .prow input[type="checkbox"] { margin: 0; }
     .prow .bbref, .prow .exprref {
         font-size: 10px; padding: 0 4px; border-radius: 3px;
@@ -270,6 +287,27 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
     .pick:hover, .pick.active { background: var(--active); color: var(--active-fg); }
     .pick .pnm { overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; }
     .pick .pmeta { font-size: 11px; opacity: 0.6; flex: 0 0 auto; }
+
+    /* ---------------- dialog ---------------- */
+    #dialog {
+        position: fixed; inset: 0; z-index: 80; display: none;
+        align-items: flex-start; justify-content: center;
+        background: rgba(0,0,0,0.45); padding-top: 18vh;
+    }
+    #dialog.show { display: flex; }
+    #dialog .box {
+        width: min(400px, 90vw); background: var(--panel-bg);
+        border: 1px solid var(--border); border-radius: 7px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.55); overflow: hidden;
+    }
+    #dialog .head { padding: 10px 12px; border-bottom: 1px solid var(--border); font-weight: 600; }
+    #dialogBody { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    #dialogBody label { font-size: 11px; opacity: 0.7; display: block; margin-bottom: 3px; }
+    #dialogBody input, #dialogBody select { width: 100%; }
+    #dialog .foot {
+        padding: 10px 12px; border-top: 1px solid var(--border);
+        display: flex; justify-content: flex-end; gap: 6px;
+    }
 
     /* ---------------- overlays ---------------- */
     #status {
@@ -387,6 +425,16 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
         <div id="pickerResults"></div>
     </div>
 </div>
+<div id="dialog">
+    <div class="box">
+        <div class="head"><span id="dialogTitle"></span></div>
+        <div id="dialogBody"></div>
+        <div class="foot">
+            <button class="flat" id="dialogCancel">Cancel</button>
+            <button id="dialogOk">OK</button>
+        </div>
+    </div>
+</div>
 
 <script>
 (function () {
@@ -442,6 +490,7 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
     var pendingLink = null;
     var nodeDefs = [];         // catalog from Starlight's definition database
     var nodeDefByName = {};    // name -> definition
+    var consumedOutputs = {};  // "node:outputIndex" -> true, for pin fill state
 
     var graphWrap = document.getElementById('graphWrap');
     var canvasEl = document.getElementById('canvas');
@@ -465,6 +514,62 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
     function outputsOf(n) { return (n.Parameters && n.Parameters.Outputs) || {}; }
     function propsOf(n) { return n.Properties || {}; }
     function plugsOf(n) { return n.Plugs || {}; }
+
+    /**
+     * "<node>:<outputIndex>" for every output something reads. An input's declared
+     * type is only a hint at which category holds the source, so consumption is
+     * tracked by index alone - the same way the link resolver falls back.
+     */
+    function computeConsumedOutputs(list) {
+        var all = list || nodes();
+        var consumed = {};
+        function mark(ni, oi) {
+            if (ni !== undefined && ni >= 0) { consumed[ni + ':' + (oi || 0)] = true; }
+        }
+        for (var i = 0; i < all.length; i++) {
+            var ins = (all[i].Parameters && all[i].Parameters.Inputs) || {};
+            for (var t = 0; t < PARAM_TYPES.length; t++) {
+                var params = ins[PARAM_TYPES[t]] || [];
+                for (var p = 0; p < params.length; p++) {
+                    mark(params[p]['Node Index'], params[p]['Output Index']);
+                    var sources = params[p].Sources || [];
+                    for (var s = 0; s < sources.length; s++) {
+                        mark(sources[s]['Node Index'], sources[s]['Output Index']);
+                    }
+                }
+            }
+        }
+        return consumed;
+    }
+
+    /**
+     * Recompute the flags the format derives from graph structure. Retail files never
+     * mark an unused output, and always flag a node that something queries - breaking
+     * either makes the writer fail.
+     */
+    function normalizeDerivedFlags(list) {
+        var consumed = computeConsumedOutputs(list);
+        for (var i = 0; i < list.length; i++) {
+            var n = list[i];
+            var outs = (n.Parameters && n.Parameters.Outputs) || {};
+            for (var t = 0; t < PARAM_TYPES.length; t++) {
+                var params = outs[PARAM_TYPES[t]] || [];
+                for (var o = 0; o < params.length; o++) {
+                    if (!consumed[i + ':' + o]) { params[o]['Is Output'] = false; }
+                }
+            }
+        }
+        for (var c = 0; c < list.length; c++) {
+            var qs = list[c].Queries || [];
+            for (var q = 0; q < qs.length; q++) {
+                var target = list[qs[q]];
+                if (!target) { continue; }
+                if (!target.Flags) { target.Flags = []; }
+                if (target.Flags.indexOf('Is Query') === -1) { target.Flags.push('Is Query'); }
+            }
+        }
+        return list;
+    }
     function nodeTitle(n) {
         if (n.Name) { return n.Name; }
         return n['Node Type'] || 'Node';
@@ -662,6 +767,7 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
         geom = {};
 
         var all = nodes();
+        consumedOutputs = computeConsumedOutputs(all);
         var entryPoints = {};
         var cmds = (doc && doc.Commands) || [];
         for (var ci = 0; ci < cmds.length; ci++) {
@@ -828,26 +934,16 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
         ty.textContent = '(' + (type === 'Pointer' && p.Classname ? p.Classname : TYPE_LABEL[type]) + ')';
         row.appendChild(ty);
 
+        var paramPath = ['Nodes', index, 'Parameters', 'Inputs', type, pi];
         var val = document.createElement('span');
         val.className = 'pval';
-        if (p['Blackboard Index'] !== undefined) {
-            var bb = document.createElement('span');
-            bb.className = 'bbref';
-            bb.textContent = 'BB ' + p['Blackboard Index'];
-            bb.title = 'Reads blackboard parameter ' + p['Blackboard Index'];
-            val.appendChild(bb);
-        } else if (p['Expression Index'] !== undefined) {
-            var ex = document.createElement('span');
-            ex.className = 'exprref';
-            ex.textContent = 'EXB ' + p['Expression Index'];
-            ex.title = 'Value computed by expression ' + p['Expression Index'];
-            val.appendChild(ex);
-        } else if (!linked) {
+        if (!linked && p['Blackboard Index'] === undefined && p['Expression Index'] === undefined) {
             buildValueEditor(val, type, p['Default Value'], function (v) {
-                mutate([{ path: ['Nodes', index, 'Parameters', 'Inputs', type, pi, 'Default Value'], value: v }],
+                mutate([{ path: paramPath.concat(['Default Value']), value: v }],
                        'Set ' + (p.Name || 'value'));
-            });
+            }, index);
         }
+        buildSourceControl(val, index, paramPath, p, type, linked);
         row.appendChild(val);
         return row;
     }
@@ -871,7 +967,8 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
         box.className = 'flowpin-box';
         box.dataset.pin = 'out:' + type + ':' + oi;
         box.dataset.node = String(index);
-        box.appendChild(makePin(type, true));
+        // Filled only when something actually reads this output, matching Starlight.
+        box.appendChild(makePin(type, !!consumedOutputs[index + ':' + oi]));
         row.appendChild(box);
         return row;
     }
@@ -914,31 +1011,123 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
         nm.textContent = p.Name || '';
         row.appendChild(nm);
 
+        var paramPath = ['Nodes', index, 'Properties', type, vi];
         var val = document.createElement('span');
         val.className = 'pval';
-        if (p['Blackboard Index'] !== undefined) {
-            var bb = document.createElement('span');
-            bb.className = 'bbref';
-            bb.textContent = 'BB ' + p['Blackboard Index'];
-            val.appendChild(bb);
-        } else if (p['Expression Index'] !== undefined) {
-            var ex = document.createElement('span');
-            ex.className = 'exprref';
-            ex.textContent = 'EXB ' + p['Expression Index'];
-            val.appendChild(ex);
-        } else {
+        if (p['Blackboard Index'] === undefined && p['Expression Index'] === undefined) {
             buildValueEditor(val, type, p['Default Value'], function (v) {
-                mutate([{ path: ['Nodes', index, 'Properties', type, vi, 'Default Value'], value: v }],
+                mutate([{ path: paramPath.concat(['Default Value']), value: v }],
                        'Set ' + (p.Name || 'property'));
-            });
+            }, index);
         }
+        buildSourceControl(val, index, paramPath, p, type, false);
         row.appendChild(val);
         return row;
     }
 
+    /** Param value type -> the blackboard section that can supply it. */
+    var BB_TYPE_FOR_PARAM = {
+        Int: 'S32', Bool: 'Bool', Float: 'F32',
+        String: 'String', Vector3F: 'Vec3f', Pointer: 'Pointer',
+    };
+
+    function bbEntriesFor(paramType) {
+        var section = BB_TYPE_FOR_PARAM[paramType];
+        var bb = (doc && doc.Blackboard) || {};
+        return (section && bb[section]) || [];
+    }
+
+    /**
+     * Source switcher for a parameter: a literal value, or a reference to a
+     * blackboard entry. The two are mutually exclusive - a blackboard reference is
+     * encoded in the same flag word as the link, so the literal fields have to be
+     * cleared when switching over (and restored when switching back).
+     */
+    function buildSourceControl(host, index, paramPath, param, type, isLinked) {
+        var entries = bbEntriesFor(type);
+        var usesBb = param['Blackboard Index'] !== undefined;
+
+        if (param['Expression Index'] !== undefined) {
+            var ex = document.createElement('span');
+            ex.className = 'exprref';
+            ex.textContent = 'EXB ' + param['Expression Index'];
+            ex.title = 'Value computed by expression ' + param['Expression Index'];
+            host.appendChild(ex);
+            return;
+        }
+
+        if (usesBb) {
+            var sel = document.createElement('select');
+            sel.className = 'bbsel';
+            for (var i = 0; i < entries.length; i++) {
+                var opt = document.createElement('option');
+                var bbIndex = entries[i]['Blackboard Index'] !== undefined ? entries[i]['Blackboard Index'] : i;
+                opt.value = String(bbIndex);
+                opt.textContent = entries[i].Name || ('BB ' + bbIndex);
+                if (bbIndex === param['Blackboard Index']) { opt.selected = true; }
+                sel.appendChild(opt);
+            }
+            if (!entries.length) {
+                var missing = document.createElement('option');
+                missing.textContent = 'BB ' + param['Blackboard Index'] + ' (missing)';
+                missing.selected = true;
+                sel.appendChild(missing);
+            }
+            sel.title = 'Reads the blackboard parameter';
+            sel.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+            sel.addEventListener('change', function () {
+                mutate([{ path: paramPath.concat(['Blackboard Index']), value: parseInt(sel.value, 10) || 0 }],
+                       'Set blackboard source');
+            });
+            host.appendChild(sel);
+
+            var revert = document.createElement('button');
+            revert.className = 'srcbtn';
+            revert.textContent = '×';
+            revert.title = 'Use a literal value instead';
+            revert.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+            revert.addEventListener('click', function () {
+                var next = clone(param);
+                delete next['Blackboard Index'];
+                delete next['Vector Component'];
+                next.Flags = ['Uses Default'];
+                mutate([{ path: paramPath, value: next }], 'Use literal value');
+                render();
+            });
+            host.appendChild(revert);
+            return;
+        }
+
+        if (!isLinked && entries.length) {
+            var toBb = document.createElement('button');
+            toBb.className = 'srcbtn';
+            toBb.textContent = 'BB';
+            toBb.title = 'Read this value from a blackboard parameter';
+            toBb.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+            toBb.addEventListener('click', function () {
+                var next = clone(param);
+                var first = entries[0]['Blackboard Index'];
+                next['Blackboard Index'] = first !== undefined ? first : 0;
+                next.Flags = [];
+                if (next['Node Index'] !== undefined) {
+                    next['Node Index'] = -1;
+                    next['Output Index'] = 0;
+                }
+                delete next['Expression Index'];
+                mutate([{ path: paramPath, value: next }], 'Use blackboard value');
+                render();
+            });
+            host.appendChild(toBb);
+        }
+    }
+
     /** Inline editor widget matching the parameter's value type. */
-    function buildValueEditor(host, type, value, onChange) {
+    function buildValueEditor(host, type, value, onChange, nodeIndex) {
         function stop(e) { e.stopPropagation(); }
+        function grew(el) {
+            // The node can change width as the text grows, so its pins move.
+            if (nodeIndex !== undefined) { measureNode(nodeIndex); drawLinks(); }
+        }
         if (type === 'Bool') {
             var cb = document.createElement('input');
             cb.type = 'checkbox';
@@ -953,20 +1142,26 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
             if (type === 'Float') { num.step = 'any'; }
             num.value = (value === undefined || value === null) ? 0 : value;
             num.addEventListener('mousedown', stop);
+            num.addEventListener('input', function () { autoSizeInput(num, 48, 150); grew(); });
             num.addEventListener('change', function () {
                 var v = type === 'Int' ? parseInt(num.value, 10) : parseFloat(num.value);
                 if (isNaN(v)) { v = 0; }
                 onChange(v);
             });
             host.appendChild(num);
+            autoSizeInput(num, 48, 150);
         } else if (type === 'String') {
             var txt = document.createElement('input');
             txt.type = 'text';
             txt.className = 'str';
             txt.value = value === undefined || value === null ? '' : String(value);
+            txt.title = txt.value;
             txt.addEventListener('mousedown', stop);
+            txt.addEventListener('input', function () { autoSizeInput(txt, 70, 420); grew(); });
             txt.addEventListener('change', function () { onChange(txt.value); });
             host.appendChild(txt);
+            // Sized to the value so long names are readable instead of clipped.
+            autoSizeInput(txt, 70, 420);
         } else if (type === 'Vector3F') {
             var arr = Array.isArray(value) ? value : [0, 0, 0];
             for (var i = 0; i < 3; i++) {
@@ -991,6 +1186,48 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
     }
 
     // ---------------------------------------------------------------- geometry
+    var measureSpan = null;
+
+    /** Width the given text would occupy in that element's font. */
+    function textWidth(text, el) {
+        if (!measureSpan) {
+            measureSpan = document.createElement('span');
+            measureSpan.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;top:-9999px;left:-9999px';
+            document.body.appendChild(measureSpan);
+        }
+        var cs = window.getComputedStyle(el);
+        measureSpan.style.font = cs.font || (cs.fontSize + ' ' + cs.fontFamily);
+        measureSpan.textContent = text === undefined || text === null ? '' : String(text);
+        return measureSpan.offsetWidth;
+    }
+
+    /** Grow a field to fit its value so long strings are readable, not clipped. */
+    function autoSizeInput(el, min, max) {
+        var width = textWidth(el.value, el) + 14;
+        el.style.width = Math.round(Math.max(min, Math.min(max, width))) + 'px';
+    }
+
+    /** Re-measure a single node after its content changed size. */
+    function measureNode(index) {
+        var el = nodeEls[index];
+        if (!el) { return; }
+        var g = { w: el.offsetWidth, h: el.offsetHeight, pins: {} };
+        var boxes = el.querySelectorAll('[data-pin]');
+        for (var b = 0; b < boxes.length; b++) {
+            var box = boxes[b];
+            var x = box.offsetWidth / 2;
+            var y = box.offsetHeight / 2;
+            var cur = box;
+            while (cur && cur !== el) {
+                x += cur.offsetLeft;
+                y += cur.offsetTop;
+                cur = cur.offsetParent;
+            }
+            g.pins[box.dataset.pin] = { x: x + el.clientLeft, y: y + el.clientTop };
+        }
+        geom[index] = g;
+    }
+
     function measureAll() {
         var all = nodes();
         for (var i = 0; i < all.length; i++) {
@@ -1125,9 +1362,22 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
         drawLinks._cache = links;
     }
 
+    var interactTimer = null;
+
+    /** Hold the compositor promotion for the duration of a gesture, then let go. */
+    function markInteracting() {
+        canvasEl.classList.add('interacting');
+        if (interactTimer) { clearTimeout(interactTimer); }
+        interactTimer = setTimeout(function () {
+            interactTimer = null;
+            canvasEl.classList.remove('interacting');
+        }, 180);
+    }
+
     function applyTransform() {
         canvasEl.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.z + ')';
         document.getElementById('zoomLabel').textContent = Math.round(view.z * 100) + '%';
+        markInteracting();
         cull();
     }
 
@@ -1704,6 +1954,8 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
             kept.push(all[k]);
         }
         remapReferences(kept, map);
+        // Deleting a consumer can leave its producer's outputs unread.
+        normalizeDerivedFlags(kept);
 
         var cmds = clone((doc && doc.Commands) || []);
         for (var c = 0; c < cmds.length; c++) {
@@ -1758,6 +2010,11 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
                 }
                 delete list[p].Sources;
             }
+        }
+        var outs = outputsOf(c);
+        for (var o = 0; o < PARAM_TYPES.length; o++) {
+            var olist = outs[PARAM_TYPES[o]] || [];
+            for (var k = 0; k < olist.length; k++) { olist[k]['Is Output'] = false; }
         }
         return c;
     }
@@ -1833,12 +2090,76 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
             if (!n.Parameters.Outputs[op.t]) { n.Parameters.Outputs[op.t] = []; }
             var oent = { 'Name': op.n };
             if (op.t === 'Pointer') { oent.Classname = op.c || ''; }
-            oent['Is Output'] = true;
+            // Nothing reads a brand-new node's outputs yet; the flag flips on when
+            // something connects to it.
+            oent['Is Output'] = false;
             n.Parameters.Outputs[op.t].push(oent);
         }
         if (def.type !== 'UserDefined') { n.Name = ''; }
         return n;
     }
+
+    // ---------------------------------------------------------------- dialog
+    // VS Code webviews stub out window.prompt (it silently returns null), so every
+    // "give me a name" flow needs a real in-page dialog.
+    var dialogCallback = null;
+
+    function showDialog(title, fields, onOk) {
+        var body = document.getElementById('dialogBody');
+        var html = '';
+        for (var i = 0; i < fields.length; i++) {
+            var f = fields[i];
+            html += '<div><label for="dlg_' + f.key + '">' + esc(f.label) + '</label>';
+            if (f.type === 'select') {
+                html += '<select id="dlg_' + f.key + '">';
+                for (var o = 0; o < f.options.length; o++) {
+                    var opt = f.options[o];
+                    var value = opt.value !== undefined ? opt.value : opt;
+                    var label = opt.label !== undefined ? opt.label : opt;
+                    html += '<option value="' + esc(value) + '"' +
+                        (String(value) === String(f.value) ? ' selected' : '') + '>' + esc(label) + '</option>';
+                }
+                html += '</select>';
+            } else {
+                html += '<input type="text" id="dlg_' + f.key + '" value="' + esc(f.value || '') + '" autocomplete="off">';
+            }
+            html += '</div>';
+        }
+        body.innerHTML = html;
+        document.getElementById('dialogTitle').textContent = title;
+        dialogCallback = { fields: fields, onOk: onOk };
+        document.getElementById('dialog').classList.add('show');
+        var first = body.querySelector('input, select');
+        if (first) { first.focus(); if (first.select) { first.select(); } }
+    }
+
+    function closeDialog() {
+        document.getElementById('dialog').classList.remove('show');
+        dialogCallback = null;
+    }
+
+    function submitDialog() {
+        if (!dialogCallback) { return; }
+        var values = {};
+        for (var i = 0; i < dialogCallback.fields.length; i++) {
+            var key = dialogCallback.fields[i].key;
+            var el = document.getElementById('dlg_' + key);
+            values[key] = el ? el.value : '';
+        }
+        var cb = dialogCallback.onOk;
+        closeDialog();
+        if (cb) { cb(values); }
+    }
+
+    document.getElementById('dialogOk').addEventListener('click', submitDialog);
+    document.getElementById('dialogCancel').addEventListener('click', closeDialog);
+    document.getElementById('dialog').addEventListener('mousedown', function (e) {
+        if (e.target.id === 'dialog') { closeDialog(); }
+    });
+    document.getElementById('dialog').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); submitDialog(); }
+        else if (e.key === 'Escape') { e.preventDefault(); closeDialog(); }
+    });
 
     // ---------------------------------------------------------------- node catalog
     var pickerPos = null;
@@ -1954,7 +2275,19 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
         }
         if (!already) { consumer.Plugs.Generic.push({ 'Node Index': srcNode, 'Name': p.Name }); }
 
-        mutate([{ path: ['Nodes', dstNode], value: consumer }], 'Connect ' + p.Name);
+        // The producer side has to be updated too: a node that something queries must
+        // carry "Is Query", and the output it drives must be marked as an output.
+        // Missing either makes the writer fail with a bare index error on save.
+        var producer = (srcNode === dstNode) ? consumer : clone(nodeAt(srcNode));
+        if (!producer) { return; }
+        if (!producer.Flags) { producer.Flags = []; }
+        if (producer.Flags.indexOf('Is Query') === -1) { producer.Flags.push('Is Query'); }
+        var outList = ((producer.Parameters && producer.Parameters.Outputs) || {})[srcType] || [];
+        if (outList[srcIndex]) { outList[srcIndex]['Is Output'] = true; }
+
+        var ops = [{ path: ['Nodes', dstNode], value: consumer }];
+        if (srcNode !== dstNode) { ops.push({ path: ['Nodes', srcNode], value: producer }); }
+        mutate(ops, 'Connect ' + p.Name);
         render();
     }
 
@@ -2043,14 +2376,92 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
                     if (!consumer.Plugs.Generic.length) { delete consumer.Plugs.Generic; }
                 }
             }
-            mutate([{ path: ['Nodes', link.ref.node], value: consumer }], 'Delete link');
+            var ops = [{ path: ['Nodes', link.ref.node], value: consumer }];
+
+            // If that was the output's last reader, it is no longer an output.
+            if (removedSrc !== undefined && removedSrc >= 0 && removedSrc !== link.ref.node) {
+                var preview = nodes().slice();
+                preview[link.ref.node] = consumer;
+                var stillConsumed = computeConsumedOutputs(preview);
+                var outPin = (link.from.pin || '').split(':');
+                if (outPin[0] === 'out' && !stillConsumed[removedSrc + ':' + Number(outPin[2])]) {
+                    var producer = clone(nodeAt(removedSrc));
+                    var pl = ((producer.Parameters && producer.Parameters.Outputs) || {})[outPin[1]] || [];
+                    if (pl[Number(outPin[2])]) {
+                        pl[Number(outPin[2])]['Is Output'] = false;
+                        ops.push({ path: ['Nodes', removedSrc], value: producer });
+                    }
+                }
+            }
+            mutate(ops, 'Delete link');
         }
         selectedLink = null;
         render();
     }
 
     // ---------------------------------------------------------------- interaction
-    var dragNode = null, dragStart = null, dragOrigin = null, panStart = null, marquee = null;
+    var dragNode = null, dragStart = null, dragOrigin = null, panStart = null;
+    var lastMouse = { x: 0, y: 0 };
+    var autoPanFrame = 0;
+
+    /**
+     * Scroll the canvas when a drag reaches the edge of the viewport, so links and
+     * nodes can be dragged to somewhere off-screen without letting go first.
+     */
+    function autoPanStep() {
+        autoPanFrame = 0;
+        if (!dragNode && !pendingLink) { return; }
+
+        var rect = graphWrap.getBoundingClientRect();
+        var margin = 56, maxSpeed = 18;
+        var dx = 0, dy = 0;
+        if (lastMouse.x < rect.left + margin) {
+            dx = (rect.left + margin - lastMouse.x) / margin * maxSpeed;
+        } else if (lastMouse.x > rect.right - margin) {
+            dx = -(lastMouse.x - (rect.right - margin)) / margin * maxSpeed;
+        }
+        if (lastMouse.y < rect.top + margin) {
+            dy = (rect.top + margin - lastMouse.y) / margin * maxSpeed;
+        } else if (lastMouse.y > rect.bottom - margin) {
+            dy = -(lastMouse.y - (rect.bottom - margin)) / margin * maxSpeed;
+        }
+
+        if (dx || dy) {
+            view.x += Math.max(-maxSpeed, Math.min(maxSpeed, dx));
+            view.y += Math.max(-maxSpeed, Math.min(maxSpeed, dy));
+            applyTransform();
+            // Panning moves the world under the cursor, so the drag has to be
+            // recomputed from the same screen position to stay under the pointer.
+            updateDrag(lastMouse.x, lastMouse.y);
+        }
+        scheduleAutoPan();
+    }
+
+    function scheduleAutoPan() {
+        if (!autoPanFrame && (dragNode || pendingLink)) {
+            autoPanFrame = window.requestAnimationFrame(autoPanStep);
+        }
+    }
+
+    /** Shared by mousemove and the auto-pan loop. */
+    function updateDrag(clientX, clientY) {
+        if (dragNode) {
+            var cur = screenToCanvas(clientX, clientY);
+            var dx = cur.x - dragStart.x, dy = cur.y - dragStart.y;
+            for (var i = 0; i < dragNode.length; i++) {
+                var idx = dragNode[i];
+                layout[idx] = {
+                    x: Math.round(dragOrigin[idx].x + dx),
+                    y: Math.round(dragOrigin[idx].y + dy),
+                };
+            }
+            positionAll();
+            drawLinks();
+        } else if (pendingLink) {
+            var c = screenToCanvas(clientX, clientY);
+            tempLink.setAttribute('d', bezier(pendingLink.anchor, c));
+        }
+    }
 
     graphWrap.addEventListener('mousedown', function (e) {
         hideCtxMenu();
@@ -2107,21 +2518,11 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
     });
 
     window.addEventListener('mousemove', function (e) {
-        if (dragNode) {
-            var cur = screenToCanvas(e.clientX, e.clientY);
-            var dx = cur.x - dragStart.x, dy = cur.y - dragStart.y;
-            for (var i = 0; i < dragNode.length; i++) {
-                var idx = dragNode[i];
-                layout[idx] = { x: Math.round(dragOrigin[idx].x + dx), y: Math.round(dragOrigin[idx].y + dy) };
-            }
-            positionAll();
-            drawLinks();
-            return;
-        }
-        if (pendingLink) {
-            var c = screenToCanvas(e.clientX, e.clientY);
-            var a = pendingLink.anchor;
-            tempLink.setAttribute('d', bezier(a, c));
+        lastMouse.x = e.clientX;
+        lastMouse.y = e.clientY;
+        if (dragNode || pendingLink) {
+            updateDrag(e.clientX, e.clientY);
+            scheduleAutoPan();
             return;
         }
         if (panStart) {
@@ -2133,6 +2534,7 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
     });
 
     window.addEventListener('mouseup', function (e) {
+        if (autoPanFrame) { window.cancelAnimationFrame(autoPanFrame); autoPanFrame = 0; }
         if (dragNode) { dragNode = null; saveLayout(); }
         if (pendingLink) { finishLinkDrag(e); }
         if (panStart) {
@@ -2266,8 +2668,11 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
             action: function () { openNodePicker(pos); },
         });
         items.push({ label: 'Blank user-defined node...', disabled: readOnly, action: function () {
-            var name = prompt('Node name (e.g. QueryIsPlayerNear):', 'NewNode');
-            if (name) { appendNode(createBlankNode('UserDefined', name), pos); }
+            showDialog('Add user-defined node', [
+                { key: 'name', label: 'Node name', type: 'text', value: 'NewNode' },
+            ], function (values) {
+                if (values.name) { appendNode(createBlankNode('UserDefined', values.name), pos); }
+            });
         } });
         var common = ['Element_BoolSelector', 'Element_S32Selector', 'Element_F32Selector',
                       'Element_StringSelector', 'Element_Sequential', 'Element_Simultaneous',
@@ -2332,7 +2737,7 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
             openNodePicker(screenToCanvas(r.left + r.width / 2, r.top + r.height / 2));
             return;
         }
-        if (e.key === 'Escape') { setSelection([]); hideCtxMenu(); closeNodePicker(); return; }
+        if (e.key === 'Escape') { setSelection([]); hideCtxMenu(); closeNodePicker(); closeDialog(); return; }
     });
 
     // ---------------------------------------------------------------- panel events
@@ -2396,12 +2801,19 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
     });
 
     document.getElementById('btnAddCommand').addEventListener('click', function () {
-        var name = prompt('Command name:', 'Root');
-        if (!name) { return; }
-        var cmds = clone(doc.Commands || []);
-        cmds.push({ Name: name, GUID: makeGuid(), 'Root Node Index': selectedNodes.length ? selectedNodes[0] : 0 });
-        mutate([{ path: ['Commands'], value: cmds }], 'Add command');
-        render();
+        showDialog('Add command', [
+            { key: 'name', label: 'Command name', type: 'text', value: 'Root' },
+            { key: 'root', label: 'Root node index', type: 'text',
+              value: String(selectedNodes.length ? selectedNodes[0] : 0) },
+        ], function (values) {
+            if (!values.name) { return; }
+            var root = parseInt(values.root, 10);
+            if (isNaN(root)) { root = 0; }
+            var cmds = clone(doc.Commands || []);
+            cmds.push({ Name: values.name, GUID: makeGuid(), 'Root Node Index': root });
+            mutate([{ path: ['Commands'], value: cmds }], 'Add command');
+            render();
+        });
     });
 
     document.getElementById('bbList').addEventListener('change', function (e) {
@@ -2447,19 +2859,21 @@ export function getAinbGraphViewHtml(_webview: vscode.Webview, fileName: string)
     });
 
     document.getElementById('btnAddBB').addEventListener('click', function () {
-        var type = prompt('Parameter type (' + BB_TYPES.join(', ') + '):', 'Bool');
-        if (!type || BB_TYPES.indexOf(type) === -1) { return; }
-        var name = prompt('Parameter name:', 'NewParam');
-        if (!name) { return; }
-        var bb = clone(doc.Blackboard || {});
-        if (!bb[type]) { bb[type] = []; }
-        var defaults = { S32: 0, F32: 0.0, Bool: false, String: '', Vec3f: [0, 0, 0], Pointer: '' };
-        bb[type].push({
-            'Blackboard Index': bb[type].length, 'Name': name, 'Notes': '',
-            'Flags': 0, 'Default Value': defaults[type]
+        showDialog('Add blackboard parameter', [
+            { key: 'type', label: 'Type', type: 'select', options: BB_TYPES, value: 'Bool' },
+            { key: 'name', label: 'Name', type: 'text', value: 'NewParam' },
+        ], function (values) {
+            if (!values.name || BB_TYPES.indexOf(values.type) === -1) { return; }
+            var bb = clone(doc.Blackboard || {});
+            if (!bb[values.type]) { bb[values.type] = []; }
+            var defaults = { S32: 0, F32: 0.0, Bool: false, String: '', Vec3f: [0, 0, 0], Pointer: '' };
+            bb[values.type].push({
+                'Blackboard Index': bb[values.type].length, 'Name': values.name, 'Notes': '',
+                'Flags': 0, 'Default Value': defaults[values.type]
+            });
+            mutate([{ path: ['Blackboard'], value: bb }], 'Add blackboard param');
+            render();
         });
-        mutate([{ path: ['Blackboard'], value: bb }], 'Add blackboard param');
-        render();
     });
 
     // ---------------------------------------------------------------- picker events
