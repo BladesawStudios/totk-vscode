@@ -20,13 +20,36 @@ icons/*.ai
 graphics/
 vendor/py-xlink2
 .github/
-.venv/**
+.venv*/**
 context/
 docs/
 images
-node_modules/
-!node_modules/sql.js/**
+node_modules/**
+# sql.js: only the wasm build is loaded (see src/romfsIndex.ts); asm/debug/browser
+# variants and repo scaffolding are dead weight
+!node_modules/sql.js/package.json
+!node_modules/sql.js/LICENSE
+!node_modules/sql.js/dist/sql-wasm.js
+!node_modules/sql.js/dist/sql-wasm.wasm
 .gitmodules
 scripts/
 .ruff_cache/
-totk_vscode_pythn.egg-info
+**/*.egg-info/**
+
+# vgmstream ships Winamp/XMPlay player plugins; python/bwav_io.py only runs vgmstream-cli
+vendor/vgmstream/**/in_vgmstream.dll
+vendor/vgmstream/**/xmp-vgmstream.dll
+
+# archives no code path reads
+vendor/asb/asb_as_json.7z
+vendor/bphcl/resources/resources.7z
+
+# scaffolding from vendored upstream repos
+**/.gitignore
+vendor/*/.github/**
+vendor/ainb/tests/**
+vendor/ainb/test_ainb_edit.py
+vendor/hexpyt/tests/**
+vendor/hexpyt/examples/**
+vendor/hexpyt/resources/**
+vendor/bphcl/generator/**

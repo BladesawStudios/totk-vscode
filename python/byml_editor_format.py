@@ -1,5 +1,6 @@
 """Format oead BYML documents for editor display."""
 
+import base64
 import os
 
 import oead
@@ -18,6 +19,7 @@ SCALAR_TYPES = (
     oead.S64,
     oead.U64,
     oead.Bytes,
+    oead.byml.BinaryWithAlignment,
     type(None),
 )
 
@@ -44,8 +46,16 @@ def _fmt_scalar(value, indent: int = 0) -> str:
         return s if ("." in s or "e" in s or "nan" in s.lower() or "inf" in s.lower()) else s + ".0"
     if isinstance(value, int):
         return str(value)
+    if isinstance(value, oead.byml.BinaryWithAlignment):
+        sp = "  " * (indent + 1)
+        data = base64.b64encode(bytes(value.data)).decode("ascii")
+        return (
+            "!binary_aligned\n"
+            f"{sp}Alignment: !u 0x{int(value.alignment) & 0xFFFFFFFF:08x}\n"
+            f"{sp}Data: !!binary {data}"
+        )
     if isinstance(value, oead.Bytes):
-        return repr(bytes(value))
+        return "!!binary " + base64.b64encode(bytes(value)).decode("ascii")
     if value is None:
         return "null"
     if isinstance(value, str):
@@ -73,6 +83,8 @@ def _iter_array(node: oead.byml.Array):
 
 def _can_inline(node) -> bool:
     if isinstance(node, str) and "\n" in node:
+        return False
+    if isinstance(node, oead.byml.BinaryWithAlignment):
         return False
     if isinstance(node, (oead.byml.Dictionary, oead.byml.Array)):
         if len(node) > _MAX_COUNT:

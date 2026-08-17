@@ -38,5 +38,6 @@ export function getBridgeEnv(): NodeJS.ProcessEnv {
         TOTK_BYML_INLINE_CONTAINER_MAX_COUNT: String(
             config.get<number>('bymlInlineContainerMaxCount', 1),
         ),
+        TOTK_PTCL_VECTOR_FORMAT: config.get<string>('ptclVectorFormat', 'compact'),
     };
 }

@@ -932,6 +932,19 @@
           "default": 1,
           "markdownDescription": "The maximum number of child nodes allowed in a list/array or map/hash for it to still be formatted as an inline container (e.g. `[1]` or `{a: 1}`)."
         },
+        "TKVSC.ptclVectorFormat": {
+          "type": "string",
+          "enum": [
+            "compact",
+            "expanded"
+          ],
+          "enumDescriptions": [
+            "Colours and keyframe values on one line (e.g. `const_color0: [1.0, 0.5, 0.0, 1.0]`).",
+            "One component per line."
+          ],
+          "default": "compact",
+          "markdownDescription": "How to format the particle (`PtclBin`) vectors inside `.esetb.byml` files."
+        },
         "TKVSC.xlnkSyntaxHighlighting": {
           "type": "string",
           "enum": [

@@ -302,6 +302,31 @@ def _patch_python_byml():
     return b
 
 
+def _take_ptcl_binary(byml_doc):
+    if not isinstance(byml_doc, oead.byml.Dictionary) or "PtclBin" not in byml_doc:
+        return None
+
+    node = byml_doc["PtclBin"]
+    if isinstance(node, oead.byml.BinaryWithAlignment):
+        ptcl_bin, alignment = bytes(node.data), int(node.alignment)
+    elif isinstance(node, (oead.Bytes, bytes, memoryview)):
+        ptcl_bin, alignment = bytes(node), 0
+    else:
+        return None
+
+    del byml_doc["PtclBin"]
+    return ptcl_bin, alignment
+
+
+def _replace_ptcl_binary(byml_doc, ptcl_bin, alignment):
+    if alignment:
+        byml_doc["PtclBin"] = oead.byml.BinaryWithAlignment(
+            oead.Bytes(ptcl_bin), oead.U32(alignment)
+        )
+    else:
+        byml_doc["PtclBin"] = oead.Bytes(ptcl_bin)
+
+
 def read_byml_content(file_data, logical_path="", romfs_path=""):
     file_data, _, _ = decompress_container(file_data, logical_path, romfs_path)
     if len(file_data) == 0:
@@ -321,15 +346,6 @@ def read_byml_content(file_data, logical_path="", romfs_path=""):
             b = _patch_python_byml()
             py_doc = b.Byml(file_data).parse()
 
-            # Check for PtclBin
-            if "PtclBin" in py_doc and isinstance(py_doc["PtclBin"], bytes):
-                from ptcl_io import ptclbin_to_json
-
-                ptcl_json = ptclbin_to_json(py_doc["PtclBin"])
-                del py_doc["PtclBin"]
-                py_doc["PTCL_JSON"] = ptcl_json
-
-            # Convert py_doc back to oead format for text dumping.
             def py_to_oead(node):
                 if isinstance(node, dict):
                     return oead.byml.Dictionary({k: py_to_oead(v) for k, v in node.items()})
@@ -354,6 +370,15 @@ def read_byml_content(file_data, logical_path="", romfs_path=""):
             byml_doc = py_to_oead(py_doc)
         except Exception as e2:
             return f"# Error: Unsupported BYML version or node type\n# Detail: {str(e2)}\n"
+
+    ptcl = _take_ptcl_binary(byml_doc)
+    if ptcl is not None:
+        from ptcl_io import ptclbin_to_json
+
+        try:
+            byml_doc["PTCL_JSON"] = ptclbin_to_json(ptcl[0])
+        except Exception:
+            _replace_ptcl_binary(byml_doc, ptcl[0], ptcl[1])
 
     file_name = Path(logical_path).name.lower()
     if file_name.startswith("tag.product.") and "rstbl" in file_name:
@@ -424,8 +449,25 @@ def write_byml_bytes(orig_file_data, new_yaml, logical_path="", romfs_path=""):
 
     byml_doc = oead.byml.from_text(normalize_byml_u64_literals(new_yaml))
 
-    # Check if we need to restore PTCL data and write using python byml
-    if "PTCL_JSON" in byml_doc:
+    if isinstance(byml_doc, oead.byml.Dictionary) and "PTCL_JSON" in byml_doc:
+        from ptcl_io import json_to_ptclbin
+
+        ptcl_json = str(byml_doc["PTCL_JSON"])
+        del byml_doc["PTCL_JSON"]
+
+        orig_doc = None
+        try:
+            orig_doc = oead.byml.from_binary(orig_file_data)
+        except Exception:
+            pass
+
+        orig_ptcl = _take_ptcl_binary(orig_doc) if orig_doc is not None else None
+        if orig_ptcl is not None:
+            new_ptcl_bin = bytes(json_to_ptclbin(orig_ptcl[0], ptcl_json))
+            _replace_ptcl_binary(byml_doc, new_ptcl_bin, orig_ptcl[1])
+            new_byml_bytes = oead.byml.to_binary(byml_doc, big_endian=big_endian, version=version)
+            return compress_container(new_byml_bytes, logical_path, romfs_path, is_zstd, is_yaz0)
+
         import byml.byml as b
 
         def oead_to_py(node):
@@ -450,14 +492,9 @@ def write_byml_bytes(orig_file_data, new_yaml, logical_path="", romfs_path=""):
             return node
 
         py_doc = oead_to_py(byml_doc)
-        ptcl_json = py_doc.pop("PTCL_JSON")
 
-        # Get original PtclBin
         b_mod = _patch_python_byml()
-        orig_doc = b_mod.Byml(orig_file_data).parse()
-        orig_ptcl_bin = orig_doc.get("PtclBin", b"")
-
-        from ptcl_io import json_to_ptclbin
+        orig_ptcl_bin = b_mod.Byml(orig_file_data).parse().get("PtclBin", b"")
 
         new_ptcl_bin = json_to_ptclbin(orig_ptcl_bin, ptcl_json)
         py_doc["PtclBin"] = new_ptcl_bin
