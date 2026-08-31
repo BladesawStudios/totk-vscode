@@ -1164,6 +1164,6 @@
   },
   "dependencies": {
     "opentype.js": "^2.0.0",
-    "sql.js": "^1.14.1"
+    "sql.js": "^1.14.2"
   }
 }
