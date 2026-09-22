@@ -176,7 +176,7 @@ Companion VS Code extensions can extend TKVSC via the exported API. See [docs/ap
 **KillzXGaming**: [Switch Toolbox](https://github.com/KillzXGaming/Switch-Toolbox) - image handling referenced\
 **Arch Leaders**: [NX Editor](https://github.com/NX-Editor/NxEditor) - text formatting referenced\
 **SolidLink**: [Totkbits](https://github.com/SolidLink95/TotkBits) - Tag.Product & text formatting referenced, bphcl & ptcl implementation used\
-**MrMystery & The5thTear**: [Starlight](https://github.com/Mindstormman06/Starlight-Dev) - AINB node editor design and auto-layout algorithm referenced; node definition database converted into `config/ainbNodeDefs.json.gz`\
+**MrMystery & The5thTear**: [Starlight](https://github.com/Mindstormman06/Starlight-Dev) - AINB node editor design and auto-layout algorithm referenced; node definition database converted into `config/ainbNodeDefs.json.gz`
 
 ## Help and Community
 
