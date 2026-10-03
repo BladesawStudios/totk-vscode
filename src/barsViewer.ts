@@ -188,6 +188,33 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
         grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
         gap: 16px;
     }
+    .entry.hidden {
+        display: none;
+    }
+    #search-input {
+        background: var(--vscode-input-background);
+        color: var(--vscode-input-foreground);
+        border: 1px solid var(--vscode-input-border, var(--vscode-dropdown-border));
+        padding: 4px 8px;
+        border-radius: 4px;
+        outline: none;
+        width: 220px;
+        font-size: 13px;
+    }
+    #search-input:focus {
+        border-color: var(--vscode-focusBorder);
+    }
+    #search-count {
+        font-size: 12px;
+        font-weight: normal;
+        color: var(--vscode-descriptionForeground);
+    }
+    #no-results {
+        display: none;
+        color: var(--vscode-descriptionForeground);
+        font-size: 13px;
+        margin-bottom: 16px;
+    }
     .entry {
         background: var(--player-bg);
         border: 1px solid var(--player-border);
@@ -376,7 +403,9 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
 <body>
     <div class="header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <span>BARS: ${escapeHtml(barsName)}</span>
-        <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span id="search-count"></span>
+            <input id="search-input" type="search" placeholder="Search entries…" spellcheck="false" autocomplete="off" />
             <label for="sort-select" style="font-size: 13px; color: var(--vscode-descriptionForeground);">Sort by:</label>
             <select id="sort-select" style="background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); padding: 4px; border-radius: 4px; outline: none; cursor: pointer;">
                 <option value="default">Default</option>
@@ -384,6 +413,7 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
             </select>
         </div>
     </div>
+    <div id="no-results">No entries match your search.</div>
     <div class="entry-list">
         ${entriesHtml}
     </div>
@@ -418,6 +448,38 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
             // Webview state survives the HTML rebuild after an audio replace.
             vscode.setState({ ...(vscode.getState() || {}), sortMode: sortSelect.value });
         });
+
+        const searchInput = document.getElementById('search-input');
+        const searchCount = document.getElementById('search-count');
+        const noResults = document.getElementById('no-results');
+        function applySearch(query) {
+            const q = query.trim().toLowerCase();
+            const entries = document.querySelectorAll('.entry-list .entry');
+            let shown = 0;
+            entries.forEach(e => {
+                const match = !q || e.dataset.name.toLowerCase().includes(q);
+                e.classList.toggle('hidden', !match);
+                if (match) shown++;
+            });
+            searchCount.textContent = q ? shown + ' / ' + entries.length : '';
+            noResults.style.display = q && shown === 0 ? 'block' : 'none';
+        }
+        searchInput.addEventListener('input', () => {
+            applySearch(searchInput.value);
+            vscode.setState({ ...(vscode.getState() || {}), searchQuery: searchInput.value });
+        });
+        searchInput.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Escape') {
+                searchInput.value = '';
+                searchInput.dispatchEvent(new Event('input'));
+            }
+        });
+        const savedSearch = (vscode.getState() || {}).searchQuery;
+        if (savedSearch) {
+            searchInput.value = savedSearch;
+            applySearch(savedSearch);
+        }
+
         const savedSortMode = (vscode.getState() || {}).sortMode;
         if (savedSortMode && savedSortMode !== 'default') {
             sortSelect.value = savedSortMode;
