@@ -1127,6 +1127,7 @@ def main():
                 import struct as _struct
 
                 import bwav_writer
+                from amta_loudness import measure_loudness, write_loudness
                 from bars_io import parse_bars
                 from bars_writer import rebuild_bars
 
@@ -1171,6 +1172,7 @@ def main():
                 target_channels = entry.metadata.channel_count if entry.metadata else 0
                 source_channels = None
                 bwav_auto_loop = None
+                pcm = None  # (channels, sample_rate) of the new audio, for loudness
                 if (
                     payload[:4] == b"BWAV"
                     and target_channels
@@ -1207,6 +1209,20 @@ def main():
                         source_channels = len(channels)
                         channels = bwav_writer.match_channel_count(channels, target_channels)
                     full_bwav = bwav_writer.build_bwav(channels, wav.sample_rate, ls, le)
+                    pcm = (channels, wav.sample_rate)
+
+                # Refresh the AMTA loudness stats (peak / R128 loudness) for the new audio.
+                if pcm is None:
+                    try:
+                        decoded = bwav_writer.parse_wav(bwav_writer.decode_bwav_to_wav(full_bwav))
+                        pcm = (decoded.channels, decoded.sample_rate)
+                    except Exception:
+                        pcm = None  # keep the old stats rather than fail the replace
+                data = bytearray(data)
+                loudness = measure_loudness(*pcm) if pcm else None
+                loudness_updated = bool(
+                    loudness and write_loudness(data, entry.amta_offset, loudness)
+                )
 
                 # Report the loop actually written to the file.
                 le_out, ls_out = _struct.unpack_from("<ii", full_bwav, 0x10 + 0x3C)
@@ -1225,6 +1241,10 @@ def main():
                     # Stream-only entry: nothing embedded to swap. The caller
                     # gets the full BWAV to drop into Sound/Resource/Stream/.
                     needs_stream_file = True
+                    if loudness_updated:
+                        _save_logical_file_bytes(
+                            archive_path, logical_path, bytes(data), is_zstd, romfs_path
+                        )
                 else:
                     was_prefetch = _struct.unpack_from("<H", data, raw_bwav_off + 0xC)[0] != 0
                     if was_prefetch:
@@ -1234,7 +1254,7 @@ def main():
                     else:
                         blob = full_bwav
                         embedded = "full"
-                    new_data = rebuild_bars(data, {entry_index: blob})
+                    new_data = rebuild_bars(bytes(data), {entry_index: blob})
                     _save_logical_file_bytes(
                         archive_path, logical_path, new_data, is_zstd, romfs_path
                     )
@@ -1256,6 +1276,8 @@ def main():
                             "loopStart": used_loop_start,
                             "loopEnd": used_loop_end,
                             "channelsConvertedFrom": source_channels,
+                            "loudnessUpdated": loudness_updated,
+                            "integratedLoudness": loudness.integrated if loudness else None,
                         }
                     )
                 )

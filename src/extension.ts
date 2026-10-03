@@ -1747,10 +1747,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         const remixNote = result.channelsConvertedFrom
                             ? ` Converted ${result.channelsConvertedFrom}ch → ${result.channels}ch to match the entry.`
                             : '';
+                        const loudnessNote = result.loudnessUpdated && typeof result.integratedLoudness === 'number'
+                            ? ` Loudness ${result.integratedLoudness.toFixed(1)} LUFS.`
+                            : '';
                         void vscode.window.showInformationMessage(
                             (streamSavedTo
                                 ? `Replaced audio for "${result.name}" (prefetch in BARS, full stream at ${vscode.workspace.asRelativePath(streamSavedTo)}).`
-                                : `Replaced audio for "${result.name}".`) + remixNote,
+                                : `Replaced audio for "${result.name}".`) + remixNote + loudnessNote,
                         );
                         const refreshed = await runBridgeReadAsync(
                             python,

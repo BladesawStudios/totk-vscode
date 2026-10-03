@@ -179,6 +179,10 @@ export interface BarsReplaceResult extends BridgeResult {
     loopEnd?: number | null;
     /** Source channel count when the audio was remixed to match the entry's AMTA, else null. */
     channelsConvertedFrom?: number | null;
+    /** True when the entry's AMTA loudness stats (peak / R128 loudness) were rewritten. */
+    loudnessUpdated?: boolean;
+    /** Integrated loudness of the new audio in LUFS, when measured. */
+    integratedLoudness?: number | null;
 }
 
 export interface BntxTextureResult {
