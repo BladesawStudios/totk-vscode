@@ -15,10 +15,10 @@
 #   docs/                 @docs-person      - only doc changes go to this person
 #
 # A GitHub team can be used instead of individual usernames:
-#   *  @TKVSC-Team/maintainers
+#   *  @BladesawStudios/maintainers
 #
 # The wildcard * below assigns all files to the maintainers team, meaning
 # every PR will request a review from that team by default. This team will need to be set up in 
 # the repository settings with the appropriate members and permissions for this to work effectively.
 
-* @TKVSC-Team/maintainers
+* @BladesawStudios/maintainers

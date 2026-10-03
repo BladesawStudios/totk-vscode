@@ -1,21 +1,21 @@
 [submodule "vendor/ainb"]
 	path = vendor/ainb
-	url = https://github.com/TKVSC-Team/AINB.git
+	url = https://github.com/BladesawStudios/AINB.git
 [submodule "vendor/asb"]
 	path = vendor/asb
-	url = https://github.com/TKVSC-Team/asb.git
+	url = https://github.com/BladesawStudios/asb.git
 [submodule "vendor/pymsbt"]
 	path = vendor/pymsbt
-	url = https://github.com/TKVSC-Team/pymsbt.git
+	url = https://github.com/BladesawStudios/pymsbt.git
 [submodule "vendor/py-bntx"]
 	path = vendor/py-bntx
-	url = https://github.com/TKVSC-Team/py-bntx.git
+	url = https://github.com/BladesawStudios/py-bntx.git
 [submodule "vendor/hexpyt"]
 	path = vendor/hexpyt
-	url = https://github.com/TKVSC-Team/hexpyt.git
+	url = https://github.com/BladesawStudios/hexpyt.git
 [submodule "vendor/ptcl"]
 	path = vendor/ptcl
-	url = https://github.com/TKVSC-Team/ptcl.git
+	url = https://github.com/BladesawStudios/ptcl.git
 [submodule "vendor/bphcl"]
 	path = vendor/bphcl
-	url = https://github.com/TKVSC-Team/bphcl.git
+	url = https://github.com/BladesawStudios/bphcl.git

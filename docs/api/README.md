@@ -3,7 +3,7 @@
 ## DISCLAIMER
 API docs are currently 100% AI written based on analysis of the codebase, some things may be incorrect. I will rewrite the docs when I have time (likely on full release).
 
-Programmatic API for companion VS Code extensions that extend [TKVSC](https://github.com/TKVSC-Team/totk-vscode).
+Programmatic API for companion VS Code extensions that extend [TKVSC](https://github.com/BladesawStudios/totk-vscode).
 
 | Document | Description |
 |----------|-------------|

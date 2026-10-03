@@ -7,11 +7,11 @@
   "version": "0.0.5-beta.1",
   "repository": {
     "type": "git",
-    "url": "https://github.com/TKVSC-Team/totk-vscode"
+    "url": "https://github.com/BladesawStudios/totk-vscode"
   },
   "homepage": "https://tkvsc.dev/",
   "bugs": {
-    "url": "https://github.com/TKVSC-Team/totk-vscode/issues"
+    "url": "https://github.com/BladesawStudios/totk-vscode/issues"
   },
   "engines": {
     "vscode": "^1.138.0"
