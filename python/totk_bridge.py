@@ -1166,6 +1166,21 @@ def main():
                     )
                 entry = bars.entries[entry_index]
 
+                # The AMTA channel count must match the audio (TotK v5 AMTA stores
+                # no length/loop data, but does store channels), so remix to it.
+                target_channels = entry.metadata.channel_count if entry.metadata else 0
+                source_channels = None
+                bwav_auto_loop = None
+                if (
+                    payload[:4] == b"BWAV"
+                    and target_channels
+                    and bwav_writer.bwav_channel_count(payload) != target_channels
+                ):
+                    # Decode so it can be remixed; keep the BWAV's own loop for "auto".
+                    src_le, src_ls = _struct.unpack_from("<ii", payload, 0x10 + 0x3C)
+                    bwav_auto_loop = (src_ls, src_le) if src_le != -1 else (None, None)
+                    payload = bwav_writer.decode_bwav_to_wav(payload)
+
                 if payload[:4] == b"BWAV":
                     full_bwav = payload
                     if loop_start_arg == "none":
@@ -1183,11 +1198,15 @@ def main():
                     if loop_start_arg == "none":
                         ls, le = None, None
                     elif loop_start_arg == "auto":
-                        ls, le = wav.loop_start, wav.loop_end
+                        ls, le = bwav_auto_loop or (wav.loop_start, wav.loop_end)
                     else:
                         ls = loop_start_arg
                         le = loop_end_arg if isinstance(loop_end_arg, int) else 0x7FFFFFFF
-                    full_bwav = bwav_writer.build_bwav(wav.channels, wav.sample_rate, ls, le)
+                    channels = wav.channels
+                    if target_channels and len(channels) != target_channels:
+                        source_channels = len(channels)
+                        channels = bwav_writer.match_channel_count(channels, target_channels)
+                    full_bwav = bwav_writer.build_bwav(channels, wav.sample_rate, ls, le)
 
                 # Report the loop actually written to the file.
                 le_out, ls_out = _struct.unpack_from("<ii", full_bwav, 0x10 + 0x3C)
@@ -1236,6 +1255,7 @@ def main():
                             "channels": bwav_writer.bwav_channel_count(full_bwav),
                             "loopStart": used_loop_start,
                             "loopEnd": used_loop_end,
+                            "channelsConvertedFrom": source_channels,
                         }
                     )
                 )

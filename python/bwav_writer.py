@@ -699,6 +699,55 @@ def decode_audio_to_wav(payload: bytes, name_hint: str = "audio") -> bytes:
         return out.read_bytes()
 
 
+def match_channel_count(channels: list[list[int]], target: int) -> list[list[int]]:
+    """Remix per-channel PCM16 to ``target`` channels.
+
+    Downmixing averages source channel ``i`` into output ``i % target`` (so
+    stereo -> mono averages L/R, and quad -> stereo keeps left/right sides).
+    Upmixing repeats the source channels cyclically (mono -> stereo duplicates).
+    """
+    source = len(channels)
+    if target < 1 or source == target:
+        return channels
+    if target > source:
+        return [list(channels[c % source]) for c in range(target)]
+
+    num_samples = len(channels[0])
+    out: list[list[int]] = []
+    for c in range(target):
+        group = channels[c::target]
+        n = len(group)
+        mixed = [0] * num_samples
+        for i in range(num_samples):
+            v = round(sum(ch[i] for ch in group) / n)
+            mixed[i] = -32768 if v < -32768 else 32767 if v > 32767 else v
+        out.append(mixed)
+    return out
+
+
+def decode_bwav_to_wav(bwav: bytes) -> bytes:
+    """Decode a BWAV to a single-pass PCM16 WAV (loops ignored, no fade)."""
+    import subprocess
+    import tempfile
+
+    from bwav_io import find_vgmstream_cli
+
+    with tempfile.TemporaryDirectory(prefix="totk-bwav-remix-") as tmp:
+        inp = Path(tmp) / "input.bwav"
+        out = Path(tmp) / "output.wav"
+        inp.write_bytes(bwav)
+        # -i: ignore looping, otherwise vgmstream renders two loops plus a fade.
+        result = subprocess.run(
+            [find_vgmstream_cli(), "-i", "-o", str(out), str(inp)],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+        )
+        if result.returncode != 0 or not out.is_file():
+            detail = (result.stderr or result.stdout or b"").decode(errors="replace").strip()
+            raise RuntimeError(f"vgmstream-cli failed: {detail or f'exit {result.returncode}'}")
+        return out.read_bytes()
+
+
 def bwav_channel_count(bwav: bytes) -> int:
     if bwav[:4] != _BWAV_MAGIC:
         raise ValueError("Not a BWAV file")

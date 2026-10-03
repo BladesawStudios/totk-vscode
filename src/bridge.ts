@@ -177,6 +177,8 @@ export interface BarsReplaceResult extends BridgeResult {
     channels?: number;
     loopStart?: number | null;
     loopEnd?: number | null;
+    /** Source channel count when the audio was remixed to match the entry's AMTA, else null. */
+    channelsConvertedFrom?: number | null;
 }
 
 export interface BntxTextureResult {
