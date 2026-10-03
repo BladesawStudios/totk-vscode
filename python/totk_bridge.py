@@ -1150,7 +1150,7 @@ def main():
                     file_data = Path(archive_path).read_bytes()
                     logical_path = archive_path
 
-                data, _, is_zstd = decompress_container(file_data, logical_path, romfs_path)
+                data, is_zstd, _ = decompress_container(file_data, logical_path, romfs_path)
                 bars = parse_bars(data)
                 if entry_index >= len(bars.entries):
                     raise IndexError(
@@ -1437,7 +1437,7 @@ def main():
                     logical_path = archive_path
 
                 try:
-                    payload, _, is_zstd = decompress_container(file_data, logical_path, romfs_path)
+                    payload, is_zstd, _ = decompress_container(file_data, logical_path, romfs_path)
                 except Exception:
                     payload = file_data
                     is_zstd = False
@@ -1539,7 +1539,7 @@ def main():
                     logical_path = archive_path
 
                 try:
-                    payload, _, is_zstd = decompress_container(file_data, logical_path, romfs_path)
+                    payload, is_zstd, _ = decompress_container(file_data, logical_path, romfs_path)
                 except Exception:
                     payload = file_data
                     is_zstd = False

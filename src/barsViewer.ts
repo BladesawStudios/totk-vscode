@@ -399,11 +399,10 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
         }
 
         const sortSelect = document.getElementById('sort-select');
-        sortSelect.addEventListener('change', () => {
+        function applySort(mode) {
             const list = document.querySelector('.entry-list');
             const entries = Array.from(list.querySelectorAll('.entry'));
-            const mode = sortSelect.value;
-            
+
             entries.sort((a, b) => {
                 if (mode === 'alphabetical') {
                     return a.dataset.name.localeCompare(b.dataset.name);
@@ -411,9 +410,19 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
                     return parseInt(a.dataset.index) - parseInt(b.dataset.index);
                 }
             });
-            
+
             entries.forEach(e => list.appendChild(e));
+        }
+        sortSelect.addEventListener('change', () => {
+            applySort(sortSelect.value);
+            // Webview state survives the HTML rebuild after an audio replace.
+            vscode.setState({ ...(vscode.getState() || {}), sortMode: sortSelect.value });
         });
+        const savedSortMode = (vscode.getState() || {}).sortMode;
+        if (savedSortMode && savedSortMode !== 'default') {
+            sortSelect.value = savedSortMode;
+            applySort(savedSortMode);
+        }
 
         const playableIndices = ${JSON.stringify(playableIndices)};
         let fetchQueue = [...playableIndices];
