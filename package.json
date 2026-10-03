@@ -320,6 +320,120 @@
         "path": "./syntaxes/xlink.tmLanguage.json"
       }
     ],
+    "semanticTokenTypes": [
+      {
+        "id": "xlnkComment",
+        "description": "XLNK: Comment"
+      },
+      {
+        "id": "xlnkSection",
+        "description": "XLNK: Section block name"
+      },
+      {
+        "id": "xlnkEntryName",
+        "description": "XLNK: Named entry (call table, trigger, user)"
+      },
+      {
+        "id": "xlnkHash",
+        "description": "XLNK: Brackets around an entry hash"
+      },
+      {
+        "id": "xlnkValueVar",
+        "description": "XLNK: The <value> placeholder in a condition"
+      },
+      {
+        "id": "xlnkOperator",
+        "description": "XLNK: Comparison, arrow or assignment operator"
+      },
+      {
+        "id": "xlnkWildcard",
+        "description": "XLNK: The (_) wildcard case"
+      },
+      {
+        "id": "xlnkProperty",
+        "description": "XLNK: Assigned key"
+      },
+      {
+        "id": "xlnkString",
+        "description": "XLNK: String"
+      },
+      {
+        "id": "xlnkEscape",
+        "description": "XLNK: String escape"
+      },
+      {
+        "id": "xlnkContainer",
+        "description": "XLNK: Asset call table container type"
+      },
+      {
+        "id": "xlnkSpecial",
+        "description": "XLNK: Enum-like value"
+      },
+      {
+        "id": "xlnkScope",
+        "description": "XLNK: Property scope (Local, Global, ActionSlot)"
+      },
+      {
+        "id": "xlnkConstant",
+        "description": "XLNK: true, false or null"
+      },
+      {
+        "id": "xlnkNumber",
+        "description": "XLNK: Number"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "totk-xlnk",
+        "scopes": {
+          "xlnkComment": [
+            "comment.line.number-sign.xlink"
+          ],
+          "xlnkSection": [
+            "entity.name.tag.section.xlink"
+          ],
+          "xlnkEntryName": [
+            "entity.name.function.xlink"
+          ],
+          "xlnkHash": [
+            "punctuation.definition.hash.begin.xlink"
+          ],
+          "xlnkValueVar": [
+            "variable.language.value.xlink"
+          ],
+          "xlnkOperator": [
+            "keyword.operator.xlink"
+          ],
+          "xlnkWildcard": [
+            "constant.language.wildcard.xlink"
+          ],
+          "xlnkProperty": [
+            "variable.other.property.xlink"
+          ],
+          "xlnkString": [
+            "string.quoted.double.xlink"
+          ],
+          "xlnkEscape": [
+            "constant.character.escape.xlink"
+          ],
+          "xlnkContainer": [
+            "support.class.container.xlink"
+          ],
+          "xlnkSpecial": [
+            "support.type.xlink"
+          ],
+          "xlnkScope": [
+            "storage.modifier.scope.xlink"
+          ],
+          "xlnkConstant": [
+            "constant.language.xlink"
+          ],
+          "xlnkNumber": [
+            "constant.numeric.xlink"
+          ]
+        }
+      }
+    ],
     "commands": [
       {
         "command": "totk-editor.selectActiveGame",
@@ -959,11 +1073,11 @@
             "smallFilesOnly"
           ],
           "enumDescriptions": [
-            "Always highlight, even for the multi-million-line game databases. Costs memory and can make scrolling sluggish.",
-            "Let VS Code turn highlighting off for large files, keeping the editor fast."
+            "Highlight the whole file, even the multi-million-line game databases. Costs memory and can make scrolling sluggish.",
+            "Let VS Code turn full highlighting off for large files; TKVSC then highlights only the lines on screen, keeping the editor fast."
           ],
           "default": "smallFilesOnly",
-          "markdownDescription": "Syntax highlighting for decoded **XLNK** (`.belnk`/`.bslnk`) files. VS Code disables highlighting above 20 MB or 300,000 lines, which covers the full `elink2`/`slink2` databases. Setting this to `always` lifts that limit for XLNK files only. Takes effect the next time the file is opened."
+          "markdownDescription": "Syntax highlighting for decoded **XLNK** (`.belnk`/`.bslnk`) files. VS Code turns full highlighting off above 20 MB or 300,000 lines, which covers the full `elink2`/`slink2` databases; with `smallFilesOnly`, TKVSC highlights just the visible lines of those files instead. `always` lifts VS Code's limit for XLNK files only. Takes effect the next time the file is opened."
         },
         "TKVSC.rstbResolveHashNames": {
           "type": "boolean",
@@ -1130,7 +1244,7 @@
       "[totk-xlnk]": {
         "editor.insertSpaces": true,
         "editor.tabSize": 2,
-        "editor.largeFileOptimizations": false
+        "editor.semanticHighlighting.enabled": true
       },
       "[totk-rstb]": {
         "editor.insertSpaces": true,

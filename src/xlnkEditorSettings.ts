@@ -5,14 +5,15 @@ const XLNK_LANGUAGE_ID = 'totk-xlnk';
 /**
  * VS Code stops tokenizing a buffer above 20 MB or 300k lines when
  * `editor.largeFileOptimizations` is on, which covers the whole decoded
- * elink2/slink2 databases. The extension ships a `[totk-xlnk]` default that
- * turns the limit off; `TKVSC.xlnkSyntaxHighlighting` lets the user put it back
- * by writing an explicit language override into their own settings.
+ * elink2/slink2 databases. By default that limit stays in place and
+ * `xlnkSemanticTokens.ts` highlights just the visible lines of those files;
+ * `TKVSC.xlnkSyntaxHighlighting: always` lifts the limit by writing an explicit
+ * `[totk-xlnk]` override into the user's settings.
  */
 async function syncLargeFileOptimizations(): Promise<void> {
     const mode = vscode.workspace
         .getConfiguration('TKVSC')
-        .get<string>('xlnkSyntaxHighlighting', 'always');
+        .get<string>('xlnkSyntaxHighlighting', 'smallFilesOnly');
 
     const editorConfig = vscode.workspace.getConfiguration('editor', {
         languageId: XLNK_LANGUAGE_ID,
@@ -20,9 +21,9 @@ async function syncLargeFileOptimizations(): Promise<void> {
     const inspected = editorConfig.inspect<boolean>('largeFileOptimizations');
     const current = inspected?.globalLanguageValue;
 
-    // 'always' is what the shipped default already does, so clear the override
-    // rather than writing a redundant copy of it into the user's settings.
-    const desired = mode === 'smallFilesOnly' ? true : undefined;
+    // 'smallFilesOnly' is VS Code's own default, so clear the override rather
+    // than writing a redundant copy of it into the user's settings.
+    const desired = mode === 'always' ? false : undefined;
     if (current === desired) {
         return;
     }
