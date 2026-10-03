@@ -3,6 +3,7 @@ import { BarsEntry, BarsAudioResult } from './bridge';
 
 const panels = new Map<string, vscode.WebviewPanel>();
 let extensionUri: vscode.Uri | undefined;
+let renderCount = 0;
 
 export function initBarsViewer(extUri: vscode.Uri): void {
     extensionUri = extUri;
@@ -156,10 +157,15 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
         `;
     }).join('');
 
+    // Unique per render: VS Code ignores assigning identical webview HTML, so a
+    // replace that leaves the entry list unchanged would never reload the page.
+    renderCount++;
+
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="render-id" content="${renderCount}">
 <style>
     :root {
         --player-bg: var(--vscode-editorWidget-background, #252526);
