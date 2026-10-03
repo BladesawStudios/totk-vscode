@@ -5,6 +5,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Sequence
 
 from bwav_io import is_dummy_bwav, read_bwav_to_temp_wav
 from zstd_totk import decompress_container
@@ -323,11 +324,27 @@ def parse_bars(data: bytes) -> BarsFile:
 # ---------------------------------------------------------------------------
 
 
-def _find_bwav_in_romfs(name: str, romfs_path: str) -> bytes | None:
-    for pattern in _BWAV_SEARCH_PATHS:
-        candidate = Path(romfs_path) / pattern.format(name=name)
-        if candidate.is_file():
-            return candidate.read_bytes()
+def mod_romfs_root_for(archive_path: str) -> str:
+    """Return the romfs root containing ``archive_path`` (the directory above
+    its ``Sound/Resource`` segment), or "" if the path isn't laid out that way."""
+    parts = Path(archive_path).parts
+    for i in range(len(parts) - 2, -1, -1):
+        if parts[i].lower() == "sound" and parts[i + 1].lower() == "resource":
+            return str(Path(*parts[:i])) if i > 0 else ""
+    return ""
+
+
+def _find_bwav_in_romfs(
+    name: str, romfs_path: str, extra_roots: Sequence[str] = ()
+) -> bytes | None:
+    """Look up an entry's full BWAV. ``extra_roots`` (e.g. the mod's own romfs
+    root) are searched before the base game romfs so replaced streams win."""
+    roots = [r for r in (*extra_roots, romfs_path) if r]
+    for root in roots:
+        for pattern in _BWAV_SEARCH_PATHS:
+            candidate = Path(root) / pattern.format(name=name)
+            if candidate.is_file():
+                return candidate.read_bytes()
     return None
 
 
@@ -369,6 +386,7 @@ def read_bars_entry_audio(
     logical_path: str = "",
     romfs_path: str = "",
     force_prefetch: bool = False,
+    extra_roots: Sequence[str] = (),
 ) -> BarsAudioResult:
     """
     Decode audio for one entry in a BARS file.
@@ -386,8 +404,8 @@ def read_bars_entry_audio(
 
     entry = bars.entries[entry_index]
 
-    if romfs_path and not force_prefetch:
-        bwav_data = _find_bwav_in_romfs(entry.name, romfs_path)
+    if (romfs_path or extra_roots) and not force_prefetch:
+        bwav_data = _find_bwav_in_romfs(entry.name, romfs_path, extra_roots)
         if bwav_data is not None:
             wav_path, loop_start, loop_end = read_bwav_to_temp_wav(
                 bwav_data, entry.name + ".bwav", romfs_path
@@ -429,6 +447,7 @@ def list_bars_entries(
     file_data: bytes,
     logical_path: str = "",
     romfs_path: str = "",
+    extra_roots: Sequence[str] = (),
 ) -> list[dict]:
     """
     Return a list of entry descriptors for all assets in a BARS file.
@@ -440,8 +459,8 @@ def list_bars_entries(
     result = []
     for entry in bars.entries:
         has_romfs = False
-        if romfs_path:
-            has_romfs = _find_bwav_in_romfs(entry.name, romfs_path) is not None
+        if romfs_path or extra_roots:
+            has_romfs = _find_bwav_in_romfs(entry.name, romfs_path, extra_roots) is not None
 
         m = entry.metadata
         result.append(

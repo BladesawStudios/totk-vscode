@@ -1078,10 +1078,12 @@ def main():
                 else:
                     file_data = Path(archive_path).read_bytes()
                     logical_path = archive_path
-                from bars_io import list_bars_entries
+                from bars_io import list_bars_entries, mod_romfs_root_for
 
                 try:
-                    entries = list_bars_entries(file_data, logical_path, romfs_path)
+                    entries = list_bars_entries(
+                        file_data, logical_path, romfs_path, [mod_romfs_root_for(archive_path)]
+                    )
                     print(json.dumps({"entries": entries}))
                 except Exception as e:
                     print(json.dumps({"error": str(e)}))
@@ -1096,11 +1098,16 @@ def main():
                 else:
                     file_data = Path(archive_path).read_bytes()
                     logical_path = archive_path
-                from bars_io import read_bars_entry_audio
+                from bars_io import mod_romfs_root_for, read_bars_entry_audio
 
                 try:
                     res = read_bars_entry_audio(
-                        file_data, entry_index, logical_path, romfs_path, force_prefetch
+                        file_data,
+                        entry_index,
+                        logical_path,
+                        romfs_path,
+                        force_prefetch,
+                        [mod_romfs_root_for(archive_path)],
                     )
                     print(
                         json.dumps(

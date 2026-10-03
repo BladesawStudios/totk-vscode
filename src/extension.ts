@@ -1711,19 +1711,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         }
 
                         if (result.needsStreamFile && result.fullBwavTempPath) {
+                            // Modal: a plain notification can time out into the bell
+                            // and leave this promise (and the "Replacing…" button) pending forever.
                             const choice = await vscode.window.showInformationMessage(
-                                `"${result.name}" is a streamed sound: the BARS now holds only a prefetch clip. ` +
-                                'The full BWAV must also be placed at Sound/Resource/Stream/ in your mod.',
-                                'Save Full BWAV…', 'Skip',
+                                `"${result.name}" is a streamed sound: the BARS now holds only a prefetch clip.`,
+                                {
+                                    modal: true,
+                                    detail: 'The full BWAV must also be placed at Sound/Resource/Stream/ in your mod.',
+                                },
+                                'Save Full BWAV…',
                             );
                             if (choice === 'Save Full BWAV…') {
+                                const archiveDir = path.dirname(diskArchive);
+                                const streamDir = /[\\/]sound[\\/]resource$/i.test(archiveDir)
+                                    ? path.join(archiveDir, 'Stream')
+                                    : archiveDir;
                                 const target = await vscode.window.showSaveDialog({
-                                    defaultUri: vscode.Uri.file(path.join(
-                                        path.dirname(diskArchive), `${result.name}.bwav`,
-                                    )),
+                                    defaultUri: vscode.Uri.file(path.join(streamDir, `${result.name}.bwav`)),
                                     filters: { 'BWAV audio': ['bwav'] },
                                 });
                                 if (target) {
+                                    await fs.promises.mkdir(path.dirname(target.fsPath), { recursive: true });
                                     await fs.promises.copyFile(result.fullBwavTempPath, target.fsPath);
                                 }
                             }
