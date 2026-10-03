@@ -179,9 +179,16 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
     .header {
         font-size: 18px;
         font-weight: 600;
-        margin-bottom: 24px;
         color: var(--vscode-foreground, #ddd);
         word-break: break-all;
+        /* Pinned: bleed over the body padding so scrolled entries don't show around it. */
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        margin: -20px -20px 24px;
+        padding: 20px 20px 12px;
+        background: var(--vscode-editor-background, #1e1e1e);
+        border-bottom: 1px solid var(--player-border);
     }
     .entry-list {
         display: grid;
