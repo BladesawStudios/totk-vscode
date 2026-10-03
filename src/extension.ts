@@ -1712,37 +1712,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                             return undefined;
                         }
 
+                        let streamSavedTo: string | undefined;
                         if (result.needsStreamFile && result.fullBwavTempPath) {
-                            // Modal: a plain notification can time out into the bell
-                            // and leave this promise (and the "Replacing…" button) pending forever.
-                            const choice = await vscode.window.showInformationMessage(
-                                `"${result.name}" is a streamed sound: the BARS now holds only a prefetch clip.`,
-                                {
-                                    modal: true,
-                                    detail: 'The full BWAV must also be placed at Sound/Resource/Stream/ in your mod.',
-                                },
-                                'Save Full BWAV…',
-                            );
-                            if (choice === 'Save Full BWAV…') {
-                                const archiveDir = path.dirname(diskArchive);
-                                const streamDir = /[\\/]sound[\\/]resource$/i.test(archiveDir)
-                                    ? path.join(archiveDir, 'Stream')
-                                    : archiveDir;
-                                const target = await vscode.window.showSaveDialog({
-                                    defaultUri: vscode.Uri.file(path.join(streamDir, `${result.name}.bwav`)),
+                            // Streamed sounds: the BARS only holds a prefetch clip, so the full
+                            // BWAV goes to Sound/Resource/Stream/ beside the BARS in the same romfs.
+                            const archiveDir = path.dirname(diskArchive);
+                            let target: string | undefined;
+                            if (/[\\/]sound[\\/]resource$/i.test(archiveDir)) {
+                                target = path.join(archiveDir, 'Stream', `${result.name}.bwav`);
+                            } else {
+                                // BARS isn't under a romfs Sound/Resource folder; ask where the stream goes.
+                                const picked = await vscode.window.showSaveDialog({
+                                    title: `"${result.name}" is streamed: save the full BWAV (Sound/Resource/Stream/ in your mod)`,
+                                    defaultUri: vscode.Uri.file(path.join(archiveDir, `${result.name}.bwav`)),
                                     filters: { 'BWAV audio': ['bwav'] },
                                 });
-                                if (target) {
-                                    await fs.promises.mkdir(path.dirname(target.fsPath), { recursive: true });
-                                    await fs.promises.copyFile(result.fullBwavTempPath, target.fsPath);
-                                }
+                                target = picked?.fsPath;
+                            }
+                            if (target) {
+                                await fs.promises.mkdir(path.dirname(target), { recursive: true });
+                                await fs.promises.copyFile(result.fullBwavTempPath, target);
+                                streamSavedTo = target;
+                            } else {
+                                void vscode.window.showWarningMessage(
+                                    `"${result.name}" is streamed, but the full BWAV wasn't saved. ` +
+                                    'Only the prefetch clip in the BARS was replaced.',
+                                );
                             }
                         }
                         if (result.fullBwavTempPath) {
                             fs.promises.unlink(result.fullBwavTempPath).catch(() => { /* best effort */ });
                         }
 
-                        void vscode.window.showInformationMessage(`Replaced audio for "${result.name}".`);
+                        void vscode.window.showInformationMessage(
+                            streamSavedTo
+                                ? `Replaced audio for "${result.name}" (prefetch in BARS, full stream at ${vscode.workspace.asRelativePath(streamSavedTo)}).`
+                                : `Replaced audio for "${result.name}".`,
+                        );
                         const refreshed = await runBridgeReadAsync(
                             python,
                             bridgePath,
