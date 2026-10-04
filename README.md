@@ -105,9 +105,8 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 
 *( if there are any features you don't see on here, feel free to make an issue on this GitHub! )*
 
-- Node Based Editors (AINB, ASB, BAEV, and EVFL are all planned.)
+- Node Based Editors (ASB, BAEV, and EVFL are all planned.)
 - BFRES Support (Preview, Editing.)
-- Audio Support (BARS, BWAV.) (Read and BARS entry replacement supported; standalone BWAV/Opus writing W.I.P)
 - Actor Tooling (Automating the process as much as possible.)
 - Full romfs file content string searching
 
