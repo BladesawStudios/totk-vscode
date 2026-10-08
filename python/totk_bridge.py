@@ -21,6 +21,7 @@ from archive_resolve import (
     list_archive_files,
     load_sarc_file,
     make_sarc_writer,
+    read_archive_entry_stored_bytes,
     read_archive_file_bytes,
     rename_archive_entry,
     write_archive_file_bytes,
@@ -1293,6 +1294,14 @@ def main():
                         }
                     )
                 )
+
+            elif command == "export-stored":
+                internal_path = sys.argv[3]
+                file_data = read_archive_entry_stored_bytes(archive_path, internal_path, romfs_path)
+                fd, tmp_path = tempfile.mkstemp(prefix="totk-tool-", suffix="-stored.bin")
+                with os.fdopen(fd, "wb") as out:
+                    out.write(file_data)
+                print(json.dumps({"path": tmp_path}))
 
             elif command == "export-converted":
                 internal_path = sys.argv[3]

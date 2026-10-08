@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { isArchiveFile, isBntxTextureUri, isPathInsideArchive, isTxtgFile, isBwavAudioFile, isBarsAudioArchive } from './archives';
-import { registerArchiveFileCommands, ArchiveTreeDragDrop, setArchiveTreeView } from './archiveFsCommands';
+import { registerArchiveFileCommands, ArchiveTreeDragDrop, setArchiveTreeView, invalidateArchiveListings } from './archiveFsCommands';
 import {
     detectProjectAdapter,
     getActiveProjectOption,
@@ -429,7 +429,13 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         this.onDidChangeRootsEmitter.fire();
     }
 
+    /** Re-render the tree without rescanning project roots. */
+    refreshView(): void {
+        this.onDidChangeTreeDataEmitter.fire(undefined);
+    }
+
     async refresh(): Promise<void> {
+        invalidateArchiveListings();
         for (const root of this.roots) {
             const fileRootPath = root.fsPath;
             if (!projectRootExists(fileRootPath)) {
@@ -575,8 +581,47 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('totk-editor.refreshArchives', () => {
-            provider.refresh();
+        vscode.commands.registerCommand('totk-editor.refreshArchives', () => provider.refresh()),
+    );
+
+    // Pick up changes made outside the tree (Explorer, other tools, saves into archives).
+    let rootWatchers: vscode.Disposable[] = [];
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleViewRefresh = (uri: vscode.Uri) => {
+        invalidateArchiveListings(uri.fsPath);
+        if (refreshTimer) {
+            clearTimeout(refreshTimer);
+        }
+        refreshTimer = setTimeout(() => provider.refreshView(), 300);
+    };
+    const rebuildRootWatchers = () => {
+        rootWatchers.forEach((watcher) => watcher.dispose());
+        rootWatchers = [];
+        for (const root of provider.getProjectRoots()) {
+            const watcher = vscode.workspace.createFileSystemWatcher(
+                new vscode.RelativePattern(vscode.Uri.file(root.fsPath), '**/*'),
+            );
+            rootWatchers.push(
+                watcher,
+                watcher.onDidCreate(scheduleViewRefresh),
+                watcher.onDidDelete(scheduleViewRefresh),
+                // Content changes only affect the tree when an archive's entries may have changed.
+                watcher.onDidChange((uri) => {
+                    if (isArchiveFile(uri.fsPath)) {
+                        scheduleViewRefresh(uri);
+                    }
+                }),
+            );
+        }
+    };
+    rebuildRootWatchers();
+    context.subscriptions.push(
+        provider.onDidChangeRoots(rebuildRootWatchers),
+        new vscode.Disposable(() => {
+            rootWatchers.forEach((watcher) => watcher.dispose());
+            if (refreshTimer) {
+                clearTimeout(refreshTimer);
+            }
         }),
     );
 

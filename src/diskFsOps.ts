@@ -20,7 +20,9 @@ export async function deleteDiskPath(diskPath: string, recursive: boolean): Prom
 }
 
 export async function renameDiskPath(oldPath: string, newPath: string, overwrite: boolean): Promise<void> {
-    if (!overwrite) {
+    // On case-insensitive file systems a case-only rename "finds" the source as the destination.
+    const isCaseOnlyRename = oldPath !== newPath && oldPath.toLowerCase() === newPath.toLowerCase();
+    if (!overwrite && !isCaseOnlyRename) {
         try {
             await fs.promises.stat(newPath);
             throw new Error(`Destination already exists: ${newPath}`);

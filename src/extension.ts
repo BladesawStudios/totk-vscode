@@ -80,7 +80,7 @@ import {
     migrateSarcWorkspaceFolders,
     registerArchiveTree,
 } from './archiveTree';
-import { getArchiveSelection } from './archiveFsCommands';
+import { getArchiveSelection, setArchiveRawIo } from './archiveFsCommands';
 import { getDumpSelection, registerGameDumpTree, type DumpTreeItem } from './dumpTree';
 import { registerGamePicker } from './gamePicker';
 import { createReadonlyArchiveFs } from './readonlyArchiveFs';
@@ -189,6 +189,9 @@ class SarcProvider implements vscode.FileSystemProvider {
     private fileCache = new Map<string, string[]>();
     private virtualDirectories = new Map<string, string>();
     private fileContentCache = new Map<string, string | Uint8Array>();
+    // Every archive mutation rewrites the whole disk archive, so mutations to the same
+    // archive must run one at a time or concurrent writers silently drop each other's changes.
+    private archiveLocks = new Map<string, Promise<unknown>>();
 
     constructor(
         private readonly bridgePath: string,
@@ -213,6 +216,83 @@ class SarcProvider implements vscode.FileSystemProvider {
 
     watch(_uri: vscode.Uri): vscode.Disposable {
         return new vscode.Disposable(() => { });
+    }
+
+    private withArchiveLock<T>(diskArchive: string, task: () => Promise<T>): Promise<T> {
+        const key = diskArchive.replace(/\\/g, '/').toLowerCase();
+        const previous = this.archiveLocks.get(key) ?? Promise.resolve();
+        const next = previous.then(task, task);
+        const settled = next.catch(() => undefined);
+        this.archiveLocks.set(key, settled);
+        void settled.then(() => {
+            if (this.archiveLocks.get(key) === settled) {
+                this.archiveLocks.delete(key);
+            }
+        });
+        return next;
+    }
+
+    /** Drop cached archive listings at or below `fsPath` (or all of them when omitted). */
+    invalidateListings(fsPath?: string): void {
+        if (!fsPath) {
+            this.fileCache.clear();
+            return;
+        }
+        const target = fsPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+        for (const key of [...this.fileCache.keys()]) {
+            const archive = key.split('::')[0]!.replace(/\\/g, '/').toLowerCase();
+            if (archive === target || archive.startsWith(`${target}/`)) {
+                this.fileCache.delete(key);
+            }
+        }
+    }
+
+    /** Exact on-disk / in-archive bytes, with no format conversion. Used for copy, move and undo. */
+    async readStoredBytes(uri: vscode.Uri): Promise<Uint8Array> {
+        const fsPath = uri.fsPath;
+        if (!isPathInsideArchive(fsPath)) {
+            return await fs.promises.readFile(fsPath);
+        }
+        const diskArchive = this.getDiskArchive(fsPath);
+        const locator = this.getLocator(fsPath, diskArchive);
+        const result = await runBridgeJsonAsync<{ path: string }>(
+            this.requirePython(),
+            this.bridgePath,
+            ['export-stored', diskArchive, locator],
+            undefined,
+            getBridgeEnv(),
+        );
+        try {
+            return await fs.promises.readFile(result.path);
+        } finally {
+            await fs.promises.unlink(result.path).catch(() => undefined);
+        }
+    }
+
+    /** Write exact bytes to disk or into an archive entry, with no format conversion. */
+    async writeStoredBytes(uri: vscode.Uri, content: Uint8Array): Promise<void> {
+        const fsPath = uri.fsPath;
+        this.fileContentCache.delete(uri.toString());
+        if (!isPathInsideArchive(fsPath)) {
+            await fs.promises.mkdir(path.dirname(fsPath), { recursive: true });
+            await fs.promises.writeFile(fsPath, content);
+            this.invalidateListings(fsPath);
+            this.notifyChanged(uri, vscode.FileChangeType.Created);
+            return;
+        }
+        const diskArchive = this.getDiskArchive(fsPath);
+        const locator = this.getLocator(fsPath, diskArchive);
+        await this.withArchiveLock(diskArchive, async () => {
+            await runBridgeJsonAsync<{ success: boolean }>(
+                this.requirePython(),
+                this.bridgePath,
+                ['write-raw', diskArchive, locator],
+                Buffer.from(content).toString('base64'),
+                getBridgeEnv(),
+            );
+        });
+        this.invalidateListings(diskArchive);
+        this.notifyChanged(uri, vscode.FileChangeType.Created);
     }
 
     private getDiskArchive(fsPath: string): string {
@@ -571,7 +651,7 @@ class SarcProvider implements vscode.FileSystemProvider {
 
         try {
             logger.info(`Writing back to: ${diskArchive} / ${filePath}`);
-            await vscode.window.withProgress(
+            await this.withArchiveLock(diskArchive, async () => vscode.window.withProgress(
                 {
                     location: vscode.ProgressLocation.Notification,
                     title: `Saving and repacking ${path.basename(diskArchive)}...`,
@@ -633,7 +713,7 @@ class SarcProvider implements vscode.FileSystemProvider {
                     }
                     logger.info('Successfully saved and repacked SARC!');
                 }
-            );
+            ));
         } catch (error) {
             logger.error('Write Error:', error as Error);
             vscode.window.showErrorMessage(`Failed to save: ${error}`);
@@ -646,6 +726,7 @@ class SarcProvider implements vscode.FileSystemProvider {
         this.fileContentCache.delete(uri.toString());
         if (this.isMutatableDiskPath(fsPath)) {
             await deleteDiskPath(fsPath, options.recursive);
+            this.invalidateListings(fsPath);
             this.notifyChanged(uri, vscode.FileChangeType.Deleted);
             return;
         }
@@ -669,13 +750,13 @@ class SarcProvider implements vscode.FileSystemProvider {
         const filePath = this.getLocator(fsPath, diskArchive);
 
         try {
-            await runBridgeJsonAsync<{ success: boolean }>(
+            await this.withArchiveLock(diskArchive, () => runBridgeJsonAsync<{ success: boolean }>(
                 this.requirePython(),
                 this.bridgePath,
                 ['delete-entry', diskArchive, filePath],
                 undefined,
                 getBridgeEnv(),
-            );
+            ));
         } catch (error) {
             if (!deletedVirtual) {
                 throw error;
@@ -700,6 +781,8 @@ class SarcProvider implements vscode.FileSystemProvider {
         }
         if (this.isMutatableDiskPath(oldPath) && this.isMutatableDiskPath(newPath)) {
             await renameDiskPath(oldPath, newPath, options.overwrite);
+            this.invalidateListings(oldPath);
+            this.invalidateListings(newPath);
             this.notifyChanged(oldUri, vscode.FileChangeType.Deleted);
             this.notifyChanged(newUri, vscode.FileChangeType.Created);
             return;
@@ -734,13 +817,13 @@ class SarcProvider implements vscode.FileSystemProvider {
         const newLocator = this.getLocator(newPath, newDiskArchive);
 
         try {
-            await runBridgeJsonAsync<{ success: boolean }>(
+            await this.withArchiveLock(oldDiskArchive, () => runBridgeJsonAsync<{ success: boolean }>(
                 this.requirePython(),
                 this.bridgePath,
                 ['rename-entry', oldDiskArchive, oldLocator, newLocator],
                 undefined,
                 getBridgeEnv(),
-            );
+            ));
         } catch (error) {
             if (!renamedVirtual) {
                 throw error;
@@ -1397,6 +1480,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     );
 
     const sarcProvider = new SarcProvider(bridgePath, getPython, runCanonicalPropagation);
+    setArchiveRawIo(sarcProvider);
 
     context.subscriptions.push(
         vscode.workspace.registerFileSystemProvider('sarc', sarcProvider, {

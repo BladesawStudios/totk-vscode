@@ -10,10 +10,41 @@ import { addDumpEntryToProject, resolveRomfsForProject } from './addToProject';
 import { isPathInsideRomfsFolder } from './projectPaths';
 import { askForProjectOption, getActiveProjectOption, isAdapterOptionFolderContextValue, isAdapterOptionsContextValue } from './projectAdapters/registry';
 import { isFontFilePath } from './fontReplace';
+import { renameDiskPath } from './diskFsOps';
 
 let archiveTreeView: vscode.TreeView<ArchiveTreeItem> | undefined;
 
 const CLIPBOARD_KEY = 'totk-editor.archiveClipboard';
+const TREE_MIME = 'application/vnd.code.tree.totk-archives';
+
+/**
+ * Byte-exact IO backed by the `sarc` file system provider. File operations must never go
+ * through `workspace.fs.readFile/writeFile` on `sarc:` URIs: those convert BYML/MSBT/AAMP/...
+ * to and from editor text, which corrupts files that are copied, moved or restored.
+ */
+export interface ArchiveRawIo {
+    readStoredBytes(uri: vscode.Uri): Promise<Uint8Array>;
+    writeStoredBytes(uri: vscode.Uri, content: Uint8Array): Promise<void>;
+    invalidateListings(fsPath?: string): void;
+}
+
+let rawIo: ArchiveRawIo | undefined;
+
+export function setArchiveRawIo(io: ArchiveRawIo): void {
+    rawIo = io;
+}
+
+/** Drop cached archive listings so the tree re-reads archive contents. */
+export function invalidateArchiveListings(fsPath?: string): void {
+    rawIo?.invalidateListings(fsPath);
+}
+
+function requireRawIo(): ArchiveRawIo {
+    if (!rawIo) {
+        throw new Error('The project file system is not ready yet.');
+    }
+    return rawIo;
+}
 
 export function setArchiveTreeView(view: vscode.TreeView<ArchiveTreeItem>): void {
     archiveTreeView = view;
@@ -27,23 +58,36 @@ function parentDirectoryUri(uri: vscode.Uri): vscode.Uri {
     return toSarcUri(vscode.Uri.file(path.dirname(uri.fsPath)));
 }
 
+function toSarc(uri: vscode.Uri): vscode.Uri {
+    return uri.scheme === 'sarc' ? uri : toSarcUri(vscode.Uri.file(uri.fsPath));
+}
+
 function refreshArchives(): void {
     void vscode.commands.executeCommand('totk-editor.refreshArchives');
 }
 
-function selectedItems(item?: ArchiveTreeItem): ArchiveTreeItem[] {
-    if (item?.resourceUri) {
-        const selected = getArchiveSelection();
-        const clickedInSelection = selected.some(
-            (selectedItem) =>
-                selectedItem.resourceUri.toString() === item.resourceUri.toString(),
-        );
-        if (clickedInSelection) {
-            return selected;
-        }
-        return [item];
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function isTreeItemArg(value: unknown): value is ArchiveTreeItem {
+    return !!value && (value as ArchiveTreeItem).resourceUri instanceof vscode.Uri;
+}
+
+/**
+ * Items a command should act on. Context menus pass `(clicked, selection)`; keybindings may
+ * pass nothing. Acting on the whole selection only when the clicked item is part of it
+ * matches the built-in Explorer.
+ */
+function selectedItems(item?: unknown, selection?: unknown): ArchiveTreeItem[] {
+    const clicked = isTreeItemArg(item) ? item : undefined;
+    const passed = Array.isArray(selection) ? selection.filter(isTreeItemArg) : [];
+    const current = passed.length > 0 ? passed : getArchiveSelection();
+    if (!clicked) {
+        return current;
     }
-    return getArchiveSelection();
+    const key = clicked.resourceUri.toString();
+    return current.some((entry) => entry.resourceUri.toString() === key) ? current : [clicked];
 }
 
 function isMsbtFileName(name: string): boolean {
@@ -145,20 +189,29 @@ async function initialContentForNewFile(name: string): Promise<Uint8Array | unde
         return undefined;
     }
 
-    return await vscode.workspace.fs.readFile(picked[0]);
+    return await fs.promises.readFile(picked[0].fsPath);
 }
 
-function isDiskMutableItem(item: ArchiveTreeItem): boolean {
-    return (
-        item.contextValue === 'archiveFile' ||
-        item.contextValue === 'archiveTkproj' ||
-        item.contextValue === 'archiveVirtualFile' ||
-        item.contextValue === 'archivePackage' ||
-        item.contextValue === 'archiveDir' ||
-        item.contextValue === 'archiveVirtualDir' ||
-        item.contextValue === 'archiveRoot' ||
-        isAdapterOptionsContextValue(item.contextValue)
-    );
+const MOVABLE_CONTEXTS = new Set([
+    'archiveFile',
+    'archiveTkproj',
+    'archiveVirtualFile',
+    'archivePackage',
+    'archiveDir',
+    'archiveVirtualDir',
+    'archiveProjectDir',
+    'archiveProjectDirActive',
+]);
+
+const FILE_CONTEXTS = new Set(['archiveFile', 'archiveTkproj', 'archiveVirtualFile']);
+
+/** Entries that may be renamed, deleted or cut. Project roots are excluded: use "Remove Project". */
+function isMovableItem(item: ArchiveTreeItem): boolean {
+    return MOVABLE_CONTEXTS.has(item.contextValue ?? '') || isAdapterOptionsContextValue(item.contextValue);
+}
+
+function isCopyableItem(item: ArchiveTreeItem): boolean {
+    return isMovableItem(item) || item.contextValue === 'archiveRoot';
 }
 
 function isBntxOrTexToGo(uri: vscode.Uri): boolean {
@@ -174,74 +227,106 @@ function normalizeFsPath(fsPath: string): string {
     return fsPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 }
 
+function isSameOrInside(childFsPath: string, parentFsPath: string): boolean {
+    const child = normalizeFsPath(childFsPath);
+    const parent = normalizeFsPath(parentFsPath);
+    return child === parent || child.startsWith(`${parent}/`);
+}
+
 function pruneNestedSelections(items: ArchiveTreeItem[]): ArchiveTreeItem[] {
     const sorted = [...items].sort(
         (a, b) => normalizeFsPath(a.resourceUri.fsPath).length - normalizeFsPath(b.resourceUri.fsPath).length,
     );
     const kept: ArchiveTreeItem[] = [];
-
     for (const candidate of sorted) {
-        const candidatePath = normalizeFsPath(candidate.resourceUri.fsPath);
-        const isInsideKept = kept.some((entry) => {
-            const parentPath = normalizeFsPath(entry.resourceUri.fsPath);
-            return candidatePath === parentPath || candidatePath.startsWith(`${parentPath}/`);
-        });
-        if (!isInsideKept) {
+        if (!kept.some((entry) => isSameOrInside(candidate.resourceUri.fsPath, entry.resourceUri.fsPath))) {
             kept.push(candidate);
         }
     }
-
     return kept;
 }
 
-async function resolveTargetFolder(item?: ArchiveTreeItem): Promise<vscode.Uri | undefined> {
-    const items = selectedItems(item);
-    const target = items[0];
-    if (!target?.resourceUri) {
-        void vscode.window.showWarningMessage('Select a folder in Your Projects first.');
-        return undefined;
+function pruneNestedUris(uris: vscode.Uri[]): vscode.Uri[] {
+    const sorted = [...uris].sort((a, b) => a.fsPath.length - b.fsPath.length);
+    const kept: vscode.Uri[] = [];
+    for (const candidate of sorted) {
+        if (!kept.some((entry) => isSameOrInside(candidate.fsPath, entry.fsPath))) {
+            kept.push(candidate);
+        }
     }
+    return kept;
+}
 
-    if (
-        target.contextValue === 'archiveFile' ||
-        target.contextValue === 'archiveTkproj' ||
-        target.contextValue === 'archiveVirtualFile'
-    ) {
+function folderForItem(target: ArchiveTreeItem): vscode.Uri {
+    if (FILE_CONTEXTS.has(target.contextValue ?? '')) {
         return parentDirectoryUri(target.resourceUri);
     }
-
-    if (
-        target.contextValue === 'archiveDir' ||
-        target.contextValue === 'archiveRoot' ||
-        target.contextValue === 'archiveVirtualDir' ||
-        target.contextValue === 'archivePackage'
-    ) {
-        return target.resourceUri;
-    }
-
     return target.resourceUri;
 }
 
-function toFileUri(uri: vscode.Uri): vscode.Uri {
-    if (uri.scheme === 'sarc') {
-        return vscode.Uri.file(uri.fsPath);
+function resolveTargetFolder(item?: unknown, selection?: unknown, warn = true): vscode.Uri | undefined {
+    const target = selectedItems(item, selection)[0];
+    if (!target?.resourceUri) {
+        if (warn) {
+            void vscode.window.showWarningMessage('Select a folder in Your Projects first.');
+        }
+        return undefined;
     }
-    return uri;
+    return folderForItem(target);
 }
 
-async function getUniqueTargetUri(folderUri: vscode.Uri, name: string): Promise<vscode.Uri> {
-    let target = vscode.Uri.joinPath(folderUri, name);
-    let exists = await vscode.workspace.fs.stat(target).then(
+const INVALID_NAME_CHARS = /[\\/:*?"<>|]/;
+
+function validateEntryName(value: string): string | undefined {
+    const name = value.trim();
+    if (!name) {
+        return 'Name cannot be empty';
+    }
+    if (INVALID_NAME_CHARS.test(name)) {
+        return 'Name cannot contain \\ / : * ? " < > |';
+    }
+    if (name === '.' || name === '..') {
+        return 'Invalid name';
+    }
+    if (name.toLowerCase().endsWith('.tkproj') && name.toLowerCase() !== '.tkproj') {
+        return 'Project file must be named exactly ".tkproj"';
+    }
+    return undefined;
+}
+
+async function pathExists(uri: vscode.Uri): Promise<boolean> {
+    return vscode.workspace.fs.stat(toSarc(uri)).then(
         () => true,
         () => false,
     );
-    if (!exists) {
+}
+
+/** True for real folders. Archive files show as folders in the tree but are copied as files. */
+async function isFolderEntry(uri: vscode.Uri): Promise<boolean> {
+    const stat = await vscode.workspace.fs.stat(toSarc(uri));
+    return stat.type === vscode.FileType.Directory && !isArchiveFile(uri.fsPath);
+}
+
+async function findChildCaseInsensitive(folderUri: vscode.Uri, name: string): Promise<string | undefined> {
+    try {
+        const entries = await vscode.workspace.fs.readDirectory(toSarc(folderUri));
+        const lower = name.toLowerCase();
+        return entries.find(([entryName]) => entryName.toLowerCase() === lower)?.[0];
+    } catch {
+        return undefined;
+    }
+}
+
+async function getUniqueTargetUri(folderUri: vscode.Uri, name: string): Promise<vscode.Uri> {
+    const folder = toSarc(folderUri);
+    let target = vscode.Uri.joinPath(folder, name);
+    if (!(await findChildCaseInsensitive(folder, name))) {
         return target;
     }
 
     let base = name;
     let ext = '';
-    const compoundMatch = name.match(/^(.+?)(\.(?:pack|sarc|genvb|blarc|bfarc|bkres|bntx|byml|byaml|bgyml|msbt|txtg)(?:\.zs)?)$/i);
+    const compoundMatch = name.match(/^(.+?)(\.(?:pack|sarc|genvb|blarc|bfarc|bkres|bntx|byml|byaml|bgyml|msbt|txtg|bfres|ainb|bars|bwav)(?:\.zs)?)$/i);
     if (compoundMatch) {
         base = compoundMatch[1]!;
         ext = compoundMatch[2]!;
@@ -253,146 +338,163 @@ async function getUniqueTargetUri(folderUri: vscode.Uri, name: string): Promise<
         }
     }
 
-    let counter = 1;
-    while (true) {
+    for (let counter = 1; ; counter++) {
         const newName = `${base}_${counter}${ext}`;
-        target = vscode.Uri.joinPath(folderUri, newName);
-        exists = await vscode.workspace.fs.stat(target).then(
-            () => true,
-            () => false,
-        );
-        if (!exists) {
+        target = vscode.Uri.joinPath(folder, newName);
+        if (!(await findChildCaseInsensitive(folder, newName))) {
             return target;
         }
-        counter++;
     }
 }
 
-async function parallelMap<T, R>(items: T[], fn: (item: T) => Promise<R>, limit = 10): Promise<R[]> {
+async function parallelMap<T, R>(items: T[], fn: (item: T) => Promise<R>, limit = 8): Promise<R[]> {
     const results: R[] = new Array(items.length);
     let index = 0;
-    const workers = Array(limit).fill(0).map(async () => {
+    const workers = Array(Math.min(limit, items.length)).fill(0).map(async () => {
         while (index < items.length) {
             const i = index++;
-            results[i] = await fn(items[i]);
+            results[i] = await fn(items[i]!);
         }
     });
     await Promise.all(workers);
     return results;
 }
 
-async function moveEntry(src: vscode.Uri, dest: vscode.Uri): Promise<void> {
-    const isSrcVirtual = isPathInsideArchive(src.fsPath);
-    const isDestVirtual = isPathInsideArchive(dest.fsPath);
-    const isCrossScheme = src.scheme !== dest.scheme;
-    const isCrossArchive =
-        isSrcVirtual ||
-        isDestVirtual ||
-        isCrossScheme ||
-        getDiskArchivePath(src.fsPath).toLowerCase() !== getDiskArchivePath(dest.fsPath).toLowerCase();
-
-    if (!isCrossArchive) {
-        await vscode.workspace.fs.rename(src, dest, { overwrite: false });
-    } else {
-        const stat = await vscode.workspace.fs.stat(src);
-        const isDirectory = stat.type === vscode.FileType.Directory && !isArchiveFile(src.fsPath);
-        if (isDirectory) {
-            await vscode.workspace.fs.createDirectory(dest);
-            const dirEntries = await captureDirectory(src);
-            const dirs = dirEntries.filter((e) => e.type === 'dir');
-            const files = dirEntries.filter((e) => e.type === 'file');
-            dirs.sort((a, b) => a.relativeUri.length - b.relativeUri.length);
-            for (const entry of dirs) {
-                const entryDestUri = vscode.Uri.joinPath(dest, entry.relativeUri);
-                await vscode.workspace.fs.createDirectory(entryDestUri);
-            }
-            await parallelMap(files, async (entry) => {
-                const entryDestUri = vscode.Uri.joinPath(dest, entry.relativeUri);
-                await vscode.workspace.fs.writeFile(entryDestUri, entry.content!);
-            });
-        } else {
-            const data = await vscode.workspace.fs.readFile(src);
-            await vscode.workspace.fs.writeFile(dest, data);
-        }
-        await vscode.workspace.fs.delete(src, {
-            recursive: isDirectory,
-            useTrash: false,
-        });
-    }
+async function createFolder(uri: vscode.Uri): Promise<void> {
+    await vscode.workspace.fs.createDirectory(toSarc(uri));
 }
 
-async function copyEntries(
-    sources: ArchiveTreeItem[],
-    destinationFolder: vscode.Uri,
-    move: boolean,
-): Promise<vscode.Uri[]> {
-    const targets: vscode.Uri[] = [];
-    for (const source of sources) {
-        if (!source.resourceUri || !isDiskMutableItem(source)) {
+async function deleteEntry(uri: vscode.Uri): Promise<void> {
+    if (!(await pathExists(uri))) {
+        return;
+    }
+    await vscode.workspace.fs.delete(toSarc(uri), { recursive: true, useTrash: false });
+}
+
+/** Byte-exact recursive copy. Works between disk folders, archives and nested archives. */
+async function copyEntry(src: vscode.Uri, dest: vscode.Uri, knownFolder?: boolean): Promise<void> {
+    const isFolder = knownFolder ?? (await isFolderEntry(src));
+    if (isFolder) {
+        await createFolder(dest);
+        const entries = await vscode.workspace.fs.readDirectory(toSarc(src));
+        await parallelMap(entries, ([name, type]) =>
+            copyEntry(
+                vscode.Uri.joinPath(src, name),
+                vscode.Uri.joinPath(dest, name),
+                type === vscode.FileType.Directory && !isArchiveFile(name),
+            ),
+        );
+        return;
+    }
+
+    const io = requireRawIo();
+    if (!isPathInsideArchive(src.fsPath) && !isPathInsideArchive(dest.fsPath)) {
+        await fs.promises.mkdir(path.dirname(dest.fsPath), { recursive: true });
+        await fs.promises.copyFile(src.fsPath, dest.fsPath);
+        // Game dump files are often read-only; the copy should be editable.
+        await fs.promises.chmod(dest.fsPath, 0o666).catch(() => undefined);
+        io.invalidateListings(dest.fsPath);
+        return;
+    }
+    await io.writeStoredBytes(dest, await io.readStoredBytes(src));
+}
+
+async function moveEntry(src: vscode.Uri, dest: vscode.Uri): Promise<void> {
+    const srcInside = isPathInsideArchive(src.fsPath);
+    const destInside = isPathInsideArchive(dest.fsPath);
+
+    if (!srcInside && !destInside) {
+        try {
+            await renameDiskPath(src.fsPath, dest.fsPath, false);
+            requireRawIo().invalidateListings(src.fsPath);
+            requireRawIo().invalidateListings(dest.fsPath);
+            return;
+        } catch (error) {
+            // Moving between drives cannot be a rename; fall back to copy + delete.
+            if ((error as { code?: string }).code !== 'EXDEV') {
+                throw error;
+            }
+        }
+    } else if (
+        srcInside &&
+        destInside &&
+        getDiskArchivePath(src.fsPath).toLowerCase() === getDiskArchivePath(dest.fsPath).toLowerCase()
+    ) {
+        try {
+            await vscode.workspace.fs.rename(toSarc(src), toSarc(dest), { overwrite: false });
+            return;
+        } catch {
+            // e.g. moving between nested archive levels; fall back to copy + delete.
+        }
+    }
+
+    await copyEntry(src, dest);
+    await deleteEntry(src);
+}
+
+/** In-memory copy of an entry's exact bytes, used to undo deletes and overwrites. */
+type EntrySnapshot =
+    | { kind: 'file'; content: Uint8Array }
+    | { kind: 'dir'; children: [string, EntrySnapshot][] };
+
+async function snapshotEntry(uri: vscode.Uri, knownFolder?: boolean): Promise<EntrySnapshot> {
+    const isFolder = knownFolder ?? (await isFolderEntry(uri));
+    if (!isFolder) {
+        return { kind: 'file', content: await requireRawIo().readStoredBytes(uri) };
+    }
+    const entries = await vscode.workspace.fs.readDirectory(toSarc(uri));
+    const children = await parallelMap(entries, async ([name, type]) => [
+        name,
+        await snapshotEntry(
+            vscode.Uri.joinPath(uri, name),
+            type === vscode.FileType.Directory && !isArchiveFile(name),
+        ),
+    ] as [string, EntrySnapshot]);
+    return { kind: 'dir', children };
+}
+
+async function writeSnapshot(uri: vscode.Uri, snapshot: EntrySnapshot): Promise<void> {
+    if (snapshot.kind === 'file') {
+        await requireRawIo().writeStoredBytes(uri, snapshot.content);
+        return;
+    }
+    await createFolder(uri);
+    await parallelMap(snapshot.children, ([name, child]) => writeSnapshot(vscode.Uri.joinPath(uri, name), child));
+}
+
+interface TransferResult {
+    done: { src: vscode.Uri; dest: vscode.Uri }[];
+    errors: string[];
+}
+
+async function transferEntries(sources: vscode.Uri[], destinationFolder: vscode.Uri, move: boolean): Promise<TransferResult> {
+    const result: TransferResult = { done: [], errors: [] };
+    for (const src of pruneNestedUris(sources)) {
+        const name = path.basename(src.fsPath);
+        if (isSameOrInside(destinationFolder.fsPath, src.fsPath)) {
+            result.errors.push(`${name}: cannot ${move ? 'move' : 'copy'} a folder into itself`);
             continue;
         }
-        const target = await getUniqueTargetUri(destinationFolder, source.entryName);
-        targets.push(target);
+        if (move && normalizeFsPath(path.dirname(src.fsPath)) === normalizeFsPath(destinationFolder.fsPath)) {
+            continue; // Already there.
+        }
+        if (!(await pathExists(src))) {
+            result.errors.push(`${name}: no longer exists`);
+            continue;
+        }
         try {
+            const dest = await getUniqueTargetUri(destinationFolder, name);
             if (move) {
-                await moveEntry(source.resourceUri, target);
+                await moveEntry(src, dest);
             } else {
-                const isSrcVirtual = isPathInsideArchive(source.resourceUri.fsPath);
-                const isDestVirtual = isPathInsideArchive(target.fsPath);
-                const isCrossScheme = source.resourceUri.scheme !== target.scheme;
-                if (!isSrcVirtual && !isDestVirtual && !isCrossScheme) {
-                    await vscode.workspace.fs.copy(
-                        toFileUri(source.resourceUri),
-                        toFileUri(target),
-                        { overwrite: false },
-                    );
-                    try {
-                        await fs.promises.chmod(target.fsPath, 0o666);
-                    } catch (e) {
-                        // Ignore chmod errors
-                    }
-                } else {
-                    const stat = await vscode.workspace.fs.stat(source.resourceUri);
-                    const isDirectory = stat.type === vscode.FileType.Directory && !isArchiveFile(source.resourceUri.fsPath);
-                    if (isDirectory) {
-                        await vscode.workspace.fs.createDirectory(target);
-                        const dirEntries = await captureDirectory(source.resourceUri);
-                        const dirs = dirEntries.filter((e) => e.type === 'dir');
-                        const files = dirEntries.filter((e) => e.type === 'file');
-                        dirs.sort((a, b) => a.relativeUri.length - b.relativeUri.length);
-                        for (const entry of dirs) {
-                            const entryDestUri = vscode.Uri.joinPath(target, entry.relativeUri);
-                            await vscode.workspace.fs.createDirectory(entryDestUri);
-                        }
-                        await parallelMap(files, async (entry) => {
-                            const entryDestUri = vscode.Uri.joinPath(target, entry.relativeUri);
-                            await vscode.workspace.fs.writeFile(entryDestUri, entry.content!);
-                        });
-                    } else {
-                        const data = await vscode.workspace.fs.readFile(source.resourceUri);
-                        await vscode.workspace.fs.writeFile(target, data);
-                    }
-                }
+                await copyEntry(src, dest);
             }
+            result.done.push({ src, dest });
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            throw new Error(`${source.entryName}: ${message}`);
+            result.errors.push(`${name}: ${errorMessage(error)}`);
         }
     }
-    return targets;
-}
-
-interface CapturedEntry {
-    type: 'file' | 'dir';
-    relativeUri: string;
-    content?: Uint8Array;
-}
-
-interface DeletedItemBackup {
-    uri: vscode.Uri;
-    type: 'file' | 'dir';
-    fileContent?: Uint8Array;
-    dirEntries?: CapturedEntry[];
+    return result;
 }
 
 interface HistoryEntry {
@@ -401,179 +503,114 @@ interface HistoryEntry {
     redo: () => Promise<void>;
 }
 
-async function captureDirectory(dirUri: vscode.Uri): Promise<CapturedEntry[]> {
-    const results: CapturedEntry[] = [];
-    async function traverse(currentUri: vscode.Uri, relativeParts: string[]): Promise<void> {
-        const entries = await vscode.workspace.fs.readDirectory(currentUri);
-        await Promise.all(
-            entries.map(async ([name, fileType]) => {
-                const childUri = vscode.Uri.joinPath(currentUri, name);
-                const childRelativeParts = [...relativeParts, name];
-                const relativePath = childRelativeParts.join('/');
-                const isDir = fileType === vscode.FileType.Directory && !isArchiveFile(name);
-                if (isDir) {
-                    results.push({ type: 'dir', relativeUri: relativePath });
-                    await traverse(childUri, childRelativeParts);
-                } else {
-                    const content = await vscode.workspace.fs.readFile(childUri);
-                    results.push({ type: 'file', relativeUri: relativePath, content });
-                }
-            })
-        );
-    }
-    await traverse(dirUri, []);
-    return results;
-}
-
-async function writeCapturedEntriesConcurrent(baseUri: vscode.Uri, entries: CapturedEntry[]): Promise<void> {
-    const isVirtual = baseUri.scheme === 'sarc' || isPathInsideArchive(baseUri.fsPath);
-
-    if (isVirtual) {
-        // Sequential writing to avoid concurrent write locks and oead 'bad optional access' corruption on the same archive file.
-        for (const entry of entries) {
-            const dest = vscode.Uri.joinPath(baseUri, entry.relativeUri);
-            if (isBntxOrTexToGo(dest)) {
-                continue;
-            }
-            if (entry.type === 'dir') {
-                await vscode.workspace.fs.createDirectory(dest);
-            } else {
-                await vscode.workspace.fs.writeFile(dest, entry.content!);
-            }
-        }
-    } else {
-        // Concurrent writing for high-performance writes to separate disk files.
-        const dirs = entries.filter((e) => e.type === 'dir');
-        const files = entries.filter((e) => e.type === 'file');
-
-        await Promise.all(
-            dirs.map(async (entry) => {
-                const dest = vscode.Uri.joinPath(baseUri, entry.relativeUri);
-                if (!isBntxOrTexToGo(dest)) {
-                    await vscode.workspace.fs.createDirectory(dest);
-                }
-            }),
-        );
-
-        await Promise.all(
-            files.map(async (entry) => {
-                const dest = vscode.Uri.joinPath(baseUri, entry.relativeUri);
-                if (!isBntxOrTexToGo(dest)) {
-                    await vscode.workspace.fs.writeFile(dest, entry.content!);
-                }
-            }),
-        );
-    }
-}
-
-async function createBackups(items: ArchiveTreeItem[]): Promise<DeletedItemBackup[]> {
-    const backups: DeletedItemBackup[] = [];
-    await parallelMap(items, async (item) => {
-        if (!item.resourceUri) {
-            return;
-        }
-        const isVirtual = isPathInsideArchive(item.resourceUri.fsPath);
-        const resolvedUri = isVirtual ? item.resourceUri : toFileUri(item.resourceUri);
-        try {
-            const stat = await vscode.workspace.fs.stat(resolvedUri);
-            const isDirectory = stat.type === vscode.FileType.Directory && !isArchiveFile(resolvedUri.fsPath);
-            if (isDirectory) {
-                const dirEntries = await captureDirectory(resolvedUri);
-                backups.push({
-                    uri: resolvedUri,
-                    type: 'dir',
-                    dirEntries,
-                });
-            } else {
-                const fileContent = await vscode.workspace.fs.readFile(resolvedUri);
-                backups.push({
-                    uri: resolvedUri,
-                    type: 'file',
-                    fileContent,
-                });
-            }
-        } catch (err) {
-            console.error('Failed to create backup for ' + resolvedUri.toString(), err);
-        }
-    });
-    return backups;
-}
-
-async function restoreBackups(backups: DeletedItemBackup[]): Promise<void> {
-    await parallelMap(backups, async (backup) => {
-        if (backup.type === 'file') {
-            await vscode.workspace.fs.writeFile(backup.uri, backup.fileContent!);
-        } else {
-            await vscode.workspace.fs.createDirectory(backup.uri);
-            if (backup.dirEntries) {
-                await writeCapturedEntriesConcurrent(backup.uri, backup.dirEntries);
-            }
-        }
-    });
-}
-
-async function deleteBackups(backups: DeletedItemBackup[]): Promise<void> {
-    await parallelMap(backups, async (backup) => {
-        try {
-            const stat = await vscode.workspace.fs.stat(backup.uri);
-            const isDirectory = stat.type === vscode.FileType.Directory && !isArchiveFile(backup.uri.fsPath);
-            await vscode.workspace.fs.delete(backup.uri, {
-                recursive: isDirectory,
-                useTrash: false,
-            });
-        } catch {
-            // Already deleted or not found
-        }
-    });
-}
-
 class ArchiveHistoryManager {
     private undoStack: HistoryEntry[] = [];
     private redoStack: HistoryEntry[] = [];
+    private busy = false;
 
     push(entry: HistoryEntry) {
         this.undoStack.push(entry);
         this.redoStack = [];
     }
 
-    async undo() {
-        const entry = this.undoStack.pop();
-        if (!entry) {
-            void vscode.window.showInformationMessage('Nothing to undo');
+    private async run(from: HistoryEntry[], to: HistoryEntry[], kind: 'undo' | 'redo'): Promise<void> {
+        if (this.busy) {
             return;
         }
+        const entry = from.pop();
+        if (!entry) {
+            void vscode.window.showInformationMessage(kind === 'undo' ? 'Nothing to undo' : 'Nothing to redo');
+            return;
+        }
+        this.busy = true;
         try {
-            await entry.undo();
-            this.redoStack.push(entry);
-            void vscode.window.showInformationMessage(`Undid: ${entry.description}`);
-            refreshArchives();
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Window, title: `${kind === 'undo' ? 'Undoing' : 'Redoing'} ${entry.description}...` },
+                () => (kind === 'undo' ? entry.undo() : entry.redo()),
+            );
+            to.push(entry);
+            void vscode.window.showInformationMessage(`${kind === 'undo' ? 'Undid' : 'Redid'}: ${entry.description}`);
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            void vscode.window.showErrorMessage(`Undo failed: ${message}`);
-            this.undoStack.push(entry);
+            void vscode.window.showErrorMessage(`${kind === 'undo' ? 'Undo' : 'Redo'} failed: ${errorMessage(error)}`);
+            from.push(entry);
+        } finally {
+            this.busy = false;
+            refreshArchives();
         }
     }
 
-    async redo() {
-        const entry = this.redoStack.pop();
-        if (!entry) {
-            void vscode.window.showInformationMessage('Nothing to redo');
-            return;
-        }
-        try {
-            await entry.redo();
-            this.undoStack.push(entry);
-            void vscode.window.showInformationMessage(`Redid: ${entry.description}`);
-            refreshArchives();
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            void vscode.window.showErrorMessage(`Redo failed: ${message}`);
-            this.redoStack.push(entry);
-        }
+    undo() {
+        return this.run(this.undoStack, this.redoStack, 'undo');
+    }
+
+    redo() {
+        return this.run(this.redoStack, this.undoStack, 'redo');
     }
 }
 
 const historyManager = new ArchiveHistoryManager();
+
+function describeCount(names: string[]): string {
+    return names.length === 1 ? names[0]! : `${names.length} items`;
+}
+
+function reportTransferErrors(verb: string, errors: string[]): void {
+    if (errors.length === 0) {
+        return;
+    }
+    void vscode.window.showErrorMessage(
+        `${verb} failed for ${errors.length} item(s): ${errors.slice(0, 3).join('; ')}${errors.length > 3 ? '; ...' : ''}`,
+    );
+}
+
+/** Copy or move entries into a folder, recording undo history. */
+async function pasteInto(sources: vscode.Uri[], folderUri: vscode.Uri, move: boolean, verb: string): Promise<TransferResult> {
+    const label = describeCount(sources.map((uri) => path.basename(uri.fsPath)));
+    const result = await vscode.window.withProgress(
+        {
+            location: vscode.ProgressLocation.Notification,
+            title: `${move ? 'Moving' : 'Copying'} ${label}...`,
+            cancellable: false,
+        },
+        () => transferEntries(sources, folderUri, move),
+    );
+    const done = result.done;
+    if (done.length > 0) {
+        const description = `${verb} ${describeCount(done.map((entry) => path.basename(entry.src.fsPath)))}`;
+        historyManager.push(
+            move
+                ? {
+                    description,
+                    undo: async () => {
+                        for (const entry of [...done].reverse()) {
+                            await moveEntry(entry.dest, entry.src);
+                        }
+                    },
+                    redo: async () => {
+                        for (const entry of done) {
+                            await moveEntry(entry.src, entry.dest);
+                        }
+                    },
+                }
+                : {
+                    description,
+                    undo: async () => {
+                        for (const entry of done) {
+                            await deleteEntry(entry.dest);
+                        }
+                    },
+                    redo: async () => {
+                        for (const entry of done) {
+                            await copyEntry(entry.src, entry.dest);
+                        }
+                    },
+                },
+        );
+    }
+    reportTransferErrors(verb, result.errors);
+    refreshArchives();
+    return result;
+}
 
 export function registerArchiveFileCommands(context: vscode.ExtensionContext): void {
     const initialClipboard = context.workspaceState.get<{ uri: string; move: boolean }[]>(CLIPBOARD_KEY, []);
@@ -583,66 +620,73 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
         initialClipboard.length > 0,
     );
 
+    const setClipboard = async (uris: vscode.Uri[], move: boolean): Promise<void> => {
+        await context.workspaceState.update(
+            CLIPBOARD_KEY,
+            uris.map((uri) => ({ uri: uri.toString(), move })),
+        );
+        await vscode.commands.executeCommand('setContext', 'totk-editor.archiveClipboardNotEmpty', uris.length > 0);
+    };
+
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'totk-editor.archiveDelete',
-            async (item?: ArchiveTreeItem) => {
-                const items = pruneNestedSelections(selectedItems(item).filter(isDiskMutableItem));
+            async (item?: unknown, selection?: unknown) => {
+                const items = pruneNestedSelections(selectedItems(item, selection).filter(isMovableItem));
                 if (items.length === 0) {
                     return;
                 }
-                const label =
-                    items.length === 1
-                        ? items[0]!.entryName
-                        : `${items.length} selected items`;
+                const label = describeCount(items.map((entry) => entry.entryName));
                 const confirm = await vscode.window.showWarningMessage(
                     `Delete ${label}?`,
-                    { modal: true },
+                    { modal: true, detail: 'You can undo this with Ctrl+Z in Your Projects while VS Code stays open.' },
                     'Delete',
                 );
                 if (confirm !== 'Delete') {
                     return;
                 }
-                try {
-                    await vscode.window.withProgress(
-                        {
-                            location: vscode.ProgressLocation.Notification,
-                            title: `Deleting ${label}...`,
-                            cancellable: false,
-                        },
-                        async () => {
-                            const backups = await createBackups(items);
-                            await parallelMap(items, async (entry) => {
-                                const exists = await vscode.workspace.fs.stat(entry.resourceUri).then(
-                                    () => true,
-                                    () => false,
-                                );
-                                if (!exists) {
-                                    return;
+                const deleted: { uri: vscode.Uri; snapshot: EntrySnapshot }[] = [];
+                const errors: string[] = [];
+                await vscode.window.withProgress(
+                    {
+                        location: vscode.ProgressLocation.Notification,
+                        title: `Deleting ${label}...`,
+                        cancellable: false,
+                    },
+                    async () => {
+                        for (const entry of items) {
+                            const uri = entry.resourceUri;
+                            try {
+                                if (!(await pathExists(uri))) {
+                                    continue;
                                 }
-                                const stat = await vscode.workspace.fs.stat(entry.resourceUri);
-                                const isDirectory = stat.type === vscode.FileType.Directory && !isArchiveFile(entry.resourceUri.fsPath);
-                                await vscode.workspace.fs.delete(entry.resourceUri, {
-                                    recursive: isDirectory,
-                                    useTrash: false,
-                                });
-                            });
-                            historyManager.push({
-                                description: `Delete ${label}`,
-                                undo: async () => {
-                                    await restoreBackups(backups);
-                                },
-                                redo: async () => {
-                                    await deleteBackups(backups);
-                                },
-                            });
-                            refreshArchives();
+                                // Never delete something we could not back up for undo.
+                                const snapshot = await snapshotEntry(uri);
+                                await deleteEntry(uri);
+                                deleted.push({ uri, snapshot });
+                            } catch (error) {
+                                errors.push(`${entry.entryName}: ${errorMessage(error)}`);
+                            }
                         }
-                    );
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    void vscode.window.showErrorMessage(`Delete failed: ${message}`);
+                    },
+                );
+                if (deleted.length > 0) {
+                    historyManager.push({
+                        description: `Delete ${describeCount(deleted.map((entry) => path.basename(entry.uri.fsPath)))}`,
+                        undo: async () => {
+                            for (const entry of deleted) {
+                                await writeSnapshot(entry.uri, entry.snapshot);
+                            }
+                        },
+                        redo: async () => {
+                            for (const entry of deleted) {
+                                await deleteEntry(entry.uri);
+                            }
+                        },
+                    });
                 }
+                reportTransferErrors('Delete', errors);
+                refreshArchives();
             },
         ),
     );
@@ -650,67 +694,66 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'totk-editor.archiveRename',
-            async (item?: ArchiveTreeItem) => {
-                const entry = selectedItems(item)[0];
-                if (!entry?.resourceUri || !isDiskMutableItem(entry)) {
+            async (item?: unknown, selection?: unknown) => {
+                const entry = selectedItems(item, selection)[0];
+                if (!entry?.resourceUri || !isMovableItem(entry)) {
                     return;
                 }
                 if (entry.entryName.toLowerCase().endsWith('.tkproj')) {
                     void vscode.window.showErrorMessage('Project files must be named exactly ".tkproj" and cannot be renamed.');
                     return;
                 }
-                const newName = await vscode.window.showInputBox({
+                const sourceUri = toSarc(entry.resourceUri);
+                const parentUri = parentDirectoryUri(sourceUri);
+                const dotIndex = entry.entryName.indexOf('.', 1);
+                const rawName = await vscode.window.showInputBox({
                     prompt: 'New name',
                     value: entry.entryName,
-                    validateInput: (value) => {
-                        if (!value.trim()) {return 'Name cannot be empty';}
-                        if (value.toLowerCase().endsWith('.tkproj') && value.toLowerCase() !== '.tkproj') {
-                            return 'Project file must be named exactly ".tkproj"';
-                        }
-                        return undefined;
-                    }
+                    valueSelection: [0, dotIndex > 0 ? dotIndex : entry.entryName.length],
+                    validateInput: validateEntryName,
                 });
+                const newName = rawName?.trim();
                 if (!newName || newName === entry.entryName) {
                     return;
                 }
-                const sourceUri = entry.resourceUri;
-                const target = vscode.Uri.joinPath(parentDirectoryUri(sourceUri), newName);
-                try {
-                    const updateInfoJson = async (folderUri: vscode.Uri, name: string) => {
-                        if (isAdapterOptionFolderContextValue(entry.contextValue)) {
-                            const infoUri = vscode.Uri.joinPath(folderUri, 'info.json');
-                            try {
-                                const infoContent = await vscode.workspace.fs.readFile(infoUri);
-                                const infoData = JSON.parse(new TextDecoder().decode(infoContent));
-                                if (infoData.Name !== undefined) {
-                                    infoData.Name = name;
-                                    await vscode.workspace.fs.writeFile(infoUri, new Uint8Array(new TextEncoder().encode(JSON.stringify(infoData))));
-                                }
-                            } catch (e) {
-                                // ignore
-                            }
+                const isCaseOnly = newName.toLowerCase() === entry.entryName.toLowerCase();
+                if (!isCaseOnly && (await findChildCaseInsensitive(parentUri, newName))) {
+                    void vscode.window.showErrorMessage(`"${newName}" already exists in this folder.`);
+                    return;
+                }
+                const target = vscode.Uri.joinPath(parentUri, newName);
+                const updateInfoJson = async (folderUri: vscode.Uri, name: string) => {
+                    if (!isAdapterOptionFolderContextValue(entry.contextValue)) {
+                        return;
+                    }
+                    const infoPath = path.join(folderUri.fsPath, 'info.json');
+                    try {
+                        const infoText = await fs.promises.readFile(infoPath, 'utf8');
+                        const infoData = JSON.parse(infoText);
+                        if (infoData.Name !== undefined) {
+                            infoData.Name = name;
+                            const indent = /^\{\s*\n([ \t]+)/.exec(infoText)?.[1] ?? '';
+                            await fs.promises.writeFile(infoPath, JSON.stringify(infoData, null, indent || undefined));
                         }
-                    };
-
-                    await vscode.workspace.fs.rename(sourceUri, target, { overwrite: false });
-                    await updateInfoJson(target, newName);
-
+                    } catch {
+                        // Missing or unreadable info.json: nothing to keep in sync.
+                    }
+                };
+                const doRename = async (from: vscode.Uri, to: vscode.Uri, name: string) => {
+                    await moveEntry(from, to);
+                    await updateInfoJson(to, name);
+                };
+                try {
+                    await doRename(sourceUri, target, newName);
                     historyManager.push({
                         description: `Rename ${entry.entryName} to ${newName}`,
-                        undo: async () => {
-                            await vscode.workspace.fs.rename(target, sourceUri, { overwrite: false });
-                            await updateInfoJson(sourceUri, entry.entryName);
-                        },
-                        redo: async () => {
-                            await vscode.workspace.fs.rename(sourceUri, target, { overwrite: false });
-                            await updateInfoJson(target, newName);
-                        },
+                        undo: () => doRename(target, sourceUri, entry.entryName),
+                        redo: () => doRename(sourceUri, target, newName),
                     });
-                    refreshArchives();
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    void vscode.window.showErrorMessage(`Rename failed: ${message}`);
+                    void vscode.window.showErrorMessage(`Rename failed: ${errorMessage(error)}`);
                 }
+                refreshArchives();
             },
         ),
     );
@@ -718,45 +761,41 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'totk-editor.archiveNewFile',
-            async (item?: ArchiveTreeItem) => {
-                const folderUri = await resolveTargetFolder(item);
+            async (item?: unknown, selection?: unknown) => {
+                const folderUri = resolveTargetFolder(item, selection);
                 if (!folderUri) {
                     return;
                 }
-                const name = await vscode.window.showInputBox({
+                const rawName = await vscode.window.showInputBox({
                     prompt: 'New file name',
-                    validateInput: (value) => {
-                        if (!value.trim()) {return 'Name cannot be empty';}
-                        if (value.toLowerCase().endsWith('.tkproj') && value.toLowerCase() !== '.tkproj') {
-                            return 'Project file must be named exactly ".tkproj"';
-                        }
-                        return undefined;
-                    }
+                    validateInput: validateEntryName,
                 });
+                const name = rawName?.trim();
                 if (!name) {
                     return;
                 }
-                const target = vscode.Uri.joinPath(folderUri, name);
+                if (await findChildCaseInsensitive(folderUri, name)) {
+                    void vscode.window.showErrorMessage(`"${name}" already exists in this folder.`);
+                    return;
+                }
+                const target = vscode.Uri.joinPath(toSarc(folderUri), name);
                 try {
                     const initial = await initialContentForNewFile(name);
                     if (initial === undefined) {
                         return;
                     }
-                    await vscode.workspace.fs.writeFile(target, initial);
+                    await requireRawIo().writeStoredBytes(target, initial);
                     historyManager.push({
                         description: `Create file ${name}`,
-                        undo: async () => {
-                            await vscode.workspace.fs.delete(target, { recursive: false, useTrash: false });
-                        },
-                        redo: async () => {
-                            await vscode.workspace.fs.writeFile(target, initial);
-                        },
+                        undo: () => deleteEntry(target),
+                        redo: () => requireRawIo().writeStoredBytes(target, initial),
                     });
                     refreshArchives();
-                    await vscode.commands.executeCommand('vscode.open', target);
+                    if (!isArchiveFileName(name)) {
+                        await vscode.commands.executeCommand('vscode.open', target);
+                    }
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    void vscode.window.showErrorMessage(`Create file failed: ${message}`);
+                    void vscode.window.showErrorMessage(`Create file failed: ${errorMessage(error)}`);
                 }
             },
         ),
@@ -765,211 +804,126 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'totk-editor.archiveNewFolder',
-            async (item?: ArchiveTreeItem) => {
-                const folderUri = await resolveTargetFolder(item);
+            async (item?: unknown, selection?: unknown) => {
+                const folderUri = resolveTargetFolder(item, selection);
                 if (!folderUri) {
                     return;
                 }
-                const name = await vscode.window.showInputBox({
+                const rawName = await vscode.window.showInputBox({
                     prompt: 'New folder name',
-                    validateInput: (value) =>
-                        value.trim() ? undefined : 'Name cannot be empty',
+                    validateInput: validateEntryName,
                 });
+                const name = rawName?.trim();
                 if (!name) {
                     return;
                 }
-                const target = vscode.Uri.joinPath(folderUri, name);
+                if (await findChildCaseInsensitive(folderUri, name)) {
+                    void vscode.window.showErrorMessage(`"${name}" already exists in this folder.`);
+                    return;
+                }
+                const target = vscode.Uri.joinPath(toSarc(folderUri), name);
                 try {
-                    await vscode.workspace.fs.createDirectory(target);
+                    await createFolder(target);
+                    if (isPathInsideArchive(target.fsPath)) {
+                        void vscode.window.showInformationMessage(
+                            'Archives cannot store empty folders. Add a file to this folder or it will disappear when VS Code restarts.',
+                        );
+                    }
                     historyManager.push({
                         description: `Create folder ${name}`,
-                        undo: async () => {
-                            await vscode.workspace.fs.delete(target, { recursive: true, useTrash: false });
-                        },
-                        redo: async () => {
-                            await vscode.workspace.fs.createDirectory(target);
-                        },
+                        undo: () => deleteEntry(target),
+                        redo: () => createFolder(target),
                     });
                     refreshArchives();
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    void vscode.window.showErrorMessage(`Create folder failed: ${message}`);
+                    void vscode.window.showErrorMessage(`Create folder failed: ${errorMessage(error)}`);
                 }
             },
         ),
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('totk-editor.archiveCopy', async (item?: ArchiveTreeItem) => {
-            let items: (ArchiveTreeItem | DumpTreeItem)[] = [];
-            if (item) {
-                items = [item];
+        vscode.commands.registerCommand('totk-editor.archiveCopy', async (item?: unknown, selection?: unknown) => {
+            let items: (ArchiveTreeItem | DumpTreeItem)[];
+            const fromDump =
+                (item as { source?: string } | undefined)?.source === 'gameDump' ||
+                (isTreeItemArg(item) && (item.contextValue ?? '').startsWith('dump'));
+            if (fromDump) {
+                const dumpSelection = getDumpSelection();
+                const clicked = isTreeItemArg(item) ? (item as unknown as DumpTreeItem) : undefined;
+                items = clicked && !dumpSelection.some((entry) => entry.resourceUri.toString() === clicked.resourceUri.toString())
+                    ? [clicked]
+                    : dumpSelection;
             } else {
-                const archiveSel = getArchiveSelection();
-                if (archiveSel.length > 0) {
-                    items = archiveSel;
-                } else {
-                    items = getDumpSelection();
-                }
+                items = selectedItems(item, selection).filter(isCopyableItem);
             }
-            const validItems = items.filter((entry) => entry && entry.resourceUri);
-            if (validItems.length === 0) {
+            const uris = items.filter((entry) => entry?.resourceUri).map((entry) => entry.resourceUri);
+            if (uris.length === 0) {
                 return;
             }
-            await context.workspaceState.update(
-                CLIPBOARD_KEY,
-                validItems.map((entry) => ({ uri: entry.resourceUri.toString(), move: false })),
-            );
-            await vscode.commands.executeCommand('setContext', 'totk-editor.archiveClipboardNotEmpty', true);
-            const label = validItems.length === 1 ? path.basename(validItems[0]!.resourceUri.fsPath) : `${validItems.length} items`;
-            void vscode.window.showInformationMessage(`Copied ${label} to clipboard`);
+            await setClipboard(uris, false);
+            vscode.window.setStatusBarMessage(`Copied ${describeCount(uris.map((uri) => path.basename(uri.fsPath)))}`, 3000);
         }),
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('totk-editor.archiveCut', async (item?: ArchiveTreeItem) => {
-            let items: ArchiveTreeItem[] = [];
-            if (item) {
-                items = [item];
-            } else {
-                items = getArchiveSelection();
-            }
-            const mutableItems = items.filter(isDiskMutableItem);
-            if (mutableItems.length === 0) {
+        vscode.commands.registerCommand('totk-editor.archiveCut', async (item?: unknown, selection?: unknown) => {
+            const uris = selectedItems(item, selection).filter(isMovableItem).map((entry) => entry.resourceUri);
+            if (uris.length === 0) {
                 return;
             }
-            await context.workspaceState.update(
-                CLIPBOARD_KEY,
-                mutableItems.map((entry) => ({ uri: entry.resourceUri.toString(), move: true })),
-            );
-            await vscode.commands.executeCommand('setContext', 'totk-editor.archiveClipboardNotEmpty', true);
-            const label = mutableItems.length === 1 ? path.basename(mutableItems[0]!.resourceUri.fsPath) : `${mutableItems.length} items`;
-            void vscode.window.showInformationMessage(`Cut ${label} to clipboard`);
+            await setClipboard(uris, true);
+            vscode.window.setStatusBarMessage(`Cut ${describeCount(uris.map((uri) => path.basename(uri.fsPath)))}`, 3000);
         }),
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('totk-editor.archivePaste', async (item?: any) => {
-            const clipboard = context.workspaceState.get<{ uri: string; move: boolean }[]>(
-                CLIPBOARD_KEY,
-                [],
-            );
+        vscode.commands.registerCommand('totk-editor.archivePaste', async (item?: unknown, selection?: unknown) => {
+            const clipboard = context.workspaceState.get<{ uri: string; move: boolean }[]>(CLIPBOARD_KEY, []);
             if (clipboard.length === 0) {
                 return;
             }
             let folderUri: vscode.Uri | undefined;
             if (item instanceof vscode.Uri) {
-                const stat = await vscode.workspace.fs.stat(item);
-                const isDirectory = stat.type === vscode.FileType.Directory && !isArchiveFile(item.fsPath);
-                if (isDirectory) {
-                    folderUri = item;
-                } else {
-                    folderUri = vscode.Uri.file(path.dirname(item.fsPath));
-                }
+                // Invoked from the built-in Explorer.
+                folderUri = (await isFolderEntry(item).catch(() => false))
+                    ? item
+                    : vscode.Uri.file(path.dirname(item.fsPath));
             } else {
-                folderUri = await resolveTargetFolder(item);
+                folderUri = resolveTargetFolder(item, selection, false);
             }
-
             if (!folderUri) {
                 const activeEditor = vscode.window.activeTextEditor;
                 if (activeEditor && activeEditor.document.uri.scheme === 'file') {
                     folderUri = vscode.Uri.file(path.dirname(activeEditor.document.uri.fsPath));
                 } else if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-                    folderUri = vscode.workspace.workspaceFolders[0].uri;
+                    folderUri = vscode.workspace.workspaceFolders[0]!.uri;
                 }
             }
-
             if (!folderUri) {
-                void vscode.window.showWarningMessage('No destination directory selected to paste.');
+                void vscode.window.showWarningMessage('Select a folder to paste into.');
                 return;
             }
 
-            const sources = clipboard.map((entry) => {
-                const uri = vscode.Uri.parse(entry.uri);
-                const name = path.basename(uri.fsPath);
-                return {
-                    resourceUri: uri,
-                    entryName: name,
-                    contextValue: 'archiveFile',
-                } as ArchiveTreeItem;
-            });
+            const sources = clipboard.map((entry) => vscode.Uri.parse(entry.uri));
             const isMove = clipboard[0]!.move;
-            const label = sources.length === 1 ? sources[0]!.entryName : `${sources.length} items`;
-            const progressTitle = isMove ? `Moving ${label}...` : `Copying ${label}...`;
-            try {
-                await vscode.window.withProgress(
-                    {
-                        location: vscode.ProgressLocation.Notification,
-                        title: progressTitle,
-                        cancellable: false,
-                    },
-                    async () => {
-                        if (isMove) {
-                            const targets = await copyEntries(sources, folderUri!, true);
-                            const moves = sources.map((source, index) => ({
-                                src: source.resourceUri,
-                                dest: targets[index]!,
-                            }));
-                            historyManager.push({
-                                description: `Move ${sources.length === 1 ? sources[0]!.entryName : `${sources.length} items`}`,
-                                undo: async () => {
-                                    await parallelMap(moves, async (move) => {
-                                        await moveEntry(move.dest, move.src);
-                                    });
-                                },
-                                redo: async () => {
-                                    await parallelMap(moves, async (move) => {
-                                        await moveEntry(move.src, move.dest);
-                                    });
-                                },
-                            });
-                            await context.workspaceState.update(CLIPBOARD_KEY, []);
-                            await vscode.commands.executeCommand('setContext', 'totk-editor.archiveClipboardNotEmpty', false);
-                        } else {
-                            const targets = await copyEntries(sources, folderUri!, false);
-                            const treeTargets = targets.map((target) => ({
-                                uri: target,
-                                resourceUri: target,
-                                entryName: path.basename(target.fsPath),
-                            } as ArchiveTreeItem));
-                            const backups = await createBackups(treeTargets);
-                            historyManager.push({
-                                description: `Copy ${sources.length === 1 ? sources[0]!.entryName : `${sources.length} items`}`,
-                                undo: async () => {
-                                    await deleteBackups(backups);
-                                },
-                                redo: async () => {
-                                    await restoreBackups(backups);
-                                },
-                            });
-                        }
-                    }
-                );
-                refreshArchives();
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                void vscode.window.showErrorMessage(`Paste failed: ${message}`);
+            const result = await pasteInto(sources, folderUri, isMove, isMove ? 'Move' : 'Copy');
+            if (isMove && result.done.length > 0) {
+                await setClipboard([], false);
             }
         }),
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('totk-editor.archiveUndo', async () => {
-            await historyManager.undo();
-        }),
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('totk-editor.archiveRedo', async () => {
-            await historyManager.redo();
-        }),
+        vscode.commands.registerCommand('totk-editor.archiveUndo', () => historyManager.undo()),
+        vscode.commands.registerCommand('totk-editor.archiveRedo', () => historyManager.redo()),
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'totk-editor.archiveImportFile',
-            async (item?: ArchiveTreeItem) => {
-                const folderUri = await resolveTargetFolder(item);
+            async (item?: unknown, selection?: unknown) => {
+                const folderUri = resolveTargetFolder(item, selection);
                 if (!folderUri) {
                     return;
                 }
@@ -978,79 +932,15 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                     return;
                 }
                 const picked = await vscode.window.showOpenDialog({
-                    canSelectMany: false,
+                    canSelectMany: true,
                     canSelectFiles: true,
                     canSelectFolders: false,
-                    title: 'Select File to Import',
+                    title: 'Select Files to Import',
                 });
-                if (!picked?.[0]) {
+                if (!picked?.length) {
                     return;
                 }
-                const srcUri = picked[0];
-                const fileName = path.basename(srcUri.fsPath);
-                const destUri = vscode.Uri.joinPath(folderUri, fileName);
-                
-                if (isBntxOrTexToGo(destUri)) {
-                    void vscode.window.showWarningMessage('Cannot import BNTX or TexToGo files.');
-                    return;
-                }
-
-                try {
-                    let existedBefore = false;
-                    let oldContent: Uint8Array | undefined;
-                    try {
-                        const stat = await vscode.workspace.fs.stat(destUri);
-                        if (stat.type === vscode.FileType.File) {
-                            existedBefore = true;
-                        }
-                    } catch {
-                        // File doesn't exist
-                    }
-
-                    if (existedBefore) {
-                        const confirm = await vscode.window.showWarningMessage(
-                            `A file named "${fileName}" already exists. Overwrite?`,
-                            { modal: true },
-                            'Overwrite',
-                        );
-                        if (confirm !== 'Overwrite') {
-                            return;
-                        }
-                        oldContent = await vscode.workspace.fs.readFile(destUri);
-                    }
-
-                    await vscode.window.withProgress(
-                        {
-                            location: vscode.ProgressLocation.Notification,
-                            title: `Importing file ${fileName}...`,
-                            cancellable: false,
-                        },
-                        async () => {
-                            const content = await vscode.workspace.fs.readFile(srcUri);
-                            await vscode.workspace.fs.writeFile(destUri, content);
-
-                            historyManager.push({
-                                description: `Import file ${fileName}`,
-                                undo: async () => {
-                                    if (existedBefore && oldContent) {
-                                        await vscode.workspace.fs.writeFile(destUri, oldContent);
-                                    } else {
-                                        await vscode.workspace.fs.delete(destUri, { recursive: false, useTrash: false });
-                                    }
-                                },
-                                redo: async () => {
-                                    await vscode.workspace.fs.writeFile(destUri, content);
-                                },
-                            });
-                        }
-                    );
-
-                    void vscode.window.showInformationMessage(`Successfully imported file: ${fileName}`);
-                    refreshArchives();
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    void vscode.window.showErrorMessage(`Import file failed: ${message}`);
-                }
+                await importEntries(picked, folderUri);
             },
         ),
     );
@@ -1058,8 +948,8 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'totk-editor.archiveImportFolder',
-            async (item?: ArchiveTreeItem) => {
-                const folderUri = await resolveTargetFolder(item);
+            async (item?: unknown, selection?: unknown) => {
+                const folderUri = resolveTargetFolder(item, selection);
                 if (!folderUri) {
                     return;
                 }
@@ -1068,94 +958,15 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                     return;
                 }
                 const picked = await vscode.window.showOpenDialog({
-                    canSelectMany: false,
+                    canSelectMany: true,
                     canSelectFiles: false,
                     canSelectFolders: true,
-                    title: 'Select Folder to Import',
+                    title: 'Select Folders to Import',
                 });
-                if (!picked?.[0]) {
+                if (!picked?.length) {
                     return;
                 }
-                const srcUri = picked[0];
-                const folderName = path.basename(srcUri.fsPath);
-                const destUri = vscode.Uri.joinPath(folderUri, folderName);
-
-                if (isBntxOrTexToGo(destUri)) {
-                    void vscode.window.showWarningMessage('Cannot import BNTX or TexToGo folders.');
-                    return;
-                }
-
-                try {
-                    let existedBefore = false;
-                    let oldBackup: DeletedItemBackup | undefined;
-                    try {
-                        const stat = await vscode.workspace.fs.stat(destUri);
-                        existedBefore = true;
-                        
-                        const confirm = await vscode.window.showWarningMessage(
-                            `A folder named "${folderName}" already exists. Overwrite and merge?`,
-                            { modal: true },
-                            'Merge/Overwrite',
-                        );
-                        if (confirm !== 'Merge/Overwrite') {
-                            return;
-                        }
-
-                        const isDir = stat.type === vscode.FileType.Directory && !isArchiveFile(destUri.fsPath);
-                        if (isDir) {
-                            const dirEntries = await captureDirectory(destUri);
-                            oldBackup = { uri: destUri, type: 'dir', dirEntries };
-                        } else {
-                            const fileContent = await vscode.workspace.fs.readFile(destUri);
-                            oldBackup = { uri: destUri, type: 'file', fileContent };
-                        }
-                    } catch {
-                        // Doesn't exist
-                    }
-
-                    await vscode.window.withProgress(
-                        {
-                            location: vscode.ProgressLocation.Notification,
-                            title: `Importing folder ${folderName}...`,
-                            cancellable: false,
-                        },
-                        async () => {
-                            const srcEntries = await captureDirectory(srcUri);
-                            await vscode.workspace.fs.createDirectory(destUri);
-                            await writeCapturedEntriesConcurrent(destUri, srcEntries);
-
-                            historyManager.push({
-                                description: `Import folder ${folderName}`,
-                                undo: async () => {
-                                    await vscode.workspace.fs.delete(destUri, { recursive: true, useTrash: false });
-                                    if (existedBefore && oldBackup) {
-                                        if (oldBackup.type === 'file') {
-                                            await vscode.workspace.fs.writeFile(destUri, oldBackup.fileContent!);
-                                        } else {
-                                            await vscode.workspace.fs.createDirectory(destUri);
-                                            if (oldBackup.dirEntries) {
-                                                await writeCapturedEntriesConcurrent(destUri, oldBackup.dirEntries);
-                                            }
-                                        }
-                                    }
-                                },
-                                redo: async () => {
-                                    if (existedBefore) {
-                                        await vscode.workspace.fs.delete(destUri, { recursive: true, useTrash: false });
-                                    }
-                                    await vscode.workspace.fs.createDirectory(destUri);
-                                    await writeCapturedEntriesConcurrent(destUri, srcEntries);
-                                },
-                            });
-                        }
-                    );
-
-                    void vscode.window.showInformationMessage(`Successfully imported folder: ${folderName}`);
-                    refreshArchives();
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    void vscode.window.showErrorMessage(`Import folder failed: ${message}`);
-                }
+                await importEntries(picked, folderUri);
             },
         ),
     );
@@ -1163,12 +974,12 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'totk-editor.archiveReplaceFile',
-            async (item?: ArchiveTreeItem) => {
-                const entry = selectedItems(item)[0];
-                if (!entry?.resourceUri || !isDiskMutableItem(entry)) {
+            async (item?: unknown, selection?: unknown) => {
+                const entry = selectedItems(item, selection)[0];
+                if (!entry?.resourceUri || !isMovableItem(entry)) {
                     return;
                 }
-                const targetUri = entry.resourceUri;
+                const targetUri = toSarc(entry.resourceUri);
                 if (isBntxOrTexToGo(targetUri)) {
                     await vscode.commands.executeCommand('totk-editor.importTextureDds', targetUri);
                     return;
@@ -1187,12 +998,9 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                 if (!picked?.[0]) {
                     return;
                 }
-                const srcUri = picked[0];
+                const srcPath = picked[0].fsPath;
 
-                 try {
-                    let oldContent: Uint8Array;
-                    let newContent: Uint8Array;
-
+                try {
                     await vscode.window.withProgress(
                         {
                             location: vscode.ProgressLocation.Notification,
@@ -1200,28 +1008,22 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                             cancellable: false,
                         },
                         async () => {
-                            oldContent = await vscode.workspace.fs.readFile(targetUri);
-                            newContent = await vscode.workspace.fs.readFile(srcUri);
-                            await vscode.workspace.fs.writeFile(targetUri, newContent);
-
+                            const io = requireRawIo();
+                            const oldContent = await io.readStoredBytes(targetUri);
+                            const newContent = await fs.promises.readFile(srcPath);
+                            await io.writeStoredBytes(targetUri, newContent);
                             historyManager.push({
                                 description: `Replace file ${entry.entryName}`,
-                                undo: async () => {
-                                    await vscode.workspace.fs.writeFile(targetUri, oldContent);
-                                },
-                                redo: async () => {
-                                    await vscode.workspace.fs.writeFile(targetUri, newContent);
-                                },
+                                undo: () => io.writeStoredBytes(targetUri, oldContent),
+                                redo: () => io.writeStoredBytes(targetUri, newContent),
                             });
-                        }
+                        },
                     );
-
-                    void vscode.window.showInformationMessage(`Successfully replaced file: ${entry.entryName}`);
-                    refreshArchives();
+                    void vscode.window.showInformationMessage(`Replaced ${entry.entryName}.`);
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    void vscode.window.showErrorMessage(`Replace file failed: ${message}`);
+                    void vscode.window.showErrorMessage(`Replace file failed: ${errorMessage(error)}`);
                 }
+                refreshArchives();
             },
         ),
     );
@@ -1229,12 +1031,12 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'totk-editor.archiveReplaceFolder',
-            async (item?: ArchiveTreeItem) => {
-                const entry = selectedItems(item)[0];
-                if (!entry?.resourceUri || !isDiskMutableItem(entry)) {
+            async (item?: unknown, selection?: unknown) => {
+                const entry = selectedItems(item, selection)[0];
+                if (!entry?.resourceUri || !isMovableItem(entry)) {
                     return;
                 }
-                const targetUri = entry.resourceUri;
+                const targetUri = toSarc(entry.resourceUri);
                 if (isBntxOrTexToGo(targetUri)) {
                     void vscode.window.showWarningMessage('Replace is not supported for BNTX or TexToGo folders.');
                     return;
@@ -1250,11 +1052,12 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                     return;
                 }
                 const srcUri = picked[0];
+                if (isSameOrInside(srcUri.fsPath, targetUri.fsPath) || isSameOrInside(targetUri.fsPath, srcUri.fsPath)) {
+                    void vscode.window.showErrorMessage('The replacement folder cannot be inside (or contain) the folder being replaced.');
+                    return;
+                }
 
                 try {
-                    let oldEntries: CapturedEntry[];
-                    let srcEntries: CapturedEntry[];
-
                     await vscode.window.withProgress(
                         {
                             location: vscode.ProgressLocation.Notification,
@@ -1262,45 +1065,31 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                             cancellable: false,
                         },
                         async () => {
-                            oldEntries = await captureDirectory(targetUri);
-                            const oldBackup: DeletedItemBackup = { uri: targetUri, type: 'dir', dirEntries: oldEntries };
-
-                            srcEntries = await captureDirectory(srcUri);
-
-                            await vscode.workspace.fs.delete(targetUri, { recursive: true, useTrash: false });
-                            await vscode.workspace.fs.createDirectory(targetUri);
-                            await writeCapturedEntriesConcurrent(targetUri, srcEntries);
-
+                            const oldSnapshot = await snapshotEntry(targetUri, true);
+                            const newSnapshot = await snapshotEntry(srcUri, true);
+                            const replaceWith = async (snapshot: EntrySnapshot) => {
+                                await deleteEntry(targetUri);
+                                await writeSnapshot(targetUri, snapshot);
+                            };
+                            await replaceWith(newSnapshot);
                             historyManager.push({
                                 description: `Replace folder ${entry.entryName}`,
-                                undo: async () => {
-                                    await vscode.workspace.fs.delete(targetUri, { recursive: true, useTrash: false });
-                                    await vscode.workspace.fs.createDirectory(targetUri);
-                                    if (oldBackup.dirEntries) {
-                                        await writeCapturedEntriesConcurrent(targetUri, oldBackup.dirEntries);
-                                    }
-                                },
-                                redo: async () => {
-                                    await vscode.workspace.fs.delete(targetUri, { recursive: true, useTrash: false });
-                                    await vscode.workspace.fs.createDirectory(targetUri);
-                                    await writeCapturedEntriesConcurrent(targetUri, srcEntries);
-                                },
+                                undo: () => replaceWith(oldSnapshot),
+                                redo: () => replaceWith(newSnapshot),
                             });
-                        }
+                        },
                     );
-
-                    void vscode.window.showInformationMessage(`Successfully replaced folder: ${entry.entryName}`);
-                    refreshArchives();
+                    void vscode.window.showInformationMessage(`Replaced folder ${entry.entryName}.`);
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    void vscode.window.showErrorMessage(`Replace folder failed: ${message}`);
+                    void vscode.window.showErrorMessage(`Replace folder failed: ${errorMessage(error)}`);
                 }
+                refreshArchives();
             },
         ),
     );
 
-    const doArchiveAddToOption = async (item: ArchiveTreeItem | undefined, useActive: boolean) => {
-        const items = selectedItems(item).filter((entry) =>
+    const doArchiveAddToOption = async (item: unknown, selection: unknown, useActive: boolean) => {
+        const items = selectedItems(item, selection).filter((entry) =>
             isPathInsideRomfsFolder(entry.resourceUri.fsPath),
         );
         if (items.length === 0) {
@@ -1387,97 +1176,143 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
     };
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('totk-editor.archiveAddToOption', (item?: ArchiveTreeItem) => doArchiveAddToOption(item, false)),
-        vscode.commands.registerCommand('totk-editor.archiveAddToActiveOption', (item?: ArchiveTreeItem) => doArchiveAddToOption(item, true))
+        vscode.commands.registerCommand('totk-editor.archiveAddToOption', (item?: unknown, selection?: unknown) => doArchiveAddToOption(item, selection, false)),
+        vscode.commands.registerCommand('totk-editor.archiveAddToActiveOption', (item?: unknown, selection?: unknown) => doArchiveAddToOption(item, selection, true))
     );
+}
+
+/** Import files/folders from outside the project, asking before overwriting existing entries. */
+async function importEntries(sources: vscode.Uri[], folderUri: vscode.Uri): Promise<void> {
+    const folder = toSarc(folderUri);
+    const plans: { src: vscode.Uri; dest: vscode.Uri; previous?: EntrySnapshot }[] = [];
+    for (const src of pruneNestedUris(sources)) {
+        const name = path.basename(src.fsPath);
+        const dest = vscode.Uri.joinPath(folder, name);
+        if (isBntxTextureUri(dest)) {
+            void vscode.window.showWarningMessage(`Cannot import ${name} into a BNTX or TexToGo container.`);
+            continue;
+        }
+        if (isSameOrInside(folder.fsPath, src.fsPath)) {
+            void vscode.window.showErrorMessage(`Cannot import ${name} into itself.`);
+            continue;
+        }
+        const existingName = await findChildCaseInsensitive(folder, name);
+        if (existingName) {
+            const choice = await vscode.window.showWarningMessage(
+                `"${existingName}" already exists. Replace it?`,
+                { modal: true },
+                'Replace',
+                'Keep Both',
+            );
+            if (choice === 'Keep Both') {
+                plans.push({ src, dest: await getUniqueTargetUri(folder, name) });
+            } else if (choice === 'Replace') {
+                plans.push({ src, dest: vscode.Uri.joinPath(folder, existingName), previous: undefined });
+            }
+            continue;
+        }
+        plans.push({ src, dest });
+    }
+    if (plans.length === 0) {
+        return;
+    }
+
+    const label = describeCount(plans.map((plan) => path.basename(plan.src.fsPath)));
+    const done: typeof plans = [];
+    const errors: string[] = [];
+    await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `Importing ${label}...`, cancellable: false },
+        async () => {
+            for (const plan of plans) {
+                try {
+                    if (await pathExists(plan.dest)) {
+                        plan.previous = await snapshotEntry(plan.dest);
+                        await deleteEntry(plan.dest);
+                    }
+                    await copyEntry(plan.src, plan.dest);
+                    done.push(plan);
+                } catch (error) {
+                    errors.push(`${path.basename(plan.src.fsPath)}: ${errorMessage(error)}`);
+                }
+            }
+        },
+    );
+    if (done.length > 0) {
+        historyManager.push({
+            description: `Import ${describeCount(done.map((plan) => path.basename(plan.src.fsPath)))}`,
+            undo: async () => {
+                for (const plan of done) {
+                    await deleteEntry(plan.dest);
+                    if (plan.previous) {
+                        await writeSnapshot(plan.dest, plan.previous);
+                    }
+                }
+            },
+            redo: async () => {
+                for (const plan of done) {
+                    await deleteEntry(plan.dest);
+                    await copyEntry(plan.src, plan.dest);
+                }
+            },
+        });
+        void vscode.window.showInformationMessage(`Imported ${describeCount(done.map((plan) => path.basename(plan.src.fsPath)))}.`);
+    }
+    reportTransferErrors('Import', errors);
+    refreshArchives();
 }
 
 export class ArchiveTreeDragDrop
     implements vscode.TreeDragAndDropController<ArchiveTreeItem>
 {
-    readonly dropMimeTypes = ['application/vnd.code.tree.totk-archives'];
-    readonly dragMimeTypes = ['application/vnd.code.tree.totk-archives'];
+    readonly dropMimeTypes = [TREE_MIME, 'text/uri-list'];
+    readonly dragMimeTypes = [TREE_MIME, 'text/uri-list'];
 
     async handleDrag(
         source: readonly ArchiveTreeItem[],
         dataTransfer: vscode.DataTransfer,
         _token: vscode.CancellationToken,
     ): Promise<void> {
-        const movable = source.filter(isDiskMutableItem);
+        const movable = source.filter(isMovableItem);
         if (movable.length === 0) {
             return;
         }
         dataTransfer.set(
-            'application/vnd.code.tree.totk-archives',
+            TREE_MIME,
             new vscode.DataTransferItem(movable.map((item) => item.resourceUri.toString())),
         );
     }
 
     async handleDrop(
-        _target: ArchiveTreeItem | undefined,
+        target: ArchiveTreeItem | undefined,
         dataTransfer: vscode.DataTransfer,
         _token: vscode.CancellationToken,
     ): Promise<void> {
-        const folderUri = await resolveTargetFolder(_target);
-        if (!folderUri) {
+        if (!target?.resourceUri) {
             return;
         }
-        const transfer = dataTransfer.get('application/vnd.code.tree.totk-archives');
-        if (!transfer) {
+        const folderUri = folderForItem(target);
+
+        const internal = dataTransfer.get(TREE_MIME);
+        if (internal) {
+            const uris = (internal.value as string[]).map((value) => vscode.Uri.parse(value));
+            await pasteInto(uris, folderUri, true, 'Move');
             return;
-        }
-        const uris = transfer.value as string[];
-        const sources: ArchiveTreeItem[] = [];
-        
-        for (const uriString of uris) {
-            const uri = vscode.Uri.parse(uriString);
-            const srcFsPath = uri.fsPath.toLowerCase();
-            const destFsPath = folderUri.fsPath.toLowerCase();
-            
-            // Prevent dropping onto itself or its own parent (accidental drag)
-            if (srcFsPath === destFsPath || path.dirname(srcFsPath) === destFsPath) {
-                continue;
-            }
-            
-            // Prevent dropping a folder into its own subdirectory
-            if (destFsPath.startsWith(srcFsPath + path.sep) || destFsPath.startsWith(srcFsPath + '/')) {
-                void vscode.window.showErrorMessage(`Cannot move an item into its own subdirectory.`);
-                continue;
-            }
-            
-            sources.push({
-                resourceUri: uri,
-                entryName: path.basename(uri.fsPath),
-                contextValue: 'archiveFile',
-            } as ArchiveTreeItem);
         }
 
-        if (sources.length === 0) {
+        // Files dropped from the OS file manager are copied in.
+        const external = dataTransfer.get('text/uri-list');
+        if (!external) {
             return;
         }
-        try {
-            const targets = await copyEntries(sources, folderUri, true);
-            const moves = sources.map((source, index) => ({
-                src: source.resourceUri,
-                dest: targets[index]!,
-            }));
-            historyManager.push({
-                description: `Drag & Drop Move ${sources.length === 1 ? sources[0]!.entryName : `${sources.length} items`}`,
-                undo: async () => {
-                    await parallelMap(moves, async (move) => {
-                        await moveEntry(move.dest, move.src);
-                    });
-                },
-                redo: async () => {
-                    await parallelMap(moves, async (move) => {
-                        await moveEntry(move.src, move.dest);
-                    });
-                },
-            });
-            refreshArchives();
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            void vscode.window.showErrorMessage(`Move failed: ${message}`);
+        const text = await external.asString();
+        const uris = text
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line && !line.startsWith('#'))
+            .map((line) => vscode.Uri.parse(line))
+            .filter((uri) => uri.scheme === 'file');
+        if (uris.length > 0) {
+            await importEntries(uris, folderUri);
         }
     }
 }

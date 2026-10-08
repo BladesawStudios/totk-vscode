@@ -414,6 +414,21 @@ def read_archive_file_bytes(disk_archive_path: str, file_path: str, romfs_path: 
     return file_bytes
 
 
+def read_archive_entry_stored_bytes(
+    disk_archive_path: str, file_path: str, romfs_path: str
+) -> bytes:
+    """Exact bytes stored for an entry (no decryption; nested archives allowed)."""
+    file_path = _normalize_path(file_path)
+    if not file_path:
+        raise IsADirectoryError(file_path)
+
+    segments = file_path.split("/")
+    parent_locator = "/".join(segments[:-1])
+    sarc, prefix, _, _ = resolve_sarc_view(disk_archive_path, parent_locator, romfs_path)
+    entry_path = f"{prefix}/{segments[-1]}" if prefix else segments[-1]
+    return _get_file_bytes(sarc, entry_path)
+
+
 def _reject_bntx_mutation(disk_archive_path: str, operation: str, target_path: str = "") -> None:
     if _is_bntx_name(disk_archive_path):
         raise PermissionError(f"Cannot {operation} inside a BNTX texture container (read-only)")
