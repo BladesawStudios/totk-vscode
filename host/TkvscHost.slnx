@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TkvscHost/TkvscHost.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TkvscHost.Tests/TkvscHost.Tests.csproj" />
+  </Folder>
+</Solution>

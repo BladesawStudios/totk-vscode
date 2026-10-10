@@ -53,3 +53,6 @@ vendor/hexpyt/tests/**
 vendor/hexpyt/examples/**
 vendor/hexpyt/resources/**
 vendor/bphcl/generator/**
+
+# the C# host ships as the published program under bin/host/<rid>, not as its source
+host/**

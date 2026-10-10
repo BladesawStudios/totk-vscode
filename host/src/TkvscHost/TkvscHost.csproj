@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>TkvscHost</RootNamespace>
+    <AssemblyName>tkvsc-host</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TieredPGO>true</TieredPGO>
+    <TieredCompilationQuickJitForLoops>true</TieredCompilationQuickJitForLoops>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(LibRoot)\SarcSharp\src\SarcSharp\SarcSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\Yaz0Sharp\src\Yaz0Sharp\Yaz0Sharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\ZsDicSharp\src\ZsDicSharp\ZsDicSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\BymlSharp\src\BymlSharp\BymlSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\AampSharp\src\AampSharp\AampSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\MsbtSharp\src\MsbtSharp\MsbtSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\TexSharp\src\TexSharp\TexSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\BntxSharp\src\BntxSharp\BntxSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\TxtgSharp\src\TxtgSharp\TxtgSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\BfAudioSharp\src\BfAudioSharp\BfAudioSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\HexpatSharp\src\HexpatSharp\HexpatSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\BFontSharp\src\BFontSharp\BFontSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\XLinkSharp\src\XLinkSharp\XLinkSharp.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -11,3 +11,8 @@ research
 .ruff_cache/
 totk_vscode_python.egg-info/
 *.plan.md
+
+# the C# host
+bin/host/
+host/**/bin/
+host/**/obj/

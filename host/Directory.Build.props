@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- The folder holding the format libraries (SarcSharp, BymlSharp, ...). Override with -p:LibRoot=... or the LIBROOT environment variable. -->
+    <LibRoot Condition="'$(LibRoot)' == '' and '$(LIBROOT)' != ''">$(LIBROOT)</LibRoot>
+    <LibRoot Condition="'$(LibRoot)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\..\..\C# Libs'))</LibRoot>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>
