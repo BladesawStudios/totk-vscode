@@ -6,13 +6,13 @@ This guide covers how addons integrate with core TKVSC. For the programmatic API
 
 ## Requirements
 
-- TKVSC installed and enabled (`TKVSC-Team.totk-vscode`)
+- TKVSC installed and enabled (`BladesawStudios.totk-vscode`)
 - Your addon declares a dependency on core:
 
 ```json
 {
   "extensionDependencies": [
-    "TKVSC-Team.totk-vscode"
+    "BladesawStudios.totk-vscode"
   ]
 }
 ```
@@ -26,7 +26,7 @@ import * as vscode from 'vscode';
 import type { TkvscApi } from 'totk-vscode'; // types: see docs/api/v1.md until @tkvsc/api is published
 
 export async function activate(context: vscode.ExtensionContext) {
-  const ext = vscode.extensions.getExtension('TKVSC-Team.totk-vscode');
+  const ext = vscode.extensions.getExtension('BladesawStudios.totk-vscode');
   const api = await ext?.activate() as TkvscApi | undefined;
   if (!api) {
     return;
@@ -134,7 +134,7 @@ TotK remains the built-in default (`config/games/totk.json`); canonical path syn
 Use a **project adapter** when your mod tool uses a different folder layout than TKMM (e.g. BCML, loose romfs projects):
 
 ```typescript
-const api = await vscode.extensions.getExtension('TKVSC-Team.totk-vscode')?.activate();
+const api = await vscode.extensions.getExtension('BladesawStudios.totk-vscode')?.activate();
 
 api.registerProjectAdapter(myBcmlAdapter);
 ```

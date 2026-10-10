@@ -1,6 +1,6 @@
 # TKVSC Extension API Changelog
 
-Programmatic API changes for addon extensions consuming `TKVSC-Team.totk-vscode` exports.
+Programmatic API changes for addon extensions consuming `BladesawStudios.totk-vscode` exports.
 
 Convention: **`api.apiVersion`** increments on breaking changes to the `TkvscApi` surface. Additive methods/properties within a major version do not require a bump (document them here under the same version).
 
