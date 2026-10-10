@@ -44,16 +44,9 @@ Preview and edit subfiles of SARC and BNTX archives
 - BGYML
 - AAMP
 - MSBT
-- AINB
-- ASB (Changes automatically applied to corresponding BAEV)
-- BAEV (Changes automatically applied to corresponding ASB)
 - XLINK
-- RESTBL (`.rsizetable` resource size tables, with CRC32 hashes resolved to resource paths)
 - PCHTXT
 - TKMM Config Files
-
-#### Node Editor
-- AINB (visual node graph, opens by default - use "Reopen Editor With" for the text editor)
 
 #### Texture Viewer/Replacer
 - BNTX
@@ -105,7 +98,6 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 
 *( if there are any features you don't see on here, feel free to make an issue on this GitHub! )*
 
-- Node Based Editors (ASB, BAEV, and EVFL are all planned.)
 - BFRES Support (Preview, Editing.)
 - Actor Tooling (Automating the process as much as possible.)
 - Full romfs file content string searching
@@ -115,18 +107,19 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 ## Setup
 
 ### Requirements
-* [Python 3.13+](https://www.python.org/downloads/)
 * [Microsoft C++ Redis](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
-* Node.js (if building extension from source)
-* Python 3.13-venv (on Linux)
+* Node.js and the .NET 10 SDK (if building extension from source; see `host/README.md`)
 * Valid TotK dump
+* [Python 3.13+](https://www.python.org/downloads/) is optional. Nearly everything runs in the extension's built-in C# host. Python is only
+  used for add-ons that bring Python handlers; the first time one is used the extension offers to set it up (it makes its own virtual environment, which needs internet once). On Linux that
+  also needs `python3-venv`.
 
 ### Steps
 1. Install the extension (VSIX).
 2. Follow the prompt to select your romfs dump path.
 
 
-### Python troubleshooting
+### Python troubleshooting (only if you use something that needs Python)
 
 **`python3` works in CMD but the extension cannot find Python?** VSCode is often launched without your full user PATH (unlike a terminal you opened yourself). Fix:
 
