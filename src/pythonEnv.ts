@@ -493,6 +493,36 @@ export function getCachedPythonExecutable(): string | undefined {
     return cachedPython;
 }
 
+/**
+ * The Python from an earlier setup, if its environment is still current, found without starting anything: no check
+ * and no install. With the C# host, Python is only a fallback, so startup uses what is already there and leaves
+ * setting it up to the first command that needs it.
+ */
+export function adoptExistingPython(context: vscode.ExtensionContext): string | undefined {
+    if (cachedPython) {
+        return cachedPython;
+    }
+
+    const pyprojectPath = path.join(context.extensionPath, 'pyproject.toml');
+    if (!fs.existsSync(pyprojectPath)) {
+        return undefined;
+    }
+
+    const venvDir = path.join(context.globalStorageUri.fsPath, VENV_DIR_NAME);
+    const venvPython = getVenvPython(venvDir);
+    const markerPath = path.join(venvDir, DEPS_MARKER);
+    if (
+        fs.existsSync(venvPython) &&
+        fs.existsSync(markerPath) &&
+        fs.readFileSync(markerPath, 'utf-8').trim() === readPyProjectHash(pyprojectPath)
+    ) {
+        logger.info(`Using the Python environment from an earlier setup: ${venvPython}`);
+        cachedPython = venvPython;
+        return venvPython;
+    }
+    return undefined;
+}
+
 export function ensurePythonEnvironment(
     context: vscode.ExtensionContext,
     force = false,

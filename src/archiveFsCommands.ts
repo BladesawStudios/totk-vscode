@@ -326,7 +326,7 @@ async function getUniqueTargetUri(folderUri: vscode.Uri, name: string): Promise<
 
     let base = name;
     let ext = '';
-    const compoundMatch = name.match(/^(.+?)(\.(?:pack|sarc|genvb|blarc|bfarc|bkres|bntx|byml|byaml|bgyml|msbt|txtg|bfres|ainb|bars|bwav)(?:\.zs)?)$/i);
+    const compoundMatch = name.match(/^(.+?)(\.(?:pack|sarc|genvb|blarc|bfarc|bkres|bntx|byml|byaml|bgyml|msbt|txtg|bfres|bars|bwav)(?:\.zs)?)$/i);
     if (compoundMatch) {
         base = compoundMatch[1]!;
         ext = compoundMatch[2]!;

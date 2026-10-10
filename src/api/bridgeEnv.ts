@@ -33,7 +33,6 @@ export function getBridgeEnv(): NodeJS.ProcessEnv {
         TKVSC_AAMP_HASH_NAMES: aampHashNamesPath,
         TKVSC_ROMFS_INDEX: indexPaths?.romfsIndex ?? '',
         TKVSC_CANONICAL_INDEX: indexPaths?.canonicalIndex ?? '',
-        TKVSC_RSTB_RESOLVE_NAMES: config.get<boolean>('rstbResolveHashNames', true) ? '1' : '0',
         ...(msbtConfigPath ? { TKVSC_MSBT_CONFIG: msbtConfigPath } : {}),
         TOTK_TAG_PRODUCT_FORMAT: config.get<string>('tagProductFormat', 'json'),
         TOTK_EXTRA_AAMP_EXTS: extraAamp.map((ext) => ext.replace(/^\./, '')).join(','),

@@ -81,19 +81,6 @@
         "priority": "default"
       },
       {
-        "viewType": "totk-editor.ainbEditor",
-        "displayName": "AINB Node Editor",
-        "selector": [
-          {
-            "filenamePattern": "*.ainb"
-          },
-          {
-            "filenamePattern": "*.ainb.zs"
-          }
-        ],
-        "priority": "default"
-      },
-      {
         "viewType": "totk-editor.bwavViewer",
         "displayName": "TotK Audio Viewer",
         "selector": [
@@ -181,21 +168,6 @@
         }
       },
       {
-        "id": "totk-ainb",
-        "extensions": [
-          ".ainb",
-          ".ainb.zs"
-        ],
-        "aliases": [
-          "AINB",
-          "ainb"
-        ],
-        "icon": {
-          "light": "./icons/nodes.svg",
-          "dark": "./icons/nodes.svg"
-        }
-      },
-      {
         "id": "totk-tkproj",
         "filenames": [
           ".tkproj"
@@ -261,23 +233,6 @@
         }
       },
       {
-        "id": "totk-rstb",
-        "extensions": [
-          ".rsizetable",
-          ".rsizetable.zs"
-        ],
-        "aliases": [
-          "Resource Size Table",
-          "RESTBL",
-          "rsizetable"
-        ],
-        "configuration": "./config/language-configuration.json",
-        "icon": {
-          "light": "./icons/rstb.svg",
-          "dark": "./icons/rstb.svg"
-        }
-      },
-      {
         "id": "pchtxt",
         "extensions": [
           ".pchtxt"
@@ -301,11 +256,6 @@
       },
       {
         "language": "msbt",
-        "scopeName": "source.byml",
-        "path": "./syntaxes/byml.tmLanguage.json"
-      },
-      {
-        "language": "totk-rstb",
         "scopeName": "source.byml",
         "path": "./syntaxes/byml.tmLanguage.json"
       },
@@ -606,10 +556,6 @@
       {
         "command": "totk-editor.rebuildCanonicalPathIndex",
         "title": "TKVSC: Rebuild Canonical Path Index"
-      },
-      {
-        "command": "totk-editor.rebuildAinbNodeDefs",
-        "title": "TKVSC: Rebuild AINB Node Definitions"
       },
       {
         "command": "totk-editor.useTotkIcons",
@@ -957,7 +903,9 @@
       {
         "command": "totk-editor.archiveCopy",
         "key": "ctrl+c",
-        "args": { "source": "gameDump" },
+        "args": {
+          "source": "gameDump"
+        },
         "when": "focusedView == totk-editor.gameDump && !inputFocus"
       },
       {
@@ -1010,10 +958,15 @@
           "default": true,
           "markdownDescription": "Enable pop-up toast notifications in VS Code for Warnings and Errors."
         },
+        "TKVSC.useNativeHost": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Run file operations in the built-in C# host, which is faster and does not need Python for the formats it covers. Anything it does not cover yet still uses the Python bridge. Turn this off to use Python for everything."
+        },
         "TKVSC.pythonPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Full path to **python.exe** (Python 3.10+). Use this when `python3` works in CMD but the extension says Python was not found - Run **TKVSC: Browse for python.exe** or **TKVSC: Select Python** to set this automatically."
+          "markdownDescription": "Full path to **python.exe** (Python 3.13+), used only for the features that still need Python (see the README). Use this when `python3` works in CMD but the extension says Python was not found - Run **TKVSC: Browse for python.exe** or **TKVSC: Select Python** to set this automatically."
         },
         "TKVSC.projectsPath": {
           "type": "string",
@@ -1080,11 +1033,6 @@
           "default": "smallFilesOnly",
           "markdownDescription": "Syntax highlighting for decoded **XLNK** (`.belnk`/`.bslnk`) files. VS Code turns full highlighting off above 20 MB or 300,000 lines, which covers the full `elink2`/`slink2` databases; with `smallFilesOnly`, TKVSC highlights just the visible lines of those files instead. `always` lifts VS Code's limit for XLNK files only. Takes effect the next time the file is opened."
         },
-        "TKVSC.rstbResolveHashNames": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Resolve the CRC32 hashes in **RESTBL** (`.rsizetable`) files back to readable resource paths using the game dump indexes. Turn this off to show raw `0x` hashes instead, which opens large tables faster. Requires the Game Dump Search Index (**TKVSC: Rebuild Game Dump Search Index**)."
-        },
         "TKVSC.extraAampExtensions": {
           "type": "array",
           "items": {
@@ -1137,8 +1085,6 @@
     },
     "configurationDefaults": {
       "files.associations": {
-        "*.asb": "json",
-        "*.baev": "json",
         "*.aamp": "yaml",
         "*.aamp.zs": "yaml",
         "*.baglblm": "yaml",
@@ -1225,8 +1171,6 @@
         "**.bfarc.zs": "package",
         "**.bkres": "package",
         "**.bkres.zs": "package",
-        "**.asb": "robot",
-        "**.baev": "log",
         "**.aamp": "settings",
         "**.aamp.zs": "settings"
       },
@@ -1246,10 +1190,6 @@
         "editor.insertSpaces": true,
         "editor.tabSize": 2,
         "editor.semanticHighlighting.enabled": true
-      },
-      "[totk-rstb]": {
-        "editor.insertSpaces": true,
-        "editor.tabSize": 2
       }
     }
   },
@@ -1259,6 +1199,7 @@
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "node node_modules/@typescript/native/bin/tsc --noEmit --watch --project tsconfig.json",
+    "build-host": "node scripts/build-host.js",
     "package": "npm run check-types && npm run lint && node esbuild.js --production",
     "package:vsix": "npm run package && node -e \"require('fs').mkdirSync('out', { recursive: true }); require('child_process').execSync('npx vsce package --out out/totk-vscode-' + process.env.npm_package_version + '.vsix', { stdio: 'inherit' })\"",
     "build": "npm run package && node -e \"require('fs').mkdirSync('out', { recursive: true }); require('child_process').execSync('npx vsce package --out out/totk-vscode-' + process.env.npm_package_version + '.vsix', { stdio: 'inherit' })\"",

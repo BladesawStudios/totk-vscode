@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { runBridgeJsonAsync } from '../bridge';
+import { getNativeHostExecutable, runBridgeJsonAsync } from '../bridge';
 import { getBridgeEnv } from '../api/bridgeEnv';
 import { getCachedPythonExecutable } from '../pythonEnv';
 import { logger } from '../logger';
@@ -15,6 +15,10 @@ import {
 const panels = new Map<string, vscode.WebviewPanel>();
 
 function getPython(): string {
+    const host = getNativeHostExecutable();
+    if (host) {
+        return host;
+    }
     const config = vscode.workspace.getConfiguration('TKVSC');
     const override = config.get<string>('pythonPath', '');
     if (override) {
@@ -257,14 +261,19 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 await fs.promises.writeFile(tempBin, Buffer.from(message.base64Data, 'base64'));
 
                 try {
-                    const result = await runBridgeJsonAsync<{ ast: any }>(
+                    const result = await runBridgeJsonAsync<{ ast: any; log?: string[]; evaluationError?: string }>(
                         python,
                         bridgePath,
                         ['evaluate-hexpat', tempBin],
                         message.hexpatCode,
                         env,
                     );
-                    panel.webview.postMessage({ type: 'evaluate-hexpat-result', ast: result?.ast || [] });
+                    panel.webview.postMessage({
+                        type: 'evaluate-hexpat-result',
+                        ast: result?.ast || [],
+                        log: result?.log || [],
+                        evaluationError: result?.evaluationError || '',
+                    });
                 } finally {
                     try { fs.unlinkSync(tempBin); } catch {}
                 }
@@ -1876,6 +1885,14 @@ function buildHtml(
                     astTree.innerHTML = "";
                     highlightArray.fill(0);
                     preHighlightAst(message.ast);
+                    // Where the pattern stopped, and what it printed, above what it found.
+                    if (message.evaluationError) {
+                        astTree.insertAdjacentHTML('beforeend', '<div style="color: var(--vscode-errorForeground, #ff6b6b); font-weight: bold; padding: 6px 10px;">Stopped: ' + escapeHtml(message.evaluationError) + '</div>');
+                    }
+                    if (message.log && message.log.length > 0) {
+                        astTree.insertAdjacentHTML('beforeend', '<details style="padding: 4px 10px; opacity: 0.8;"><summary>Pattern output (' + message.log.length + ' lines)</summary><pre style="white-space: pre-wrap;">' + escapeHtml(message.log.slice(0, 200).join('
+')) + '</pre></details>');
+                    }
                     renderGenericAst(message.ast, astTree);
                 }
                 renderVisibleRows();

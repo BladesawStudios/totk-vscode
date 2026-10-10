@@ -42,14 +42,10 @@ export interface HandlerManifestJson {
 const LANGUAGE_BY_HANDLER: Record<string, string> = {
     byml: 'byml',
     msbt: 'msbt',
-    ainb: 'json',
-    asb: 'json',
-    baev: 'json',
     xlnk: 'totk-xlnk',
-    rstb: 'totk-rstb',
 };
 
-const BUILTIN_HANDLERS = new Set(['byml', 'msbt', 'aamp', 'ainb', 'asb', 'baev', 'xlnk', 'rstb']);
+const BUILTIN_HANDLERS = new Set(['byml', 'msbt', 'aamp', 'xlnk']);
 
 function normalizeExtension(ext: string): string {
     return ext.toLowerCase().replace(/^\./, '');
