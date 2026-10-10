@@ -26,16 +26,6 @@ from archive_resolve import (
     rename_archive_entry,
     write_archive_file_bytes,
 )
-from asb_io import (
-    read_asb_content,
-    read_asb_content_disk,
-    read_baev_content,
-    read_baev_content_disk,
-    write_asb_bytes,
-    write_asb_disk,
-    write_baev_bytes,
-    write_baev_disk,
-)
 from bntx_editor import BntxEditor
 from byml_editor_format import to_editor_text
 from byml_yaml_utils import format_byml_for_editor, normalize_byml_u64_literals
@@ -577,8 +567,6 @@ def _file_kind(
             return "aamp"
         if is_xlnk_binary(data):
             return "xlnk"
-        if data[:6] == b"RESTBL":
-            return "rstb"
     return None
 
 
@@ -594,28 +582,12 @@ def read_file_content(file_data: bytes, logical_path: str, sarc=None, romfs_path
         return read_msbt_content(file_data, logical_path, romfs_path)
     if kind == "aamp":
         return read_aamp_content(file_data, logical_path, romfs_path)
-    if kind == "ainb":
-        from ainb_io import read_ainb_content
-
-        return read_ainb_content(file_data, logical_path, romfs_path)
-    if kind == "asb":
-        if sarc is not None:
-            return read_asb_content(file_data, logical_path, sarc, romfs_path)
-        return read_asb_content_disk(logical_path, romfs_path)
-    if kind == "baev":
-        if sarc is not None:
-            return read_baev_content(file_data, logical_path, romfs_path)
-        return read_baev_content_disk(logical_path, romfs_path)
     if kind == "xlnk":
         return read_xlnk_content(file_data, logical_path, romfs_path)
-    if kind == "rstb":
-        from rstb_io import read_rstb_content
-
-        return read_rstb_content(file_data, logical_path, romfs_path)
     return (
         f"<Binary Data: {len(file_data)} bytes. "
-        "Editable types: .byml, .byaml, .bgyml, .msbt, .ainb, .asb, .baev, .belnk, .bslnk, "
-        ".rsizetable, AAMP (many extensions - see aamp-extensions.json)>"
+        "Editable types: .byml, .byaml, .bgyml, .msbt, .belnk, .bslnk, "
+        "AAMP (many extensions - see aamp-extensions.json)>"
     )
 
 
@@ -667,37 +639,9 @@ def write_file_content(
         writer = make_sarc_writer(sarc)
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
-    elif kind == "ainb":
-        from ainb_io import write_ainb_bytes
-
-        orig = get_original_bytes()
-        new_bytes = write_ainb_bytes(orig, editor_text, logical_path, romfs_path)
-        writer = make_sarc_writer(sarc)
-        writer.files[logical_path] = new_bytes
-        save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
-    elif kind == "asb":
-        if sarc is not None:
-            new_sarc_bytes = write_asb_bytes(sarc, logical_path, editor_text, romfs_path)
-            save_sarc(archive_path, new_sarc_bytes, is_sarc_compressed)
-        else:
-            write_asb_disk(logical_path, editor_text, romfs_path)
-    elif kind == "baev":
-        if sarc is not None:
-            new_sarc_bytes = write_baev_bytes(sarc, logical_path, editor_text, romfs_path)
-            save_sarc(archive_path, new_sarc_bytes, is_sarc_compressed)
-        else:
-            write_baev_disk(logical_path, editor_text, romfs_path)
     elif kind == "xlnk":
         orig = get_original_bytes()
         new_bytes = write_xlnk_bytes(orig, editor_text, logical_path, romfs_path)
-        writer = make_sarc_writer(sarc)
-        writer.files[logical_path] = new_bytes
-        save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
-    elif kind == "rstb":
-        from rstb_io import write_rstb_bytes
-
-        orig = get_original_bytes()
-        new_bytes = write_rstb_bytes(orig, editor_text, logical_path, romfs_path)
         writer = make_sarc_writer(sarc)
         writer.files[logical_path] = new_bytes
         save_sarc(archive_path, writer.write()[1], is_sarc_compressed)
@@ -727,12 +671,6 @@ def main():
 
             output_path = sys.argv[2]
             print(json.dumps(build_romfs_index(romfs_path, output_path)))
-
-        elif command == "build-ainb-node-defs":
-            from ainb_node_defs import build_ainb_node_defs
-
-            output_path = sys.argv[2]
-            print(json.dumps(build_ainb_node_defs(romfs_path, output_path)))
 
         elif command == "build-canonical-path-index":
             from canonical_path_index import build_canonical_path_index
@@ -773,25 +711,9 @@ def main():
                         Path(file_path).read_bytes(), editor_text, file_path, romfs_path
                     )
                 )
-            elif kind == "ainb":
-                from ainb_io import write_ainb_disk
-
-                write_ainb_disk(file_path, editor_text, romfs_path)
-            elif kind == "asb":
-                write_asb_disk(file_path, editor_text, romfs_path)
-            elif kind == "baev":
-                write_baev_disk(file_path, editor_text, romfs_path)
             elif kind == "xlnk":
                 Path(file_path).write_bytes(
                     write_xlnk_bytes(
-                        Path(file_path).read_bytes(), editor_text, file_path, romfs_path
-                    )
-                )
-            elif kind == "rstb":
-                from rstb_io import write_rstb_bytes
-
-                Path(file_path).write_bytes(
-                    write_rstb_bytes(
                         Path(file_path).read_bytes(), editor_text, file_path, romfs_path
                     )
                 )
@@ -862,145 +784,6 @@ def main():
             with os.fdopen(fd, "wb") as out:
                 out.write(compressed)
             print(json.dumps({"path": tmp_path}))
-
-        elif command == "evaluate-hexpat":
-            input_path = sys.argv[2]
-            file_data = Path(input_path).read_bytes()
-            hexpat_code = sys.stdin.read()
-
-            hexpyt_src = os.path.abspath(
-                os.path.join(os.path.dirname(os.path.dirname(__file__)), "vendor", "hexpyt", "src")
-            )
-            if hexpyt_src not in sys.path:
-                sys.path.insert(0, hexpyt_src)
-
-            try:
-                import primitives
-                from compiler import compile_text
-            except ImportError as e:
-                print(json.dumps({"error": f"Failed to load hexpat compiler: {e}"}))
-                sys.exit(0)
-
-            try:
-                python_code = compile_text(hexpat_code)
-            except Exception as e:
-                print(json.dumps({"error": f"Hexpat compile error: {e}"}))
-                sys.exit(0)
-
-            with open(r"C:\Users\dmone\Desktop\hexpat_generated.py", "w") as f:
-                f.write(python_code)
-
-            local_env = {
-                "byts": file_data,
-                "primitives": primitives,
-            }
-            for k in dir(primitives):
-                if not k.startswith("_"):
-                    local_env[k] = getattr(primitives, k)
-
-            primitives.std.mem.byts = file_data
-
-            import threading
-
-            exec_error = None
-
-            def run_exec():
-                nonlocal exec_error
-                import sys
-
-                old_limit = sys.getrecursionlimit()
-                sys.setrecursionlimit(5000)
-                try:
-                    primitives.std.mem.byts = file_data
-                    exec(python_code, local_env, local_env)
-                except Exception as e:
-                    exec_error = e
-                finally:
-                    sys.setrecursionlimit(old_limit)
-
-            threading.stack_size(32 * 1024 * 1024)  # 32 MB
-            t = threading.Thread(target=run_exec)
-            t.start()
-            t.join()
-
-            if exec_error is not None:
-                print(
-                    json.dumps(
-                        {
-                            "error": f"Hexpat exec error: {type(exec_error).__name__} - {str(exec_error)}"
-                        }
-                    )
-                )
-                sys.exit(0)
-
-            ast_nodes = []
-
-            def dump_ast(obj, name, visited=None, depth=0):
-                if depth > 100:
-                    return {
-                        "name": name,
-                        "type": "MaxDepthReached",
-                        "start_offset": 0,
-                        "size": 0,
-                        "children": [],
-                    }
-                if visited is None:
-                    visited = set()
-                if id(obj) in visited:
-                    return None
-                visited.add(id(obj))
-
-                if isinstance(obj, list):
-                    if len(obj) == 0:
-                        return None
-                    if not isinstance(obj[0], primitives.Struct):
-                        return None
-                    start = int(obj[0].address())
-                    end = int(obj[-1].dollar())
-                    node = {
-                        "name": name,
-                        "type": "Array",
-                        "start_offset": start,
-                        "size": end - start,
-                        "children": [],
-                    }
-                    for i, item in enumerate(obj):
-                        child = dump_ast(item, f"[{i}]", visited, depth + 1)
-                        if child:
-                            node["children"].append(child)
-                    return node
-                elif isinstance(obj, primitives.Struct):
-                    node = {
-                        "name": name,
-                        "type": obj.__class__.__name__,
-                        "start_offset": int(obj.address()),
-                        "size": int(obj.size()),
-                        "children": [],
-                    }
-                    if hasattr(obj, "value"):
-                        try:
-                            node["value"] = str(obj.value())
-                        except Exception:
-                            pass
-                    for k, v in obj.__dict__.items():
-                        if not k.startswith("_") and k != "value":
-                            child = dump_ast(v, k, visited, depth + 1)
-                            if child:
-                                node["children"].append(child)
-                    return node
-                return None
-
-            for k, v in local_env.items():
-                if (
-                    isinstance(v, primitives.Struct)
-                    and not k.startswith("_")
-                    and type(v) is not type
-                ):
-                    node = dump_ast(v, k)
-                    if node:
-                        ast_nodes.append(node)
-
-            print(json.dumps({"ast": ast_nodes}))
 
         else:
             archive_path = sys.argv[2]
@@ -1417,15 +1200,6 @@ def main():
                         from aamp_io import read_aamp_content
 
                         yaml_text = read_aamp_content(file_data, internal_path, romfs_path)
-                        fd, yaml_path = tempfile.mkstemp(prefix="totk-cvt-", suffix=target_ext)
-                        os.close(fd)
-                        Path(yaml_path).write_text(yaml_text, encoding="utf-8")
-                        os.unlink(out_path)
-                        out_path = yaml_path
-                    elif kind == "rstb":
-                        from rstb_io import read_rstb_content
-
-                        yaml_text = read_rstb_content(file_data, logical_path, romfs_path)
                         fd, yaml_path = tempfile.mkstemp(prefix="totk-cvt-", suffix=target_ext)
                         os.close(fd)
                         Path(yaml_path).write_text(yaml_text, encoding="utf-8")
