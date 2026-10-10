@@ -13,19 +13,17 @@ import {
 
 const panels = new Map<string, vscode.WebviewPanel>();
 
-function getPython(): string {
+function getHost(): string {
     return getNativeHostExecutable() ?? '';
 }
 
 async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Promise<{ data: Uint8Array; resolvedName: string }> {
     const fsPath = uri.fsPath;
-    const python = getPython();
-    const bridgePath = '';
+    const hostExe = getHost();
     const env = getBridgeEnv();
 
     logger.info(`[HexEditor] getRawBinaryBytes: uri=${uri.toString()} scheme=${uri.scheme}`);
-    logger.info(`[HexEditor] python executable: "${python || '(none)'}"`);
-    logger.info(`[HexEditor] bridgePath: ${bridgePath}`);
+    logger.info(`[HexEditor] hostExe executable: "${hostExe || '(none)'}"`);
     logger.info(`[HexEditor] isPathInsideArchive: ${isPathInsideArchive(fsPath)}`);
     
     let tempRawPath = '';
@@ -33,8 +31,8 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
 
     // 1. If inside an archive, export it to a temp file
     if (isPathInsideArchive(fsPath)) {
-        if (!python) {
-            logger.info(`[HexEditor] ERROR: Python not available for archive export`);
+        if (!hostExe) {
+            logger.info(`[HexEditor] ERROR: host not available for archive export`);
             throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
         }
         const diskArchive = getDiskArchivePath(fsPath);
@@ -47,8 +45,7 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
 
         logger.info(`[HexEditor] Calling bridge export-temp...`);
         const result = await runBridgeJsonAsync<{ path: string }>(
-            python,
-            bridgePath,
+            hostExe,
             ['export-temp', diskArchive, locator],
             undefined,
             env,
@@ -75,18 +72,17 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
     const isZstd = fsPath.toLowerCase().endsWith('.zs') || path.basename(fsPath).toLowerCase().includes('.zs');
     logger.info(`[HexEditor] isZstd: ${isZstd}`);
     if (isZstd) {
-        if (!python) {
+        if (!hostExe) {
             if (isTempRaw) {
                 try { fs.unlinkSync(tempRawPath); } catch {}
             }
-            logger.info(`[HexEditor] ERROR: Python not available for .zs decompression`);
+            logger.info(`[HexEditor] ERROR: host not available for .zs decompression`);
             throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
         }
 
         logger.info(`[HexEditor] Calling bridge decompress-file: tempRawPath=${tempRawPath} basename=${path.basename(fsPath)}`);
         const result = await runBridgeJsonAsync<{ path: string }>(
-            python,
-            bridgePath,
+            hostExe,
             ['decompress-file', tempRawPath, path.basename(fsPath)],
             undefined,
             env,
@@ -191,11 +187,10 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 const isZstd = uri.fsPath.toLowerCase().endsWith('.zs') || path.basename(uri.fsPath).toLowerCase().includes('.zs');
                 if (isZstd) {
                     logger.info(`[HexEditor] File is .zs - recompressing before save`);
-                    const python = getPython();
-                    if (!python) {
+                    const hostExe = getHost();
+                    if (!hostExe) {
                         throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                     }
-                    const bridgePath = '';
                     const env = getBridgeEnv();
 
                     // Create a temp file with the uncompressed data
@@ -205,8 +200,7 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
 
                     try {
                         const result = await runBridgeJsonAsync<{ path: string }>(
-                            python,
-                            bridgePath,
+                            hostExe,
                             ['compress-file', tempUncomp, path.basename(uri.fsPath)],
                             undefined,
                             env,
@@ -239,11 +233,10 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
             }
         } else if (message.type === 'evaluate-hexpat') {
             try {
-                const python = getPython();
-                if (!python) {
+                const hostExe = getHost();
+                if (!hostExe) {
                     throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 }
-                const bridgePath = '';
                 const env = getBridgeEnv();
 
                 // Create a temp file with the binary data
@@ -252,8 +245,7 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
 
                 try {
                     const result = await runBridgeJsonAsync<{ ast: any; log?: string[]; evaluationError?: string }>(
-                        python,
-                        bridgePath,
+                        hostExe,
                         ['evaluate-hexpat', tempBin],
                         message.hexpatCode,
                         env,

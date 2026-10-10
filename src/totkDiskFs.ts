@@ -19,20 +19,19 @@ export class TotkDiskFileSystemProvider implements vscode.FileSystemProvider {
     private readonly fileContentCache = new Map<string, string | Uint8Array>();
 
     constructor(
-        private readonly bridgePath: string,
-        private readonly getPython: () => string,
+        private readonly getHost: () => string,
         private readonly getBridgeEnv: () => NodeJS.ProcessEnv,
         private readonly onDidWriteFile?: (info: DiskWriteNotification) => Promise<void>,
     ) {}
 
-    private requirePython(): string {
-        const python = this.getPython();
-        if (!python) {
+    private requireHost(): string {
+        const hostExe = this.getHost();
+        if (!hostExe) {
             throw new Error(
                 'The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).',
             );
         }
-        return python;
+        return hostExe;
     }
 
     watch(): vscode.Disposable {
@@ -90,12 +89,11 @@ export class TotkDiskFileSystemProvider implements vscode.FileSystemProvider {
             return raw;
         }
 
-        logger.debug(`totk-disk: Editable file detected. Invoking Python bridge read-disk for processing...`);
+        logger.debug(`totk-disk: Editable file detected. Invoking host read-disk for processing...`);
         try {
             logger.showProcessingToast(diskPath);
             const content = await runBridgeReadContentAsync(
-                this.requirePython(),
-                this.bridgePath,
+                this.requireHost(),
                 ['read-disk', diskPath],
                 this.getBridgeEnv(),
             );
@@ -147,12 +145,11 @@ export class TotkDiskFileSystemProvider implements vscode.FileSystemProvider {
             return;
         }
 
-        logger.debug(`totk-disk: Editable file exists on disk. Invoking Python bridge write-disk...`);
+        logger.debug(`totk-disk: Editable file exists on disk. Invoking host write-disk...`);
         try {
             logger.showProcessingToast(diskPath);
             await runBridgeJsonAsync<{ success: boolean }>(
-                this.requirePython(),
-                this.bridgePath,
+                this.requireHost(),
                 ['write-disk', diskPath],
                 text,
                 this.getBridgeEnv(),

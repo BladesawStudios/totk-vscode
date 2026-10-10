@@ -36,6 +36,14 @@ export function resolveNativeHost(extensionPath: string): string | undefined {
 
     for (const candidate of candidates) {
         if (fs.existsSync(candidate)) {
+            if (process.platform !== 'win32') {
+                try {
+                    // A VSIX can lose the executable bit.
+                    fs.chmodSync(candidate, 0o755);
+                } catch {
+                    // Read-only install: it may already be executable.
+                }
+            }
             logger.info(`host: using ${candidate}`);
             return candidate;
         }

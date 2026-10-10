@@ -29,8 +29,7 @@ export interface CanonicalSavePropagationOptions {
     enabled: boolean;
     romfsPath: string;
     canonicalIndexPath: string;
-    bridgePath: string;
-    pythonExecutable: string;
+    hostExe: string;
     bridgeEnv: NodeJS.ProcessEnv;
     projectRoots: ProjectRootInfo[];
     projectOverlayDbPath: string;
@@ -399,16 +398,14 @@ export async function propagateCanonicalSave(
         try {
             if (writeMode === 'text') {
                 await runBridgeJsonAsync<{ success: boolean }>(
-                    options.pythonExecutable,
-                    options.bridgePath,
+                    options.hostExe,
                     ['write', projectArchivePath, match.canonicalPath],
                     options.writeInput.textContent ?? '',
                     options.bridgeEnv,
                 );
             } else {
                 await runBridgeJsonAsync<{ success: boolean }>(
-                    options.pythonExecutable,
-                    options.bridgePath,
+                    options.hostExe,
                     ['write-raw', projectArchivePath, match.canonicalPath],
                     encodedRaw,
                     options.bridgeEnv,
@@ -453,8 +450,7 @@ export async function propagateCanonicalSave(
                 projectRoot: modRoot,
                 archiveAbsPath,
                 romfsPath: options.romfsPath,
-                pythonExecutable: options.pythonExecutable,
-                bridgePath: options.bridgePath,
+                hostExe: options.hostExe,
                 bridgeEnv: options.bridgeEnv,
                 output: options.output,
                 importSchemaVersion: options.importSchemaVersion,

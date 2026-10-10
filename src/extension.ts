@@ -182,8 +182,7 @@ class SarcProvider implements vscode.FileSystemProvider {
     private archiveLocks = new Map<string, Promise<unknown>>();
 
     constructor(
-        private readonly bridgePath: string,
-        private readonly getPython: () => string,
+        private readonly getHost: () => string,
         private readonly onDidWriteArchive?: (info: {
             diskArchivePath: string;
             internalPath: string;
@@ -192,14 +191,14 @@ class SarcProvider implements vscode.FileSystemProvider {
         }) => Promise<void>,
     ) { }
 
-    private requirePython(): string {
-        const python = this.getPython();
-        if (!python) {
+    private requireHost(): string {
+        const hostExe = this.getHost();
+        if (!hostExe) {
             throw new Error(
                 'The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).',
             );
         }
-        return python;
+        return hostExe;
     }
 
     watch(_uri: vscode.Uri): vscode.Disposable {
@@ -244,8 +243,7 @@ class SarcProvider implements vscode.FileSystemProvider {
         const diskArchive = this.getDiskArchive(fsPath);
         const locator = this.getLocator(fsPath, diskArchive);
         const result = await runBridgeJsonAsync<{ path: string }>(
-            this.requirePython(),
-            this.bridgePath,
+            this.requireHost(),
             ['export-stored', diskArchive, locator],
             undefined,
             getBridgeEnv(),
@@ -272,8 +270,7 @@ class SarcProvider implements vscode.FileSystemProvider {
         const locator = this.getLocator(fsPath, diskArchive);
         await this.withArchiveLock(diskArchive, async () => {
             await runBridgeJsonAsync<{ success: boolean }>(
-                this.requirePython(),
-                this.bridgePath,
+                this.requireHost(),
                 ['write-raw', diskArchive, locator],
                 Buffer.from(content).toString('base64'),
                 getBridgeEnv(),
@@ -301,8 +298,7 @@ class SarcProvider implements vscode.FileSystemProvider {
         if (!files) {
             logger.info(`Loading archive: ${diskArchive} @ ${locator || '(root)'}`);
             files = await runBridgeJsonAsync<string[]>(
-                this.requirePython(),
-                this.bridgePath,
+                this.requireHost(),
                 ['list', diskArchive, locator],
                 undefined,
                 getBridgeEnv(),
@@ -499,8 +495,7 @@ class SarcProvider implements vscode.FileSystemProvider {
                 try {
                     logger.showProcessingToast(fsPath);
                     const content = await runBridgeReadContentAsync(
-                        this.requirePython(),
-                        this.bridgePath,
+                        this.requireHost(),
                         ['read-disk', fsPath],
                         getBridgeEnv(),
                     );
@@ -534,8 +529,7 @@ class SarcProvider implements vscode.FileSystemProvider {
                 logger.showProcessingToast(fsPath);
             }
             const content = await runBridgeReadContentAsync(
-                this.requirePython(),
-                this.bridgePath,
+                this.requireHost(),
                 ['read', diskArchive, filePath],
                 getBridgeEnv(),
             );
@@ -608,8 +602,7 @@ class SarcProvider implements vscode.FileSystemProvider {
                     }
 
                     await runBridgeJsonAsync<{ success: boolean }>(
-                        this.requirePython(),
-                        this.bridgePath,
+                        this.requireHost(),
                         ['write-disk', fsPath],
                         text,
                         getBridgeEnv(),
@@ -657,8 +650,7 @@ class SarcProvider implements vscode.FileSystemProvider {
                         }
 
                         await runBridgeJsonAsync<{ success: boolean }>(
-                            this.requirePython(),
-                            this.bridgePath,
+                            this.requireHost(),
                             ['write', diskArchive, filePath],
                             yamlContent,
                             getBridgeEnv(),
@@ -680,8 +672,7 @@ class SarcProvider implements vscode.FileSystemProvider {
 
                         const encoded = Buffer.from(content).toString('base64');
                         await runBridgeJsonAsync<{ success: boolean }>(
-                            this.requirePython(),
-                            this.bridgePath,
+                            this.requireHost(),
                             ['write-raw', diskArchive, filePath],
                             encoded,
                             getBridgeEnv(),
@@ -739,8 +730,7 @@ class SarcProvider implements vscode.FileSystemProvider {
 
         try {
             await this.withArchiveLock(diskArchive, () => runBridgeJsonAsync<{ success: boolean }>(
-                this.requirePython(),
-                this.bridgePath,
+                this.requireHost(),
                 ['delete-entry', diskArchive, filePath],
                 undefined,
                 getBridgeEnv(),
@@ -806,8 +796,7 @@ class SarcProvider implements vscode.FileSystemProvider {
 
         try {
             await this.withArchiveLock(oldDiskArchive, () => runBridgeJsonAsync<{ success: boolean }>(
-                this.requirePython(),
-                this.bridgePath,
+                this.requireHost(),
                 ['rename-entry', oldDiskArchive, oldLocator, newLocator],
                 undefined,
                 getBridgeEnv(),
@@ -898,20 +887,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     context.subscriptions.push(TkvscEditorProvider.register(context));
     context.subscriptions.push(BwavEditorProvider.register(context));
 
-    // The C# host runs every bridge command. The call sites still pass its path where they once passed an
-    // interpreter (`getPython`) and a script path (`bridgePath`, which is no longer read).
+    // The C# host runs every bridge command; `getHost` is its path, or '' when none is built for this platform.
     const nativeHost = resolveNativeHost(context.extensionPath);
     configureNativeHost(nativeHost, context.extensionPath);
-    const bridgePath = '';
-    const getPython = () => nativeHost ?? '';
-    const rawFileIoContext = { bridgePath, getPython, getBridgeEnv };
+    const getHost = () => nativeHost ?? '';
+    const rawFileIoContext = { getHost, getBridgeEnv };
 
     let archiveTree: ReturnType<typeof registerArchiveTree> | undefined;
 
     const tkvscApi = createTkvscApi({
         extensionId: TKVSC_EXTENSION_ID,
-        bridgePath,
-        getPython,
+        getHost,
         getBridgeEnv,
         getProjectRoots: () =>
             archiveTree?.getProjectRoots().map((root) => root.fsPath) ?? [],
@@ -1052,9 +1038,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             return;
         }
         const romfsPath = resolveRomfsPath();
-        const pythonExe = getPython();
+        const hostExe = getHost();
         const gameId = activeGameId();
-        if (!romfsPath || !pythonExe || !gameDumpTree) {
+        if (!romfsPath || !hostExe || !gameDumpTree) {
             return;
         }
         if (!force && !shouldRebuildIndex(
@@ -1081,8 +1067,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     logger.info(`Starting RomFS search index build at: ${indexPath}`);
                     await fs.promises.mkdir(path.dirname(indexPath), { recursive: true });
                     await runBridgeJsonAsync<{ path: string; count: number }>(
-                        pythonExe,
-                        bridgePath,
+                        hostExe,
                         ['build-romfs-index', indexPath],
                         undefined,
                         getBridgeEnv(),
@@ -1117,9 +1102,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             return false;
         }
         const romfsPath = resolveRomfsPath();
-        const pythonExe = getPython();
+        const hostExe = getHost();
         const gameId = activeGameId();
-        if (!romfsPath || !pythonExe) {
+        if (!romfsPath || !hostExe) {
             return false;
         }
         if (!force && !shouldRebuildIndex(
@@ -1146,8 +1131,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     logger.info(`Starting canonical path index build at: ${indexPath}`);
                     await fs.promises.mkdir(path.dirname(indexPath), { recursive: true });
                     await runBridgeJsonAsync<{ path: string; count: number }>(
-                        pythonExe,
-                        bridgePath,
+                        hostExe,
                         ['build-canonical-path-index', indexPath],
                         undefined,
                         getBridgeEnv(),
@@ -1181,17 +1165,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         content: Uint8Array;
         textContent?: string;
     }): Promise<void> => {
-        const pythonExe = getPython();
+        const hostExe = getHost();
         const romfsPath = resolveRomfsPath();
-        if (!pythonExe || !romfsPath) {
+        if (!hostExe || !romfsPath) {
             return;
         }
         await propagateCanonicalSave({
             enabled: shouldPropagateCanonicalSaves(),
             romfsPath,
             canonicalIndexPath: canonicalIndexPath(),
-            bridgePath,
-            pythonExecutable: pythonExe,
+            hostExe: hostExe,
             bridgeEnv: getBridgeEnv(),
             projectRoots: archiveTree?.getProjectRoots() ?? [],
             projectOverlayDbPath: projectCanonicalOverlayPath,
@@ -1216,10 +1199,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         projectRoots?: string[];
         showProgress?: boolean;
     }): Promise<void> => {
-        const pythonExe = getPython();
+        const hostExe = getHost();
         const romfsPath = resolveRomfsPath();
         await ensureProjectCanonicalOverlayExists(projectCanonicalOverlayPath);
-        if (!archiveTree || !pythonExe || !romfsPath) {
+        if (!archiveTree || !hostExe || !romfsPath) {
             return;
         }
 
@@ -1250,8 +1233,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         overlayDbPath: projectCanonicalOverlayPath,
                         projectRoot: modRoot,
                         romfsPath,
-                        pythonExecutable: pythonExe,
-                        bridgePath,
+                        hostExe: hostExe,
                         bridgeEnv: getBridgeEnv(),
                         output,
                         importSchemaVersion: PROJECT_CANONICAL_IMPORT_SCHEMA_VERSION,
@@ -1323,8 +1305,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 );
                 return;
             }
-            const python = getPython();
-            if (!python) {
+            const hostExe = getHost();
+            if (!hostExe) {
                 void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
@@ -1340,8 +1322,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 );
                 return;
             }
-            const python = getPython();
-            if (!python) {
+            const hostExe = getHost();
+            if (!hostExe) {
                 void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
@@ -1362,7 +1344,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         }),
     );
 
-    const sarcProvider = new SarcProvider(bridgePath, getPython, runCanonicalPropagation);
+    const sarcProvider = new SarcProvider( getHost, runCanonicalPropagation);
     setArchiveRawIo(sarcProvider);
 
     context.subscriptions.push(
@@ -1385,8 +1367,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
     context.subscriptions.push(
         vscode.commands.registerCommand('totk-editor.openBntxTexture', async (uri: vscode.Uri, layer = 0) => {
-            const python = getPython();
-            if (!python) {
+            const hostExe = getHost();
+            if (!hostExe) {
                 void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
@@ -1401,8 +1383,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         : (filePath ? ['render-txtg', diskArchive, filePath] : ['render-txtg', diskArchive]))
                     : ['read', diskArchive, filePath, ...layerArg];
                 const raw = await runBridgeReadAsync(
-                    python,
-                    bridgePath,
+                    hostExe,
                     commandArgs,
                     getBridgeEnv(),
                 );
@@ -1416,8 +1397,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                             : ['update-metadata', diskArchive, filePath, payloadStr];
 
                         const result = await runBridgeReadAsync(
-                            python,
-                            bridgePath,
+                            hostExe,
                             updateArgs,
                             getBridgeEnv()
                         );
@@ -1445,8 +1425,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     );
 
     const importFontIntoTarget = async (uri: vscode.Uri): Promise<void> => {
-        const python = getPython();
-        if (!python) {
+        const hostExe = getHost();
+        if (!hostExe) {
             void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
             return;
         }
@@ -1474,8 +1454,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             const pickedPath = importPath;
 
             const replacement = await runBridgePrepareFontReplacementAsync(
-                python,
-                bridgePath,
+                hostExe,
                 pickedPath,
                 targetPath,
                 getBridgeEnv(),
@@ -1491,8 +1470,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     };
 
     const importDdsIntoTexture = async (uri: vscode.Uri, layer = 0): Promise<void> => {
-        const python = getPython();
-        if (!python) {
+        const hostExe = getHost();
+        if (!hostExe) {
             void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
             return;
         }
@@ -1523,10 +1502,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
             const result = isTxtg
                 ? await runBridgeReplaceTxtgPayloadAsync(
-                    python, bridgePath, diskArchive, filePath, ddsBytes, getBridgeEnv(), layer,
+                    hostExe, diskArchive, filePath, ddsBytes, getBridgeEnv(), layer,
                 )
                 : await runBridgeReplaceBntxPayloadAsync(
-                    python, bridgePath, diskArchive, filePath, ddsBytes, getBridgeEnv(), layer,
+                    hostExe, diskArchive, filePath, ddsBytes, getBridgeEnv(), layer,
                 );
 
             void vscode.window.showInformationMessage(
@@ -1624,8 +1603,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
     context.subscriptions.push(
         vscode.commands.registerCommand('totk-editor.openBarsArchive', async (uri: vscode.Uri) => {
-            const python = getPython();
-            if (!python) {
+            const hostExe = getHost();
+            if (!hostExe) {
                 void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
@@ -1633,8 +1612,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 const diskArchive = getDiskArchivePath(uri.fsPath);
                 const filePath = getLocatorInsideDiskArchive(uri.fsPath, diskArchive);
                 const raw = await runBridgeReadAsync(
-                    python,
-                    bridgePath,
+                    hostExe,
                     ['list-bars', diskArchive, filePath],
                     getBridgeEnv(),
                 );
@@ -1643,8 +1621,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     const barsName = path.basename(uri.fsPath) || 'audio.bars';
                     openBarsViewer(barsName, uri.toString(), (raw as any).entries, async (index: number, usePrefetch: boolean) => {
                         const audioRaw = await runBridgeReadAsync(
-                            python,
-                            bridgePath,
+                            hostExe,
                             ['read-bars-audio', diskArchive, filePath, index.toString(), usePrefetch ? 'true' : 'false'],
                             getBridgeEnv(),
                         );
@@ -1675,7 +1652,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                                 title: 'Encoding and replacing BARS audio…',
                             },
                             () => runBridgeReplaceBarsAudioAsync(
-                                python, bridgePath, diskArchive, filePath, index, payload,
+                                hostExe, diskArchive, filePath, index, payload,
                                 loops.start, loops.end, sourceName, getBridgeEnv(),
                             ),
                         );
@@ -1730,8 +1707,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                                 : `Replaced audio for "${result.name}".`) + remixNote + loudnessNote,
                         );
                         const refreshed = await runBridgeReadAsync(
-                            python,
-                            bridgePath,
+                            hostExe,
                             ['list-bars', diskArchive, filePath],
                             getBridgeEnv(),
                         );
@@ -1749,8 +1725,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     );
 
     const totkDiskProvider = new TotkDiskFileSystemProvider(
-        bridgePath,
-        getPython,
+        getHost,
         getBridgeEnv,
         async (write: DiskWriteNotification) => {
             if (!isPathInsideArchive(write.diskPath)) {
@@ -1772,7 +1747,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             isReadonly: false,
         }),
     );
-    registerExternalToolSupport(context, { bridgePath, getPython, getBridgeEnv });
+    registerExternalToolSupport(context, { getHost, getBridgeEnv });
 
     const redirectedDocuments = new Set<string>();
     context.subscriptions.push(
@@ -1953,8 +1928,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 return;
             }
 
-            const pythonExe = getPython();
-            if (!pythonExe) {
+            const hostExe = getHost();
+            if (!hostExe) {
                 void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
@@ -1967,8 +1942,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 const targetExt = path.extname(destUri.fsPath).toLowerCase();
 
                 const bridgeResult = await runBridgeJsonAsync<{ path: string; error?: string }>(
-                    pythonExe,
-                    bridgePath,
+                    hostExe,
                     ['export-converted', diskArchive, locator, targetExt, ...(layer > 0 ? [String(layer)] : [])],
                     undefined,
                     getBridgeEnv(),
@@ -2005,8 +1979,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 return;
             }
 
-            const pythonExe = getPython();
-            if (!pythonExe) {
+            const hostExe = getHost();
+            if (!hostExe) {
                 void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
@@ -2016,8 +1990,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     const diskArchive = getDiskArchivePath(uri.fsPath);
                     const locator = getLocatorInsideDiskArchive(uri.fsPath, diskArchive);
                     const bridgeResult = await runBridgeJsonAsync<{ path: string; error?: string }>(
-                        pythonExe,
-                        bridgePath,
+                        hostExe,
                         ['export-temp', diskArchive, locator],
                         undefined,
                         getBridgeEnv(),

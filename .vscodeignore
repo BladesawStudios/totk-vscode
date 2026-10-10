@@ -32,3 +32,4 @@ scripts/
 
 # the C# host ships as the published program under bin/host/<rid>, not as its source
 host/**
+.gitmodules

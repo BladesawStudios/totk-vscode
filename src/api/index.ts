@@ -30,8 +30,7 @@ export type { ProjectAdapter, ProjectOptionRef, ProjectOptionPickResult } from '
 
 export function createTkvscApi(options: CreateTkvscApiOptions): TkvscApi {
     const ioContext = {
-        bridgePath: options.bridgePath,
-        getPython: options.getPython,
+        getHost: options.getHost,
         getBridgeEnv: options.getBridgeEnv,
     };
 
@@ -45,10 +44,13 @@ export function createTkvscApi(options: CreateTkvscApiOptions): TkvscApi {
         readRawBytes: (uri) => readRawBytes(uri, ioContext),
         writeRawBytes: (uri, data) => writeRawBytes(uri, data, ioContext),
         getBridge: () => ({
-            bridgePath: options.bridgePath,
-            getPython: options.getPython,
+            bridgePath: '',
+            getHost: options.getHost,
+            getPython: options.getHost,
             getBridgeEnv: options.getBridgeEnv,
-            runBridgeJsonAsync,
+            // The second argument used to be the bridge script's path; it is ignored.
+            runBridgeJsonAsync: <T>(host: string, _bridgePath: string, args: string[], stdin?: string, env?: NodeJS.ProcessEnv) =>
+                runBridgeJsonAsync<T>(host, args, stdin, env),
         }),
         getProjectRoots: options.getProjectRoots,
         registerFormatHandler: options.registerFormatHandler,

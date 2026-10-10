@@ -25,8 +25,7 @@ type ExternalToolConfig = {
 };
 
 type RegisterExternalToolOptions = {
-    bridgePath: string;
-    getPython: () => string;
+    getHost: () => string;
     getBridgeEnv: () => NodeJS.ProcessEnv;
 };
 
@@ -118,8 +117,8 @@ export function registerExternalToolSupport(
             return uri.fsPath;
         }
 
-        const python = options.getPython();
-        if (!python) {
+        const hostExe = options.getHost();
+        if (!hostExe) {
             throw new Error(
                 'The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).',
             );
@@ -132,8 +131,7 @@ export function registerExternalToolSupport(
         }
 
         const result = await runBridgeJsonAsync<{ path: string }>(
-            python,
-            options.bridgePath,
+            hostExe,
             ['export-temp', diskArchive, locator],
             undefined,
             options.getBridgeEnv(),

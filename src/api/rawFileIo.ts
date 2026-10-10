@@ -9,19 +9,18 @@ import {
 } from '../archives';
 
 export interface RawFileIoContext {
-    bridgePath: string;
-    getPython: () => string;
+    getHost: () => string;
     getBridgeEnv: () => NodeJS.ProcessEnv;
 }
 
-function requirePython(getPython: () => string): string {
-    const python = getPython();
-    if (!python) {
+function requireHost(getHost: () => string): string {
+    const hostExe = getHost();
+    if (!hostExe) {
         throw new Error(
             'The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).',
         );
     }
-    return python;
+    return hostExe;
 }
 
 async function readTempAndCleanup(tempPath: string): Promise<Uint8Array> {
@@ -39,12 +38,11 @@ async function readStandaloneDiskBytes(
     ctx: RawFileIoContext,
 ): Promise<Uint8Array> {
     if (isTotkFontPath(fsPath)) {
-        const python = ctx.getPython();
-        if (python) {
+        const hostExe = ctx.getHost();
+        if (hostExe) {
             try {
                 const result = await runBridgeJsonAsync<{ path: string }>(
-                    python,
-                    ctx.bridgePath,
+                    hostExe,
                     ['read-font-disk', fsPath],
                     undefined,
                     ctx.getBridgeEnv(),
@@ -96,10 +94,9 @@ export async function readRawBytes(
         return readStandaloneDiskBytes(fsPath, ctx);
     }
 
-    const python = requirePython(ctx.getPython);
+    const hostExe = requireHost(ctx.getHost);
     const result = await runBridgeJsonAsync<{ path: string }>(
-        python,
-        ctx.bridgePath,
+        hostExe,
         ['export-temp', diskArchive, locator],
         undefined,
         ctx.getBridgeEnv(),
@@ -129,11 +126,10 @@ export async function writeRawBytes(
         throw new Error('Cannot write binary data to an archive root.');
     }
 
-    const python = requirePython(ctx.getPython);
+    const hostExe = requireHost(ctx.getHost);
     const encoded = Buffer.from(data).toString('base64');
     await runBridgeJsonAsync<{ success: boolean }>(
-        python,
-        ctx.bridgePath,
+        hostExe,
         ['write-raw', diskArchive, locator],
         encoded,
         ctx.getBridgeEnv(),
