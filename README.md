@@ -118,14 +118,17 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 
 ## Build Instructions
 
-A VSIX file is the installable extension package. Build it from the project root:
+A VSIX file is the installable extension package. It carries the C# host for one platform, so it is built per platform. You need Node.js and the .NET 10 SDK:
 
 ```bash
+git clone --recurse-submodules https://github.com/BladesawStudios/totk-vscode.git
+cd totk-vscode
 npm install
-npm run package:vsix
+npm run package:vsix                      # for this machine
+node scripts/package-vsix.js linux-x64    # or win32-x64, linux-x64, darwin-x64, darwin-arm64
 ```
 
-That produces `totk-vscode-0.0.3-beta.1.vsix` (version comes from `package.json`).
+That produces `out/totk-vscode-<version>.vsix` (version comes from `package.json`).
 
 
 ### Contributing:
@@ -145,17 +148,16 @@ Companion VS Code extensions can extend TKVSC via the exported API. See [docs/ap
 ### Contributors
 **Clonephaze** - [GitHub Template Refactor](https://github.com/BladesawStudios/totk-vscode/pull/62)\
 **Bryn** - [ASB Splatoon 3 Formats](https://github.com/FemBryn/asb-Spl3)\
-**lucythegoosey07** - [RSTB Support](https://github.com/BladesawStudios/totk-vscode/pull/124)
+**lucythegoosey07** - [RSTB Support](https://github.com/BladesawStudios/totk-vscode/pull/124) (since removed)
 
 ### Third-Parties
-**dt13245**: [ASB fork](https://github.com/BladesawStudios/asb), [AINB fork](https://github.com/BladesawStudios/AINB), and [XLink2](https://github.com/dt-12345/xlink2) (v1.1.4) binaries integrated into codebase\
-**P1gyy**: [pymsbt fork](https://github.com/BladesawStudios/pymsbt) integrated into codebase\
+**dt13245**: References for many formats within the game\
 **AeonSake**: [MSBT Editor](https://gitlab.com/AeonSake/msbt-editor) - TotK Config included\
 **LordBubbles**: [TKMM](https://tkmm.org/) - Assistance with implementing TKMM compatibility\
 **KillzXGaming**: [Switch Toolbox](https://github.com/KillzXGaming/Switch-Toolbox) - image handling referenced\
 **Arch Leaders**: [NX Editor](https://github.com/NX-Editor/NxEditor) - text formatting referenced\
-**SolidLink**: [Totkbits](https://github.com/SolidLink95/TotkBits) - Tag.Product & text formatting referenced, bphcl & ptcl implementation used\
-**MrMystery & The5thTear**: [Starlight](https://github.com/Mindstormman06/Starlight-Dev) - AINB node editor design and auto-layout algorithm referenced; node definition database converted into `config/ainbNodeDefs.json.gz`
+**SolidLink**: [Totkbits](https://github.com/SolidLink95/TotkBits) - Tag.Product & text formatting referenced
+**lostromb**: [Concentus](https://github.com/lostromb/concentus) (BSD-3-Clause) - Opus decoding for BWAV audio\
 
 ## Help and Community
 
