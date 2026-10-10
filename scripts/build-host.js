@@ -5,8 +5,8 @@
 //   node scripts/build-host.js --rid linux-x64 one platform
 //   node scripts/build-host.js --all           win-x64, linux-x64, osx-x64, osx-arm64
 //
-// It needs the .NET SDK (10) and the format libraries beside the repository (see host/Directory.Build.props,
-// or pass --lib-root <folder>).
+// It needs the .NET SDK (10) and the format libraries (the submodules in host/libs, or another folder: see
+// host/Directory.Build.props, or pass --lib-root <folder>).
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
