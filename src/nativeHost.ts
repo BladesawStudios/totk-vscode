@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import { logger } from './logger';
 
 const EXECUTABLE = process.platform === 'win32' ? 'tkvsc-host.exe' : 'tkvsc-host';
@@ -24,16 +23,10 @@ function runtimeIdentifier(): string | undefined {
 }
 
 /**
- * The C# host that runs the bridge commands, or undefined when it is switched off (`TKVSC.useNativeHost`)
- * or not built for this platform. A packaged extension carries it under `bin/host/<rid>/`; a checkout
- * has the build output of `host/`.
+ * The C# host that runs the bridge commands, or undefined when none is built for this platform. A packaged
+ * extension carries it under `bin/host/<rid>/`; a checkout has the build output of `host/`.
  */
 export function resolveNativeHost(extensionPath: string): string | undefined {
-    if (!vscode.workspace.getConfiguration('TKVSC').get<boolean>('useNativeHost', true)) {
-        logger.info('host: native host disabled by TKVSC.useNativeHost');
-        return undefined;
-    }
-
     const rid = runtimeIdentifier();
     const candidates = [
         ...(rid ? [path.join(extensionPath, 'bin', 'host', rid, EXECUTABLE)] : []),
@@ -48,6 +41,6 @@ export function resolveNativeHost(extensionPath: string): string | undefined {
         }
     }
 
-    logger.info('host: no native host found; using the Python bridge only');
+    logger.error('host: no tkvsc-host found for this platform');
     return undefined;
 }

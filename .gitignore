@@ -3,13 +3,9 @@ dist
 node_modules
 .vscode-test/
 *.vsix
-__pycache__
-.venv/
 editors/node-editor/context/
 context/
 research
-.ruff_cache/
-totk_vscode_python.egg-info/
 *.plan.md
 
 # the C# host

@@ -8,6 +8,16 @@ Reference docs: [v1.md](v1.md)
 
 ---
 
+## Python handlers removed
+
+**Removed** (no add-on used them)
+
+- `registerBridgeHandler(registration)` and the `bridgeHandlers` entry of `contributes.tkvsc`; the extension no longer runs Python, so add-on Python modules are not loaded. A format of your own is read and written by your own custom editor (`registerFormatHandler` with `editable: false`, then `readRawBytes` / `writeRawBytes`).
+- `handlers` in `tkvsc-handler-manifest.json`.
+- `getBridge()` is unchanged in shape, but `getPython()` now returns the path of the TKVSC host, and `bridgePath` is empty and ignored.
+
+---
+
 ## v1 (Phase 1)
 
 **Added**

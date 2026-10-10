@@ -538,18 +538,6 @@
         "title": "TKVSC: Run First-Time Setup (RomFS, Projects, TKMM)"
       },
       {
-        "command": "totk-editor.setupPython",
-        "title": "TKVSC: Set Up Python Environment"
-      },
-      {
-        "command": "totk-editor.pickPython",
-        "title": "TKVSC: Select Python (from detected installs)"
-      },
-      {
-        "command": "totk-editor.browsePython",
-        "title": "TKVSC: Browse for python.exe (must be Python 3.12)"
-      },
-      {
         "command": "totk-editor.rebuildRomfsIndex",
         "title": "TKVSC: Rebuild Game Dump Search Index"
       },
@@ -958,16 +946,6 @@
           "default": true,
           "markdownDescription": "Enable pop-up toast notifications in VS Code for Warnings and Errors."
         },
-        "TKVSC.useNativeHost": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Run file operations in the built-in C# host, which is faster and does not need Python for the formats it covers. Anything it does not cover yet still uses the Python bridge. Turn this off to use Python for everything."
-        },
-        "TKVSC.pythonPath": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Full path to **python.exe** (Python 3.13+), used only for the features that still need Python (see the README). Use this when `python3` works in CMD but the extension says Python was not found - Run **TKVSC: Browse for python.exe** or **TKVSC: Select Python** to set this automatically."
-        },
         "TKVSC.projectsPath": {
           "type": "string",
           "default": "",
@@ -1208,9 +1186,8 @@
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "node node_modules/@typescript/native/bin/tsc --noEmit",
     "lint": "eslint src",
-    "lint-python": "python -m ruff format --check .",
     "lint-fix": "eslint src --fix",
-    "fix": "eslint src --fix && python -m ruff check --fix && python -m ruff format",
+    "fix": "eslint src --fix",
     "test": "vscode-test"
   },
   "devDependencies": {

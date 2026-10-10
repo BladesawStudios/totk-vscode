@@ -214,7 +214,7 @@ public class ArchiveTests
     }
 
     [Fact]
-    public void ABymlWithHashMapsShowsAndSavesWithoutThePythonBridge()
+    public void ABymlWithHashMapsShowsAndSaves()
     {
         using Workspace w = new();
         string file = w.Path("Voices.byml");
@@ -256,7 +256,7 @@ public class ArchiveTests
     }
 
     [Fact]
-    public void ACommandTheHostLacksIsLeftToThePythonBridge()
+    public void ACommandTheHostLacksIsNotFound()
     {
         Assert.Null(Commands.Find("a-command-nobody-wrote"));
         Assert.NotNull(Commands.Find("render-bntx-texture"));
@@ -264,14 +264,14 @@ public class ArchiveTests
     }
 
     [Fact]
-    public void AnAddonHandlerKindAsksForThePythonBridge()
+    public void AKindNoOneHandlesReadsAsBinary()
     {
         using Workspace w = new();
         string file = w.Path("Thing.zzz");
         File.WriteAllBytes(file, [1, 2, 3, 4]);
         string manifest = w.Path("addon-manifest.json");
-        File.WriteAllText(manifest, """{ "extensionToHandler": { "zzz": "custom" }, "aampExtensions": [], "handlers": { "custom": {} } }""");
+        File.WriteAllText(manifest, """{ "extensionToHandler": { "zzz": "custom" }, "aampExtensions": [] }""");
 
-        Assert.Throws<NotPortedException>(() => w.Run("read-disk", [file], manifest: manifest));
+        Assert.Contains("Binary Data: 4 bytes", w.Run("read-disk", [file], manifest: manifest).ToJsonString());
     }
 }

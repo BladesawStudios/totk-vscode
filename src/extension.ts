@@ -21,14 +21,6 @@ import { resolveNativeHost } from './nativeHost';
 import { openTextureViewer, initTextureViewer } from './textureViewer';
 import { openAudioViewer, initAudioViewer } from './audioViewer';
 import { openBarsViewer, initBarsViewer } from './barsViewer';
-import {
-    adoptExistingPython,
-    ensurePythonEnvironment,
-    getCachedPythonExecutable,
-    promptPythonSetup,
-    browseForPython,
-    pickDetectedPython,
-} from './pythonEnv';
 import { isEditableFile, toTotkDiskUri } from './editableFiles';
 import { TotkDiskFileSystemProvider } from './totkDiskFs';
 import {
@@ -48,7 +40,6 @@ import { getCoreExtensions } from './coreFsExtensions';
 import {
     initAddonRegistries,
     refreshAddonManifests,
-    registerBridgeHandler,
     registerFormatHandler,
     registerGameProfileApi,
     registerProjectAdapterApi,
@@ -205,7 +196,7 @@ class SarcProvider implements vscode.FileSystemProvider {
         const python = this.getPython();
         if (!python) {
             throw new Error(
-                'Python environment is not ready. Run "TKVSC: Set Up Python Environment" or install Python 3.10+.',
+                'The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).',
             );
         }
         return python;
@@ -564,7 +555,7 @@ class SarcProvider implements vscode.FileSystemProvider {
 
             return new TextEncoder().encode(content);
         } catch (error) {
-            logger.error('Python Read Error:', error as Error);
+            logger.error('Read Error:', error as Error);
             const message = error instanceof Error ? error.message : String(error);
             return new TextEncoder().encode(
                 formatExternalToolPrompt(filePath, `Error reading file: ${message}`),
@@ -892,23 +883,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     } as any;
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('totk-editor.setupPython', async () => {
-            const python = await ensurePythonEnvironment(context, true);
-            if (python) {
-                void vscode.window.showInformationMessage('TKVSC: Python environment is ready.');
-                void runFirstTimeSetup(context);
-            } else {
-                await promptPythonSetup(context);
-            }
-        }),
         vscode.commands.registerCommand('totk-editor.runSetup', async () => {
             await context.globalState.update('TKVSC.hasPromptedRomfsPath', false);
             await context.globalState.update('TKVSC.hasPromptedProjectsPath', false);
             await context.globalState.update('TKVSC.hasPromptedTKMMImport', false);
             void runFirstTimeSetup(context);
         }),
-        vscode.commands.registerCommand('totk-editor.pickPython', () => pickDetectedPython(context)),
-        vscode.commands.registerCommand('totk-editor.browsePython', () => browseForPython(context)),
     );
 
     registerDocumentLanguageModes(context);
@@ -918,23 +898,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     context.subscriptions.push(TkvscEditorProvider.register(context));
     context.subscriptions.push(BwavEditorProvider.register(context));
 
-    const bridgePath = path.join(context.extensionPath, 'python', 'totk_bridge.py');
-    // The C# host answers the bridge commands it has ported and runs the Python bridge for the rest, so with
-    // the host present the "interpreter" the call sites pass is the host itself.
+    // The C# host runs every bridge command. The call sites still pass its path where they once passed an
+    // interpreter (`getPython`) and a script path (`bridgePath`, which is no longer read).
     const nativeHost = resolveNativeHost(context.extensionPath);
-    configureNativeHost(
-        nativeHost,
-        () => getCachedPythonExecutable() ?? '',
-        // Python is set up the first time a command the host hands over needs it.
-        async () => {
-            const python = await ensurePythonEnvironment(context);
-            if (!python) {
-                await promptPythonSetup(context);
-            }
-            return python;
-        },
-    );
-    const getPython = () => nativeHost ?? getCachedPythonExecutable() ?? '';
+    configureNativeHost(nativeHost, context.extensionPath);
+    const bridgePath = '';
+    const getPython = () => nativeHost ?? '';
     const rawFileIoContext = { bridgePath, getPython, getBridgeEnv };
 
     let archiveTree: ReturnType<typeof registerArchiveTree> | undefined;
@@ -948,7 +917,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             archiveTree?.getProjectRoots().map((root) => root.fsPath) ?? [],
         onDidReadyEmitter,
         registerFormatHandler: (registration) => registerFormatHandler(context, registration),
-        registerBridgeHandler: (registration) => registerBridgeHandler(context, registration),
         registerGameProfile: (registration, options) =>
             registerGameProfileApi(context, registration, options),
         getActiveGameProfile: () => getActiveGameProfile(),
@@ -1357,7 +1325,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             }
             const python = getPython();
             if (!python) {
-                await promptPythonSetup(context);
+                void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
             void vscode.window.showInformationMessage('TKVSC: Rebuilding RomFS search index...');
@@ -1374,7 +1342,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             }
             const python = getPython();
             if (!python) {
-                await promptPythonSetup(context);
+                void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
             void vscode.window.showInformationMessage('TKVSC: Rebuilding canonical path index...');
@@ -1419,7 +1387,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         vscode.commands.registerCommand('totk-editor.openBntxTexture', async (uri: vscode.Uri, layer = 0) => {
             const python = getPython();
             if (!python) {
-                void vscode.window.showErrorMessage('Python not configured.');
+                void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
             try {
@@ -1479,7 +1447,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     const importFontIntoTarget = async (uri: vscode.Uri): Promise<void> => {
         const python = getPython();
         if (!python) {
-            await promptPythonSetup(context);
+            void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
             return;
         }
         const isReadOnly = uri.scheme === 'totk-dump' || uri.scheme === 'sarc-dump';
@@ -1525,7 +1493,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     const importDdsIntoTexture = async (uri: vscode.Uri, layer = 0): Promise<void> => {
         const python = getPython();
         if (!python) {
-            await promptPythonSetup(context);
+            void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
             return;
         }
         const isReadOnly = uri.scheme === 'totk-dump' || uri.scheme === 'sarc-dump';
@@ -1658,7 +1626,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         vscode.commands.registerCommand('totk-editor.openBarsArchive', async (uri: vscode.Uri) => {
             const python = getPython();
             if (!python) {
-                void vscode.window.showErrorMessage('Python not configured.');
+                void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
             try {
@@ -1846,7 +1814,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         }),
     );
 
-    // Start Python bootstrap in background so activation doesn't block the extension host.
     let indexBuildsScheduled = false;
     const scheduleIndexBuilds = (): void => {
         if (indexBuildsScheduled) {
@@ -1858,28 +1825,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         void importKnownProjectCanonicalPaths();
     };
 
-    if (nativeHost) {
-        // The host runs the commands itself, so nothing waits for Python. An environment from an earlier setup is
-        // picked up for the few commands the host hands over; otherwise it is made the first time one is run.
-        adoptExistingPython(context);
-        void runFirstTimeSetup(context);
-    } else {
-        logger.info('Starting Python background environment setup...');
-        void ensurePythonEnvironment(context).then(async (python) => {
-            if (!python) {
-                logger.warn('Python environment is not ready after activation check.');
-                await promptPythonSetup(context);
-                return;
-            }
-            logger.info('Python background setup completed. Commencing search and canonical index building.');
-            scheduleIndexBuilds();
-
-            void runFirstTimeSetup(context);
-        }).catch(async (err) => {
-            logger.error('Error in background Python setup:', err as Error);
-            await promptPythonSetup(context);
-        });
+    if (!nativeHost) {
+        void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
     }
+    void runFirstTimeSetup(context);
 
     try {
         await migrateOffStandaloneIconTheme(context);
@@ -1897,8 +1846,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     void ensureProjectCanonicalOverlayExists(projectCanonicalOverlayPath);
     await migrateSarcWorkspaceFolders(archiveTree);
     onDidReadyEmitter.fire();
-    // With the host there is nothing to wait for; otherwise the Python setup above schedules them when it is ready.
-    if (nativeHost || getCachedPythonExecutable()) {
+    if (nativeHost) {
         scheduleIndexBuilds();
     }
 
@@ -2007,7 +1955,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
             const pythonExe = getPython();
             if (!pythonExe) {
-                await promptPythonSetup(context);
+                void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
 
@@ -2059,7 +2007,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
             const pythonExe = getPython();
             if (!pythonExe) {
-                await promptPythonSetup(context);
+                void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 return;
             }
 

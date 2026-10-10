@@ -3,9 +3,6 @@ using System.Text.Json.Nodes;
 
 namespace TkvscHost;
 
-/// <summary>Thrown for a command or file kind the host does not handle yet; the Python bridge takes it over.</summary>
-public sealed class NotPortedException(string what) : Exception(what);
-
 /// <summary>What a command runs with: its arguments, the settings, and the standard input it may read once.</summary>
 public sealed class CommandContext
 {

@@ -1,9 +1,3 @@
-`Set Up Python Environment` - Sets up plugin, runs automatically on first launch
-
-`Select Python (from detected installs)` - Searches the device for valid Python installations to choose from
-
-`Browse for python.exe` - Prompts the user to select a python executable from their device
-
 `Set Game Dump Path` - Prompts the user to select the romfs folder of their game dump (does not need to be named romfs)
 
 `Rebuild Game Dump Search Index` - Generates an SQLite database of files, archives, and sub-files/archives in the supplied romfs dump

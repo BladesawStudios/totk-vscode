@@ -110,24 +110,11 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 * [Microsoft C++ Redis](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
 * Node.js and the .NET 10 SDK (if building extension from source; see `host/README.md`)
 * Valid TotK dump
-* [Python 3.13+](https://www.python.org/downloads/) is optional. Nearly everything runs in the extension's built-in C# host. Python is only
-  used for add-ons that bring Python handlers; the first time one is used the extension offers to set it up (it makes its own virtual environment, which needs internet once). On Linux that
-  also needs `python3-venv`.
 
 ### Steps
 1. Install the extension (VSIX).
 2. Follow the prompt to select your romfs dump path.
 
-
-### Python troubleshooting (only if you use something that needs Python)
-
-**`python3` works in CMD but the extension cannot find Python?** VSCode is often launched without your full user PATH (unlike a terminal you opened yourself). Fix:
-
-1. **TKVSC: Select Python (from detected installs)** - scans `where python3`, common install folders, and `py`.
-2. **TKVSC: Browse for python.exe** - point at the real interpreter (e.g. `%LocalAppData%\Programs\Python\Python314\python.exe`).
-3. Or set **TKVSC → Python Path** to that full path, then **TKVSC: Set Up Python Environment** again.
-
-If setup fails, run **TKVSC: Set Up Python Environment** from the Command Palette.
 
 ## Build Instructions
 

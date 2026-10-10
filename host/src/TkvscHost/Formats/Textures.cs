@@ -134,7 +134,7 @@ public static class Textures
         try { file = BntxFile.Load(bntx); }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException or ArgumentException or IndexOutOfRangeException)
         {
-            throw new NotPortedException("a BNTX the C# reader does not accept");
+            throw new InvalidDataException($"The BNTX could not be read: {e.Message}", e);
         }
 
         BntxTexture? texture = Find(file, name);

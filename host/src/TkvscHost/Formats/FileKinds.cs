@@ -9,20 +9,17 @@ namespace TkvscHost.Formats;
 /// </summary>
 public sealed class FileKinds(Env env, Containers containers)
 {
-    /// <summary>Kinds the host reads and writes itself. The rest of the manifest's kinds are add-ons or not ported yet.</summary>
+    /// <summary>Kinds the host reads and writes. Other kinds in the manifest are for add-ons' own editors, which read raw bytes.</summary>
     public static readonly HashSet<string> Native = ["byml", "msbt", "aamp", "xlnk"];
-
-    private static readonly HashSet<string> BuiltinKinds = ["byml", "msbt", "aamp", "xlnk"];
 
     private readonly Lazy<Manifest> _manifest = new(() => Manifest.Load(env.HandlerManifestPath));
 
-    private sealed record Manifest(Dictionary<string, string> ExtensionToHandler, HashSet<string> AampExtensions, HashSet<string> Handlers)
+    private sealed record Manifest(Dictionary<string, string> ExtensionToHandler, HashSet<string> AampExtensions)
     {
         public static Manifest Load(string path)
         {
             Dictionary<string, string> map = new(StringComparer.Ordinal);
             HashSet<string> aamp = new(StringComparer.Ordinal);
-            HashSet<string> handlers = new(StringComparer.Ordinal);
 
             if (path.Length > 0 && File.Exists(path))
             {
@@ -36,14 +33,12 @@ public sealed class FileKinds(Env env, Containers containers)
                         if (root["aampExtensions"] is JsonArray a)
                             foreach (JsonNode? ext in a)
                                 if (ext?.GetValueKind() == JsonValueKind.String) aamp.Add(ext.GetValue<string>());
-                        if (root["handlers"] is JsonObject h)
-                            foreach (var (key, _) in h) handlers.Add(key);
                     }
                 }
                 catch (Exception e) when (e is IOException or JsonException) { }
             }
 
-            return new Manifest(map, aamp, handlers);
+            return new Manifest(map, aamp);
         }
     }
 
@@ -64,9 +59,6 @@ public sealed class FileKinds(Env env, Containers containers)
         if (manifest.AampExtensions.Contains(ext)) return "aamp";
         return manifest.ExtensionToHandler.GetValueOrDefault(ext);
     }
-
-    public bool IsAddonKind(string? kind)
-        => kind is not null && !BuiltinKinds.Contains(kind) && _manifest.Value.Handlers.Contains(kind);
 
     /// <summary>The handler kind of a file by name, and failing that by what is inside it.</summary>
     public string? KindOf(string logicalPath, byte[]? data = null)

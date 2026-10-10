@@ -1,5 +1,5 @@
 import * as path from 'path';
-import type { FormatRegistration, BridgeHandlerRegistration } from './formatRegistry';
+import type { FormatRegistration } from './formatRegistry';
 import type { GameProfileRegistration } from './gameProfile';
 
 export interface TkvscManifestContribution {
@@ -8,12 +8,6 @@ export interface TkvscManifestContribution {
     formats?: FormatRegistration[];
     aampExtensions?: string[];
     archivePatterns?: string[];
-    bridgeHandlers?: Array<{
-        kind: string;
-        modulePath: string;
-        readFunction?: string;
-        writeFunction?: string;
-    }>;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -102,29 +96,6 @@ function parseFormats(raw: unknown): FormatRegistration[] | undefined {
     return formats.length > 0 ? formats : undefined;
 }
 
-function parseBridgeHandlers(raw: unknown): TkvscManifestContribution['bridgeHandlers'] {
-    if (!Array.isArray(raw)) {
-        return undefined;
-    }
-    const handlers: NonNullable<TkvscManifestContribution['bridgeHandlers']> = [];
-    for (const entry of raw) {
-        if (!entry || typeof entry !== 'object') {
-            continue;
-        }
-        const obj = entry as Record<string, unknown>;
-        if (typeof obj.kind !== 'string' || typeof obj.modulePath !== 'string') {
-            continue;
-        }
-        handlers.push({
-            kind: obj.kind,
-            modulePath: obj.modulePath,
-            readFunction: typeof obj.readFunction === 'string' ? obj.readFunction : undefined,
-            writeFunction: typeof obj.writeFunction === 'string' ? obj.writeFunction : undefined,
-        });
-    }
-    return handlers.length > 0 ? handlers : undefined;
-}
-
 export function mergeArchivePatternLists(
     ...lists: Array<string[] | undefined>
 ): string[] | undefined {
@@ -161,43 +132,15 @@ export function parseTkvscContribution(raw: unknown): TkvscManifestContribution 
         contribution.archivePatterns = obj.archivePatterns;
     }
 
-    const bridgeHandlers = parseBridgeHandlers(obj.bridgeHandlers);
-    if (bridgeHandlers) {
-        contribution.bridgeHandlers = bridgeHandlers;
-    }
-
     if (
         !contribution.id
         && !contribution.gameProfile
         && !contribution.formats?.length
         && !contribution.aampExtensions?.length
         && !contribution.archivePatterns?.length
-        && !contribution.bridgeHandlers?.length
     ) {
         return undefined;
     }
 
     return contribution;
-}
-
-export function contributionToBridgeHandlers(
-    contribution: TkvscManifestContribution,
-    extensionRoot: string,
-): BridgeHandlerRegistration[] {
-    const handlers: BridgeHandlerRegistration[] = [];
-    for (const entry of contribution.bridgeHandlers ?? []) {
-        if (!entry.kind || !entry.modulePath) {
-            continue;
-        }
-        const resolved = path.isAbsolute(entry.modulePath)
-            ? entry.modulePath
-            : path.join(extensionRoot, entry.modulePath);
-        handlers.push({
-            kind: entry.kind,
-            modulePath: resolved,
-            readFunction: entry.readFunction,
-            writeFunction: entry.writeFunction,
-        });
-    }
-    return handlers;
 }

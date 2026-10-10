@@ -11,14 +11,14 @@ Thanks for your interest in contributing! Here's what you need to know.
 ## Before submitting a PR
 
 - Make sure the extension builds: `npm run build`
-- Run `npm run fix` to lint and format both TypeScript and Python
+- Run `npm run fix` to lint TypeScript
 - Keep changes focused - one concern per PR
 - Reference any related issue in your PR description (e.g. `Closes #123`)
 - Don't include unrelated formatting or whitespace changes
 
 ## Code style
 
-- TypeScript source lives in `src/`, Python scripts in `python/`, and local dependencies in `vendor/`
+- TypeScript source lives in `src/`, the C# host in `host/`, and bundled data in `vendor/`
 - Follow the existing patterns in the file you're editing
 
 ## Addon API documentation

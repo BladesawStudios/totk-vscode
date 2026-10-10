@@ -1,4 +1,4 @@
-/** Keep in sync with python/archive_resolve.py decrypt_bfttf */
+/** Keep in sync with BFontSharp (the host uses it for fonts) */
 
 const ENCRYPTED_MAGICS = new Map<number, number>([
     [0xd99b871a, 2785117442],

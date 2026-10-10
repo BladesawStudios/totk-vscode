@@ -121,7 +121,7 @@ export function registerExternalToolSupport(
         const python = options.getPython();
         if (!python) {
             throw new Error(
-                'Python environment is not ready. Run "TKVSC: Set Up Python Environment" first.',
+                'The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).',
             );
         }
 

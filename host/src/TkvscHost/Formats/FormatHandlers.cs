@@ -21,8 +21,6 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
     public string ReadContent(byte[] fileData, string logicalPath)
     {
         string? kind = kinds.KindOf(logicalPath, fileData);
-        if (kinds.IsAddonKind(kind)) throw new NotPortedException($"add-on handler '{kind}'");
-
         return kind switch
         {
             "byml" => ReadByml(fileData, logicalPath),
@@ -45,7 +43,7 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
         if (data.Length == 0) return "{}\n";
 
         if (!(data.AsSpan().StartsWith("YB"u8) || data.AsSpan().StartsWith("BY"u8)))
-            throw new NotPortedException("unusual BYML magic");
+            throw new InvalidDataException("The file is not a BYML (it does not start with BY or YB).");
 
         Byml root;
         try
@@ -54,7 +52,7 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
         }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException or ArgumentException or IndexOutOfRangeException)
         {
-            throw new NotPortedException("BYML the C# reader does not accept");
+            throw new InvalidDataException($"The BYML could not be read: {e.Message}", e);
         }
 
         // Particle data shows as YAML of its emitters' colours, in place of the binary; if it can't be read the binary stays.
@@ -85,10 +83,6 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
         try
         {
             return BymlEditorFormat.ToEditorText(root, env.BymlInlineContainerMaxCount);
-        }
-        catch (NotPortedException)
-        {
-            throw;
         }
         catch (Exception)
         {
@@ -162,7 +156,7 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
     {
         byte[] data = containers.Decompress(fileData, logicalPath).Data;
         if (data.Length == 0) return new ParameterIO().ToYaml(AampNames());
-        if (!data.AsSpan().StartsWith("AAMP"u8)) throw new NotPortedException("not AAMP");
+        if (!data.AsSpan().StartsWith("AAMP"u8)) throw new InvalidDataException("The file is not an AAMP (it does not start with AAMP).");
 
         return ParameterIO.FromBinary(data).ToYaml(AampNames());
     }
@@ -176,8 +170,6 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
 
     public byte[] WriteContent(string kind, byte[] original, string editorText, string logicalPath)
     {
-        if (kinds.IsAddonKind(kind)) throw new NotPortedException($"add-on handler '{kind}'");
-
         return kind switch
         {
             "byml" => WriteByml(original, editorText, logicalPath),
@@ -211,7 +203,7 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
             }
             catch (Exception e) when (e is InvalidDataException or NotSupportedException or ArgumentException or IndexOutOfRangeException)
             {
-                throw new NotPortedException("BYML the C# reader does not accept");
+                throw new InvalidDataException($"The BYML could not be read: {e.Message}", e);
             }
         }
 

@@ -10,7 +10,7 @@ export function getAampHashNamesPath(): string | undefined {
     return aampHashNamesPath;
 }
 
-/** Writes the `TKVSC.aampHashNames` setting to disk so the Python bridge can register custom AAMP hash names. */
+/** Writes the `TKVSC.aampHashNames` setting to disk so the host can register custom AAMP hash names. */
 export function writeAampHashNames(globalStorageFsPath: string): string {
     const target = path.join(globalStorageFsPath, AAMP_HASH_NAMES_FILE_NAME);
     aampHashNamesPath = target;

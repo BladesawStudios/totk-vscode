@@ -13,12 +13,9 @@ vsc-extension-quickstart.md
 **/*.ts
 **/.vscode-test.*
 images/
-**/__pycache__/**
-**/*.pyc
 **/.git/**
 icons/*.ai
 graphics/
-vendor/py-xlink2
 .github/
 .venv*/**
 context/
@@ -31,28 +28,7 @@ node_modules/**
 !node_modules/sql.js/LICENSE
 !node_modules/sql.js/dist/sql-wasm.js
 !node_modules/sql.js/dist/sql-wasm.wasm
-.gitmodules
 scripts/
-.ruff_cache/
-**/*.egg-info/**
-
-# vgmstream ships Winamp/XMPlay player plugins; python/bwav_io.py only runs vgmstream-cli
-vendor/vgmstream/**/in_vgmstream.dll
-vendor/vgmstream/**/xmp-vgmstream.dll
-
-# archives no code path reads
-vendor/asb/asb_as_json.7z
-vendor/bphcl/resources/resources.7z
-
-# scaffolding from vendored upstream repos
-**/.gitignore
-vendor/*/.github/**
-vendor/ainb/tests/**
-vendor/ainb/test_ainb_edit.py
-vendor/hexpyt/tests/**
-vendor/hexpyt/examples/**
-vendor/hexpyt/resources/**
-vendor/bphcl/generator/**
 
 # the C# host ships as the published program under bin/host/<rid>, not as its source
 host/**

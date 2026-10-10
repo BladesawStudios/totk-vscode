@@ -43,18 +43,7 @@ public static class AudioCommands
         else File.WriteAllBytes(archive, bytes);
     }
 
-    // A BWAV's samples. A codec BfAudioSharp does not know goes back to the Python bridge (vgmstream).
-    private static PcmAudio Decode(byte[] bwav)
-    {
-        try
-        {
-            return Bwav.Decode(bwav);
-        }
-        catch (NotSupportedException e)
-        {
-            throw new NotPortedException(e.Message);
-        }
-    }
+    private static PcmAudio Decode(byte[] bwav) => Bwav.Decode(bwav);
 
     private static JsonNode? Seconds(int? samples, int rate) => samples is { } s && rate > 0 ? JsonValue.Create(s / (double)rate) : null;
 

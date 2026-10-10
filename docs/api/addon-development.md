@@ -51,12 +51,12 @@ export async function activate(context: vscode.ExtensionContext) {
 | Model | When to use |
 |-------|-------------|
 | **Standard VS Code contributes** | Commands, menus, custom editors, grammars, settings - no TKVSC API required beyond optional helpers |
-| **`contributes.tkvsc` manifest** | Declarative file formats, game profiles, AAMP extensions, archive patterns, Python bridge handlers |
-| **TKVSC programmatic API** | Project tree context, raw file I/O inside archives, Python bridge access, runtime format registration |
+| **`contributes.tkvsc` manifest** | Declarative file formats, game profiles, AAMP extensions, archive patterns |
+| **TKVSC programmatic API** | Project tree context, raw file I/O inside archives, host access, runtime format registration |
 
 ## Declarative formats (`contributes.tkvsc`)
 
-Declare formats in your addon `package.json`. Core merges them with built-in TotK formats and writes a handler manifest for the Python bridge.
+Declare formats in your addon `package.json`. Core merges them with built-in TotK formats and writes a handler manifest for the host. Core only converts the built-in kinds (BYML, MSBT, AAMP, XLNK) to text; any other kind is for your own custom editor, which reads and writes raw bytes with `readRawBytes` / `writeRawBytes`.
 
 ```json
 {
@@ -69,39 +69,16 @@ Declare formats in your addon `package.json`. Core merges them with built-in Tot
           "language": "yaml",
           "editable": false
         }
-      ],
-      "bridgeHandlers": [
-        {
-          "kind": "ainb",
-          "modulePath": "./python/ainb_io.py"
-        }
       ]
     }
   }
 }
 ```
 
-Python module contract (addon-provided):
-
-```python
-def read_content(file_data: bytes, logical_path: str, romfs_path: str = "") -> str: ...
-
-
-def write_content(
-    original: bytes, editor_text: str, logical_path: str, romfs_path: str = ""
-) -> bytes: ...
-```
-
-Function names default to `read_content` / `write_content` and can be overridden per handler.
-
 You can also register at runtime:
 
 ```typescript
 api.registerFormatHandler({ extensions: ['ainb'], handler: 'ainb', language: 'yaml', editable: false });
-api.registerBridgeHandler({
-  kind: 'ainb',
-  modulePath: path.join(context.extensionPath, 'python', 'ainb_io.py'),
-});
 ```
 
 See [api/v1.md](api/v1.md) for full field reference.

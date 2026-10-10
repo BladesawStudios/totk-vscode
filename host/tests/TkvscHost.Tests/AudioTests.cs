@@ -75,7 +75,7 @@ public class AudioTests
     }
 
     [Fact]
-    public void ABwavWithAnUnknownCodecGoesBackToPython()
+    public void ABwavWithAnUnknownCodecIsRefused()
     {
         using Workspace w = new();
         byte[] bwav = Bwav.Build([Tone(100)], 32000);
@@ -83,7 +83,7 @@ public class AudioTests
         string file = w.Path("Voice.bwav");
         File.WriteAllBytes(file, bwav);
 
-        Assert.Throws<NotPortedException>(() => w.Run("read-bwav-audio", [file, ""]));
+        Assert.Throws<NotSupportedException>(() => w.Run("read-bwav-audio", [file, ""]));
     }
 
     [Fact]

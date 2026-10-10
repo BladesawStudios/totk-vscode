@@ -4,7 +4,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { getNativeHostExecutable, runBridgeJsonAsync } from '../bridge';
 import { getBridgeEnv } from '../api/bridgeEnv';
-import { getCachedPythonExecutable } from '../pythonEnv';
 import { logger } from '../logger';
 import {
     getDiskArchivePath,
@@ -15,22 +14,13 @@ import {
 const panels = new Map<string, vscode.WebviewPanel>();
 
 function getPython(): string {
-    const host = getNativeHostExecutable();
-    if (host) {
-        return host;
-    }
-    const config = vscode.workspace.getConfiguration('TKVSC');
-    const override = config.get<string>('pythonPath', '');
-    if (override) {
-        return override;
-    }
-    return getCachedPythonExecutable() ?? '';
+    return getNativeHostExecutable() ?? '';
 }
 
 async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Promise<{ data: Uint8Array; resolvedName: string }> {
     const fsPath = uri.fsPath;
     const python = getPython();
-    const bridgePath = path.join(extensionUri.fsPath, 'python', 'totk_bridge.py');
+    const bridgePath = '';
     const env = getBridgeEnv();
 
     logger.info(`[HexEditor] getRawBinaryBytes: uri=${uri.toString()} scheme=${uri.scheme}`);
@@ -45,7 +35,7 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
     if (isPathInsideArchive(fsPath)) {
         if (!python) {
             logger.info(`[HexEditor] ERROR: Python not available for archive export`);
-            throw new Error('Python environment is not ready. Please configure Python first.');
+            throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
         }
         const diskArchive = getDiskArchivePath(fsPath);
         const locator = getLocatorInsideDiskArchive(fsPath, diskArchive);
@@ -90,7 +80,7 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
                 try { fs.unlinkSync(tempRawPath); } catch {}
             }
             logger.info(`[HexEditor] ERROR: Python not available for .zs decompression`);
-            throw new Error('Python environment is not ready. Decompression of .zs requires Python.');
+            throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
         }
 
         logger.info(`[HexEditor] Calling bridge decompress-file: tempRawPath=${tempRawPath} basename=${path.basename(fsPath)}`);
@@ -203,9 +193,9 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                     logger.info(`[HexEditor] File is .zs - recompressing before save`);
                     const python = getPython();
                     if (!python) {
-                        throw new Error('Python environment is not ready. Re-compression of .zs requires Python.');
+                        throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                     }
-                    const bridgePath = path.join(extensionUri.fsPath, 'python', 'totk_bridge.py');
+                    const bridgePath = '';
                     const env = getBridgeEnv();
 
                     // Create a temp file with the uncompressed data
@@ -251,9 +241,9 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
             try {
                 const python = getPython();
                 if (!python) {
-                    throw new Error('Python environment is not ready.');
+                    throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 }
-                const bridgePath = path.join(extensionUri.fsPath, 'python', 'totk_bridge.py');
+                const bridgePath = '';
                 const env = getBridgeEnv();
 
                 // Create a temp file with the binary data

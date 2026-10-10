@@ -5,9 +5,6 @@ The absolute path to your Game Dump's romfs folder (the folder does not need to 
 
 For example: `C:\Users\Aster\Zelda\TotK Dumps\140\romfs`
 
-## Python Path
-The absolute path to `python.exe` on your system. It *must* be **Python 3.12**.
-
 ## Canonical Sync Options
 
 ### Enable Canonical Sync
