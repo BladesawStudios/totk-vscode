@@ -111,7 +111,7 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
     {
         byte[] data = containers.Decompress(fileData, logicalPath).Data;
         if (data.Length == 0)
-            return "# New MSBT file detected.\n# Creating MSBT from empty data is not supported yet.\n# Copy an existing MSBT as a template, then edit labels.\n";
+            return "# New MSBT file.\n# Add one message per line as 'Label: text', then save. Use \\n inside the text for a line break.\n";
 
         return MsbtFile.FromBinary(data).ToEditorText(MsbtTags());
     }
@@ -229,12 +229,18 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
     private byte[] WriteMsbt(byte[] original, string editorText, string logicalPath)
     {
         Unwrapped unwrapped = containers.Decompress(original, logicalPath);
-        if (unwrapped.Data.Length == 0)
-            throw new InvalidOperationException("Cannot create MSBT from empty file yet. Copy an existing .msbt as a template first.");
 
-        MsbtFile file = MsbtFile.FromBinary(unwrapped.Data);
-        file.ApplyEditorText(editorText, MsbtTags());
+        // An empty file starts a new one in the shape the game's own use: little endian, UTF-16, version 3, labels and text.
+        MsbtFile file = unwrapped.Data.Length == 0 ? NewMsbt() : MsbtFile.FromBinary(unwrapped.Data);
+        file.ApplyEditorText(editorText, MsbtTags(), addNewLabels: true);
         return Wrap(file.ToBinary(), logicalPath, unwrapped);
+    }
+
+    private static MsbtFile NewMsbt()
+    {
+        MsbtFile file = new() { BigEndian = false, Encoding = MsbtEncoding.Utf16, Version = 3 };
+        file.SectionOrder.AddRange(["LBL1", "TXT2"]);
+        return file;
     }
 
     private byte[] WriteAamp(byte[] original, string editorText, string logicalPath)

@@ -32,9 +32,32 @@ public static class IndexBuilders
 
         string output = c.Arg(0);
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
-        if (File.Exists(output)) File.Delete(output);
         return (Path.GetFullPath(c.Romfs), output);
     }
+
+    // The index is written beside its final name and moved into place when complete, so a reader of the old one is never
+    // left with a half-written file, and a failed build leaves the old index alone.
+    private static JsonNode Build(CommandContext c, Func<CommandContext, string, string, long> body)
+    {
+        var (root, output) = Prepare(c);
+        string temp = $"{output}.{Environment.ProcessId}.building";
+        if (File.Exists(temp)) File.Delete(temp);
+
+        try
+        {
+            long count = body(c, root, temp);
+            File.Move(temp, output, overwrite: true);
+            return new JsonObject { ["path"] = output, ["count"] = count };
+        }
+        finally
+        {
+            if (File.Exists(temp)) File.Delete(temp);
+        }
+    }
+
+    public static JsonNode BuildRomfsIndex(CommandContext c) => Build(c, RomfsInto);
+
+    public static JsonNode BuildCanonicalPathIndex(CommandContext c) => Build(c, CanonicalInto);
 
     private static SqliteConnection Open(string path)
     {
@@ -79,9 +102,8 @@ public static class IndexBuilders
         return [.. listings];
     }
 
-    public static JsonNode BuildRomfsIndex(CommandContext c)
+    private static long RomfsInto(CommandContext c, string root, string output)
     {
-        var (root, output) = Prepare(c);
         List<string> all = [.. WalkFiles(root)];
         List<string> archives = [.. all.Where(f => IsArchiveFile(c.Env, Path.GetFileName(f)))];
         List<string[]> listings = ListAll(c.Env, c.Containers, root, archives);
@@ -124,12 +146,11 @@ public static class IndexBuilders
             transaction.Commit();
         }
 
-        return new JsonObject { ["path"] = output, ["count"] = count };
+        return count;
     }
 
-    public static JsonNode BuildCanonicalPathIndex(CommandContext c)
+    private static long CanonicalInto(CommandContext c, string root, string output)
     {
-        var (root, output) = Prepare(c);
         List<string> archives = [.. WalkFiles(root).Where(f => IsArchiveFile(c.Env, Path.GetFileName(f)))];
         List<string[]> listings = ListAll(c.Env, c.Containers, root, archives);
 
@@ -173,6 +194,6 @@ public static class IndexBuilders
             transaction.Commit();
         }
 
-        return new JsonObject { ["path"] = output, ["count"] = count };
+        return count;
     }
 }
