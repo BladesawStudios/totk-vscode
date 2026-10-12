@@ -185,6 +185,39 @@ public sealed partial class Archives(Containers containers)
             : [.. names];
     }
 
+    /// <summary>Every path inside an archive on disk, descending into nested archives and .bntx texture containers.</summary>
+    public List<string> ListArchiveFilesRecursive(string diskArchivePath)
+    {
+        List<string> names = [];
+        if (IsBntxName(diskArchivePath))
+        {
+            byte[] raw = containers.Decompress(File.ReadAllBytes(diskArchivePath), diskArchivePath).Data;
+            if (BntxNames.IsBntx(raw)) return BntxNames.List(raw);
+        }
+
+        ListInto(LoadSarcFile(diskArchivePath).Sarc, "", names);
+        return names;
+    }
+
+    private void ListInto(SarcFile sarc, string prefix, List<string> names)
+    {
+        foreach (SarcEntry entry in sarc.Entries)
+        {
+            string path = prefix + entry.Name;
+            names.Add(path);
+            if (!IsArchiveName(entry.Name)) continue;
+
+            // A nested archive that doesn't open still lists as the file it is.
+            try
+            {
+                byte[] data = containers.Decompress(entry.Data, entry.Name).Data;
+                if (BntxNames.IsBntx(data)) names.AddRange(BntxNames.List(data).Select(n => $"{path}/{n}"));
+                else ListInto(SarcFile.FromBinary(data), path + "/", names);
+            }
+            catch (Exception) { }
+        }
+    }
+
     public byte[] ReadArchiveFileBytes(string diskArchivePath, string filePath)
     {
         filePath = Normalize(filePath);

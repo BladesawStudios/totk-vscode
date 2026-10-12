@@ -239,22 +239,32 @@ export class GameDumpTreeProvider implements vscode.TreeDataProvider<DumpTreeIte
         }
 
         const romfsPath = resolveRomfsPath();
+        const indexed = this.indexReady && this.lastComputedNeedle === this.filterNeedle && this.lastComputedArchiveNeedle === this.archiveFilterNeedle;
 
         return entries.filter(([name, fileType]) => {
             const childUri = vscode.Uri.joinPath(parentUri, name);
             const insideArchive = isPathInsideArchive(childUri.fsPath);
 
-            if (insideArchive) {
-                if (fileType === vscode.FileType.Directory) {
+            // The index lists nested archives too, so it decides inside archives; a matched archive shows everything in it.
+            if (insideArchive && indexed && romfsPath) {
+                const relativeKey = toRelativeSearchKey(childUri.fsPath, romfsPath);
+                if (this.visibleFileMatches.has(relativeKey) || this.visibleDirectoryMatches.has(relativeKey)) {
                     return true;
                 }
-                if (this.filterNeedle) {
-                    return name.toLowerCase().includes(this.filterNeedle);
+                for (let cursor = relativeKey.lastIndexOf('/'); cursor > 0; cursor = relativeKey.lastIndexOf('/', cursor - 1)) {
+                    if (this.visibleFileMatches.has(relativeKey.slice(0, cursor))) {
+                        return true;
+                    }
                 }
-                return true;
+                return false;
             }
 
-            if (this.indexReady && this.lastComputedNeedle === this.filterNeedle && this.lastComputedArchiveNeedle === this.archiveFilterNeedle && romfsPath) {
+            const needle = this.filterNeedle || this.archiveFilterNeedle;
+            if (insideArchive) {
+                return fileType === vscode.FileType.Directory || name.toLowerCase().includes(needle);
+            }
+
+            if (indexed && romfsPath) {
                 const relativeKey = toRelativeSearchKey(childUri.fsPath, romfsPath);
                 if (fileType === vscode.FileType.Directory) {
                     if (isArchiveFile(name)) {
@@ -268,16 +278,8 @@ export class GameDumpTreeProvider implements vscode.TreeDataProvider<DumpTreeIte
             if (fileType === vscode.FileType.Directory) {
                 return true;
             }
-            const lowerName = name.toLowerCase();
-            if (this.filterNeedle && !lowerName.includes(this.filterNeedle)) {
-                return false;
-            }
-            if (this.archiveFilterNeedle) {
-                if (!isArchiveFile(name) || !lowerName.includes(this.archiveFilterNeedle)) {
-                    return false;
-                }
-            }
-            return true;
+            // Loose files are left out when searching within archives.
+            return !this.archiveFilterNeedle && name.toLowerCase().includes(needle);
         });
     }
 

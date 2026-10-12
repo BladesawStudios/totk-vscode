@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import initSqlJs, { Database } from 'sql.js';
-import { isArchiveFile } from './archives';
+import { isPathInsideArchive } from './archives';
 
 let db: Database | undefined;
 let loadedDbPath: string | undefined;
@@ -108,11 +108,9 @@ export async function queryRomfsIndex(
         if (needle && !fileName.includes(needle)) {
             continue;
         }
+        // Searching within archives matches the files inside them, at any depth, and leaves loose files out.
         if (archiveNeedle) {
-            if (!isArchiveFile(fileName)) {
-                continue;
-            }
-            if (!fileName.includes(archiveNeedle)) {
+            if (!isPathInsideArchive(filePath) || !fileName.includes(archiveNeedle)) {
                 continue;
             }
         }

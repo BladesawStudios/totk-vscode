@@ -79,7 +79,7 @@ public static class IndexBuilders
         create.CommandText = "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)";
         create.ExecuteNonQuery();
 
-        foreach ((string key, string value) in new[] { ("root", NormalizeRel(root)), ("gameId", gameId), ("schemaVersion", "4") })
+        foreach ((string key, string value) in new[] { ("root", NormalizeRel(root)), ("gameId", gameId), ("schemaVersion", "5") })
         {
             using SqliteCommand insert = connection.CreateCommand();
             insert.CommandText = "INSERT INTO meta (key, value) VALUES ($k, $v)";
@@ -90,13 +90,14 @@ public static class IndexBuilders
     }
 
     // Opening every archive is the slow part, so the listings are made on all cores and kept in file order.
-    private static List<string[]> ListAll(Env env, Containers containers, string root, List<string> archives)
+    // The search index goes into nested archives; the canonical index maps a top-level entry to its archive, so it doesn't.
+    private static List<string[]> ListAll(Env env, Containers containers, string root, List<string> archives, bool nested = false)
     {
         Archives reader = new(containers);
         string[][] listings = new string[archives.Count][];
         Parallel.For(0, archives.Count, i =>
         {
-            try { listings[i] = [.. reader.ListArchiveFiles(archives[i], "")]; }
+            try { listings[i] = [.. nested ? reader.ListArchiveFilesRecursive(archives[i]) : reader.ListArchiveFiles(archives[i], "")]; }
             catch (Exception) { listings[i] = []; }
         });
         return [.. listings];
@@ -106,7 +107,7 @@ public static class IndexBuilders
     {
         List<string> all = [.. WalkFiles(root)];
         List<string> archives = [.. all.Where(f => IsArchiveFile(c.Env, Path.GetFileName(f)))];
-        List<string[]> listings = ListAll(c.Env, c.Containers, root, archives);
+        List<string[]> listings = ListAll(c.Env, c.Containers, root, archives, nested: true);
 
         using SqliteConnection connection = Open(output);
         Meta(connection, root, c.Env.GameId);
