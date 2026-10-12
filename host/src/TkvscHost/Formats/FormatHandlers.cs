@@ -38,6 +38,9 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
     }
 
     private string ReadByml(byte[] fileData, string logicalPath)
+        => HashNames.Load(env).Annotate(ReadBymlText(fileData, logicalPath));
+
+    private string ReadBymlText(byte[] fileData, string logicalPath)
     {
         byte[] data = containers.Decompress(fileData, logicalPath).Data;
         if (data.Length == 0) return "{}\n";

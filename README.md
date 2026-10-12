@@ -156,6 +156,7 @@ Companion VS Code extensions can extend TKVSC via the exported API. See [docs/ap
 **LordBubbles**: [TKMM](https://tkmm.org/) - Assistance with implementing TKMM compatibility\
 **KillzXGaming**: [Switch Toolbox](https://github.com/KillzXGaming/Switch-Toolbox) - image handling referenced\
 **Arch Leaders**: [NX Editor](https://github.com/NX-Editor/NxEditor) - text formatting referenced\
+**MacSpazzy & MrCheeze**: [TotK save variable hashes](https://www.marcrobledo.com/savegame-editors/zelda-totk/) - cracked names for the GameDataList hashes, bundled as `vendor/zelda-totk.hashes.csv`\
 **SolidLink**: [Totkbits](https://github.com/SolidLink95/TotkBits) - Tag.Product & text formatting referenced
 **lostromb**: [Concentus](https://github.com/lostromb/concentus) (BSD-3-Clause) - Opus decoding for BWAV audio\
 

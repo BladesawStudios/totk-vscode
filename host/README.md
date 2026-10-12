@@ -27,6 +27,8 @@ The settings come in the environment (`TKVSC_ROMFS`, `TKVSC_GAME_ID`, `TKVSC_HAN
 | `read` (textures), `render-bntx-texture`, `render-txtg`, `update-bntx-metadata`, `update-txtg-metadata`, `replace-bntx-payload`, `replace-txtg-payload` | BNTX and TXTG |
 
 
+A `Hash: !u 0x...` line in a BYML (the `GameDataList` flags) gets its name as a trailing comment when `vendor/zelda-totk.hashes.csv` has one. The list was cracked and compiled by MacSpazzy and MrCheeze. The comment is dropped on save, so the number is what is written back.
+
 ## Building
 
 ```bash
