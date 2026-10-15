@@ -164,7 +164,8 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
         return ParameterIO.FromBinary(data).ToYaml(AampNames());
     }
 
-    private XLinkGame XlinkGame() => env.GameId == "botw" ? XLinkGame.BotW : XLinkGame.Totk;
+    // The text only names the module; BotW's files use its 32-bit layouts, TotK's the library defaults.
+    private uint? XlinkVersion(ModuleType module) => env.GameId == "botw" ? (module == ModuleType.ELink ? 0x1Eu : 0x1Cu) : null;
 
     private string ReadXlnk(byte[] fileData, string logicalPath)
         => XLinkFile.FromBinary(containers.Decompress(fileData, logicalPath).Data).ToText();
@@ -258,7 +259,25 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
         bool yaz0 = original.AsSpan().StartsWith("Yaz0"u8);
         bool zstd = !yaz0 && (Containers.IsZstd(original) || logicalPath.EndsWith(".zs", StringComparison.OrdinalIgnoreCase));
 
-        byte[] bytes = XLinkFile.FromText(editorText, XlinkGame()).ToBinary();
+        XLinkFile file = XLinkFile.FromText(editorText);
+        if (OriginalXlinkVersion(original, logicalPath, zstd, file.Module) is { } kept) file.Version = kept;
+        else if (XlinkVersion(file.Module) is { } fallback) file.Version = fallback;
+        byte[] bytes = file.ToBinary();
         return containers.Compress(bytes, logicalPath, zstd, yaz0);
+    }
+
+    // Keeps the version of the file being replaced (e.g. 0x22) while its module still matches the edited text.
+    private uint? OriginalXlinkVersion(byte[] original, string logicalPath, bool zstd, ModuleType module)
+    {
+        if (zstd || original.Length == 0) return null;
+        try
+        {
+            XLinkFile previous = XLinkFile.FromBinary(containers.Decompress(original, logicalPath).Data);
+            return previous.Module == module ? previous.Version : null;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or IndexOutOfRangeException)
+        {
+            return null;
+        }
     }
 }
