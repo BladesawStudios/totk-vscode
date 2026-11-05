@@ -20,8 +20,10 @@ public static class Textures
     private static readonly Dictionary<uint, string> FormatNames = new()
     {
         [0x01] = "R4G4_UNORM", [0x02] = "R8_UNORM", [0x03] = "R4G4B4A4", [0x04] = "A4B4G4R4", [0x05] = "R5G5B5A1",
-        [0x06] = "A1B5G5R5", [0x07] = "R5G6B5_UNORM", [0x08] = "B5G6R5_UNORM", [0x09] = "R8G8_UNORM", [0x0B] = "R8G8B8A8",
-        [0x0C] = "B8G8R8A8", [0x0E] = "R10G10B10A2", [0x1A] = "BC1", [0x1B] = "BC2", [0x1C] = "BC3", [0x1D] = "BC4",
+        [0x06] = "A1B5G5R5", [0x07] = "R5G6B5_UNORM", [0x08] = "B5G6R5_UNORM", [0x09] = "R8G8_UNORM", [0x0A] = "R16", [0x0B] = "R8G8B8A8",
+        [0x0C] = "B8G8R8A8", [0x0D] = "R9G9B9E5", [0x0E] = "R10G10B10A2", [0x0F] = "R11G11B10", [0x10] = "B10G11R11", [0x12] = "R16G16",
+        [0x13] = "R24G8", [0x14] = "R32", [0x15] = "R16G16B16A16", [0x16] = "R32G8X24", [0x17] = "R32G32", [0x18] = "R32G32B32",
+        [0x19] = "R32G32B32A32", [0x1A] = "BC1", [0x1B] = "BC2", [0x1C] = "BC3", [0x1D] = "BC4",
         [0x1E] = "BC5", [0x1F] = "BC6H", [0x20] = "BC7", [0x2D] = "ASTC_4x4", [0x2E] = "ASTC_5x4", [0x2F] = "ASTC_5x5",
         [0x30] = "ASTC_6x5", [0x31] = "ASTC_6x6", [0x32] = "ASTC_8x5", [0x33] = "ASTC_8x6", [0x34] = "ASTC_8x8",
         [0x35] = "ASTC_10x5", [0x36] = "ASTC_10x6", [0x37] = "ASTC_10x8", [0x38] = "ASTC_10x10", [0x39] = "ASTC_12x10",
@@ -31,11 +33,19 @@ public static class Textures
     public static string BntxFormatName(uint formatId)
     {
         if (!FormatNames.TryGetValue(formatId >> 8, out string? name)) return $"Unknown(0x{formatId:X4})";
+        if (name == "BC6H") return name;
+
+        // The low byte is nn::gfx's type. Some table names already carry _UNORM, which another type replaces.
+        string channels = name.EndsWith("_UNORM", StringComparison.Ordinal) ? name[..^"_UNORM".Length] : name;
         return (formatId & 0xFF) switch
         {
-            0x06 => name + "_SRGB",
-            0x02 => name + "_SNORM",
-            0x01 => name + "_UNORM",
+            0x01 => channels + "_UNORM",
+            0x02 => channels + "_SNORM",
+            0x03 => channels + "_UINT",
+            0x04 => channels + "_SINT",
+            0x05 => channels + "_FLOAT",
+            0x06 => channels + "_SRGB",
+            0x0A => channels + "_UFLOAT",
             _ => name,
         };
     }

@@ -2,6 +2,7 @@ using System.Text;
 using BntxSharp;
 using BntxSharp.Tegra;
 using TexSharp;
+using TkvscHost.Formats;
 
 namespace TkvscHost.Tests;
 
@@ -91,4 +92,17 @@ public class BntxPlatformTests
         InvalidDataException error = Assert.Throws<InvalidDataException>(() => BntxFile.Load(bntx));
         Assert.Contains("Wiiu", error.Message);
     }
+
+    [Theory]
+    [InlineData(0x0A01u, "R16_UNORM")]
+    [InlineData(0x0A03u, "R16_UINT")]
+    [InlineData(0x0A05u, "R16_FLOAT")]
+    [InlineData(0x1505u, "R16G16B16A16_FLOAT")]
+    [InlineData(0x1F0Au, "BC6H")]
+    [InlineData(0x0202u, "R8_SNORM")]
+    [InlineData(0x0701u, "R5G6B5_UNORM")]
+    [InlineData(0x2D06u, "ASTC_4x4_SRGB")]
+    [InlineData(0xFF01u, "Unknown(0xFF01)")]
+    public void FormatsAreNamedForTheViewer(uint formatId, string name)
+        => Assert.Equal(name, Textures.BntxFormatName(formatId));
 }
