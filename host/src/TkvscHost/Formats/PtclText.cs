@@ -111,6 +111,8 @@ public static class PtclText
 
     public static string ToText(byte[] data, bool compact = true)
     {
+        if (Vfx3Text.IsVfx3(data)) return Vfx3Text.ToText(data);
+
         // Insertion-ordered, a repeated name replacing the earlier value in place, as a Python dict does.
         List<string> setOrder = [];
         Dictionary<string, (List<string> Order, Dictionary<string, Emitter> Emitters)> sets = [];
@@ -237,6 +239,8 @@ public static class PtclText
     /// <summary>Applies edited <paramref name="yaml"/> (as made by <see cref="ToText"/>) to the binary and returns the new bytes.</summary>
     public static byte[] ApplyText(byte[] original, string yaml)
     {
+        if (Vfx3Text.IsVfx3(original)) return Vfx3Text.ApplyText(original, yaml);
+
         Byml changes = Byml.FromYaml(yaml);
         if (!changes.IsMap) throw new InvalidDataException("Invalid particle YAML: " + yaml);
 
