@@ -1,3 +1,4 @@
+import { stripCompressedSuffix } from './gameProfile';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -30,17 +31,12 @@ const LANGUAGE_BY_HANDLER: Record<string, string> = {
     xlnk: 'totk-xlnk',
 };
 
-const BUILTIN_HANDLERS = new Set(['byml', 'msbt', 'aamp', 'xlnk']);
-
 function normalizeExtension(ext: string): string {
     return ext.toLowerCase().replace(/^\./, '');
 }
 
 export function fileExtensionFromPath(filePath: string): string {
-    let lower = filePath.toLowerCase().replace(/\\/g, '/');
-    if (lower.endsWith('.zs')) {
-        lower = lower.slice(0, -3);
-    }
+    const lower = stripCompressedSuffix(filePath.toLowerCase().replace(/\\/g, '/'));
     const dot = lower.lastIndexOf('.');
     return dot === -1 ? '' : lower.slice(dot + 1);
 }
@@ -158,10 +154,6 @@ class FormatRegistry {
             map[ext] = def.handler;
         }
         return map;
-    }
-
-    isBuiltinHandler(kind: string): boolean {
-        return BUILTIN_HANDLERS.has(kind);
     }
 
     buildHandlerManifest(): HandlerManifestJson {

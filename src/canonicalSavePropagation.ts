@@ -1,3 +1,4 @@
+import { stripCompressedSuffix } from './gameProfile';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -100,7 +101,7 @@ function pathContainsBlacklistedArchiveType(pathValue: string, archiveTypes: str
             continue;
         }
         for (const segment of segments) {
-            if (segment.endsWith(ext) || segment.endsWith(`${ext}.zs`)) {
+            if (segment.endsWith(ext) || stripCompressedSuffix(segment).endsWith(ext)) {
                 return true;
             }
         }
@@ -130,7 +131,7 @@ function pathMatchesBlacklistedFileSuffix(pathValue: string, fileSuffixes: strin
         if (!suffix) {
             continue;
         }
-        if (fileName.endsWith(suffix) || fileName.endsWith(`${suffix}.zs`)) {
+        if (fileName.endsWith(suffix) || stripCompressedSuffix(fileName).endsWith(suffix)) {
             return true;
         }
     }

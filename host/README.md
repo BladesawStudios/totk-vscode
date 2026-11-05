@@ -29,6 +29,12 @@ The settings come in the environment (`TKVSC_ROMFS`, `TKVSC_GAME_ID`, `TKVSC_HAN
 
 A `Hash: !u 0x...` line in a BYML (the `GameDataList` flags) gets its name as a trailing comment when `vendor/zelda-totk.hashes.csv` has one. The list was cracked and compiled by MacSpazzy and MrCheeze. The comment is dropped on save, so the number is what is written back.
 
+## Game plugins
+
+A game's add-on can ship a DLL that adds formats, compression and commands for that game: see
+[Adding a game](../docs/api/host-plugins.md). `src/TkvscHost.PluginApi` is the contract plugins compile against, `src/TkvscHost/Plugins`
+loads them, and `samples/SamplePlugin` is a complete one that the tests also load.
+
 ## Building
 
 ```bash

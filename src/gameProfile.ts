@@ -31,13 +31,40 @@ export interface GameProfileRegistration {
     archivePatterns?: string[];
     /** Game config (.gcf) with MSBT tag definitions. Relative to the registering extension root. */
     msbtConfigPath?: string;
+    /** The endings that mark a compressed file's name, such as `.zs` or `.lz`. Default `.zs`. */
+    compressedSuffixes?: string[];
+    /** The game's zstd dictionary pack, relative to its RomFS. Default `Pack/ZsDic.pack.zs`. */
+    zsDicPath?: string;
+    /** File of `hash;type;name` lines naming this game's flag hashes. Relative to the registering extension root. */
+    hashNamesPath?: string;
+    /** The built-in AAMP name table to start from. Default `totk`. */
+    aampNameTable?: 'totk' | 'botw' | 'none';
+    /** More AAMP names, as JSON like `TKVSC.aampHashNames`. Relative to the registering extension root. */
+    aampHashNamesPath?: string;
+    /** The XLink versions new files are written with; omitted ones use the library's default. */
+    xlinkVersions?: GameXlinkVersions;
+    /** A game plugin DLL for the host (see docs/api/host-plugins.md). Relative to the registering extension root. */
+    hostPlugin?: string;
     ainb?: GameAinbConfig;
+}
+
+export interface GameXlinkVersions {
+    elink?: number;
+    slink?: number;
 }
 
 export interface GameProfile extends GameProfileRegistration {
     source: GameProfileSource;
+    /** Root of the extension that registered this profile; relative paths in it resolve against this. */
+    extensionRoot?: string;
     /** Absolute path to the resolved MSBT `.gcf` file. */
     msbtConfigResolvedPath?: string;
+    /** Absolute path to the resolved hash names file. */
+    hashNamesResolvedPath?: string;
+    /** Absolute path to the resolved AAMP names file. */
+    aampHashNamesResolvedPath?: string;
+    /** Absolute path to the resolved host plugin. */
+    hostPluginResolvedPath?: string;
 }
 
 export interface GameProfileRegisterOptions {
@@ -58,6 +85,7 @@ const DEFAULT_TOTK_PROFILE: GameProfileRegistration = {
         enableCanonicalPaths: true,
     },
     msbtConfigPath: 'vendor/TotK.gcf',
+    hashNamesPath: 'vendor/zelda-totk.hashes.csv',
     ainb: {
         categoryDirs: ['Logic', 'AI', 'Sequence'],
         nodeDefinitionGlob: '{category}/NodeDefinition/Node.Product.*.aidefn.byml*',
@@ -115,16 +143,23 @@ class GameProfileRegistry {
                     ? [...registration.indexing.archiveExtensions]
                     : [...DEFAULT_ARCHIVE_EXTENSIONS],
         };
+        // Re-registering an existing profile (manifest archive patterns do) keeps the root its paths resolve against.
+        const extensionRoot = options?.extensionRoot ?? (registration as Partial<GameProfile>).extensionRoot;
+        const coreExtensionPath = options?.coreExtensionPath ?? this.coreExtensionPath;
         const msbtConfigResolvedPath = resolveMsbtConfigPath(
             registration,
-            options?.coreExtensionPath ?? this.coreExtensionPath,
-            options?.extensionRoot,
+            coreExtensionPath,
+            extensionRoot,
         );
         this.profiles.set(registration.id, {
             ...registration,
             indexing,
             source,
+            extensionRoot,
             msbtConfigResolvedPath,
+            hashNamesResolvedPath: resolveExtensionPath(registration.hashNamesPath, extensionRoot ?? coreExtensionPath),
+            aampHashNamesResolvedPath: resolveExtensionPath(registration.aampHashNamesPath, extensionRoot ?? coreExtensionPath),
+            hostPluginResolvedPath: resolveExtensionPath(registration.hostPlugin, extensionRoot),
         });
     }
 
@@ -223,6 +258,15 @@ class GameProfileRegistry {
 
 const registry = new GameProfileRegistry();
 
+/** A path from a profile made absolute. With no root to resolve against it stays as given, for the host to report. */
+function resolveExtensionPath(configured: string | undefined, root: string | undefined): string | undefined {
+    const trimmed = configured?.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    return path.normalize(root && !path.isAbsolute(trimmed) ? path.join(root, trimmed) : trimmed);
+}
+
 function resolveMsbtConfigPath(
     registration: GameProfileRegistration,
     coreExtensionPath: string,
@@ -272,6 +316,30 @@ export function registerGameProfile(
 
 export function getActiveMsbtConfigPath(): string {
     return registry.getMsbtConfigPath();
+}
+
+/** The endings that mark a compressed file's name for a game (the active one by default), lowercase with their leading dot. */
+export function getCompressedSuffixes(gameId?: string): string[] {
+    // Names can be checked before the registry is filled, when there is no profile yet.
+    const profile: GameProfile | undefined = gameId ? registry.getProfile(gameId) : registry.getActiveProfile();
+    const suffixes = (profile?.compressedSuffixes ?? [])
+        .map((suffix) => suffix.trim().toLowerCase())
+        .filter(Boolean)
+        .map((suffix) => (suffix.startsWith('.') ? suffix : `.${suffix}`));
+    return suffixes.length > 0 ? suffixes : ['.zs'];
+}
+
+/** Whether a file's name says it is compressed. */
+export function isCompressedName(name: string, gameId?: string): boolean {
+    const lower = name.toLowerCase();
+    return getCompressedSuffixes(gameId).some((suffix) => lower.endsWith(suffix));
+}
+
+/** The name without its compressed suffix, if it has one. */
+export function stripCompressedSuffix(name: string, gameId?: string): string {
+    const lower = name.toLowerCase();
+    const suffix = getCompressedSuffixes(gameId).find((candidate) => lower.endsWith(candidate));
+    return suffix ? name.slice(0, -suffix.length) : name;
 }
 
 export function getActiveGameProfile(): GameProfile {

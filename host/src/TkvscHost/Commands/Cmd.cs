@@ -72,8 +72,8 @@ public static partial class Cmd
 
     private static (Env, Containers, Archives, FileKinds, FormatHandlers) Services(CommandContext c)
     {
-        FileKinds kinds = new(c.Env, c.Containers);
-        return (c.Env, c.Containers, new Archives(c.Containers), kinds, new FormatHandlers(c.Env, c.Containers, kinds));
+        FileKinds kinds = new(c.Env, c.Containers, c.Plugin);
+        return (c.Env, c.Containers, new Archives(c.Containers), kinds, new FormatHandlers(c.Env, c.Containers, kinds, c.Plugin));
     }
 
     // ---- files on disk ----
@@ -117,7 +117,7 @@ public static partial class Cmd
         if (archives.ResolveBntx(archive, internalPath) is { Remainder.Length: > 0 } bntx)
             return Textures.BntxTextureResult(bntx.Data, bntx.Remainder, TextureCommands.LayerArg(c, 2));
 
-        archives.LoadSarcFile(archive);
+        archives.LoadArchive(archive);
         byte[] data = archives.ReadArchiveFileBytes(archive, internalPath);
         return ReadPayload(handlers.ReadContent(data, internalPath));
     }
@@ -128,7 +128,7 @@ public static partial class Cmd
         string text = c.StdinText;
         var (env, _, archives, kinds, handlers) = Services(c);
 
-        archives.LoadSarcFile(archive);
+        archives.LoadArchive(archive);
         string? kind = kinds.KindOf(internalPath);
         if (kind is null)
         {
@@ -215,7 +215,7 @@ public static partial class Cmd
         string input = c.Arg(0);
         string logical = c.ArgOr(1, input);
         byte[] data = c.Containers.Decompress(File.ReadAllBytes(input), logical).Data;
-        string name = Path.GetFileName(logical.Replace('\\', '/')).Replace(".zs", "");
+        string name = c.Env.StripCompressedSuffix(Path.GetFileName(logical.Replace('\\', '/')));
         return new JsonObject { ["path"] = WriteTemp("totk-decomp-", "-" + name, data) };
     }
 

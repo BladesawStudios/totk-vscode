@@ -25,7 +25,7 @@ export { readFontBytes, readRawBytes, writeRawBytes } from './rawFileIo';
 export { resolveProjectRoot } from './resolveProjectRoot';
 export type { TkvscApi, TkvscBridgeAccess, TkvscTreeItemLike } from './types';
 export type { FormatRegistration } from '../formatRegistry';
-export type { GameProfile, GameProfileRegistration, GameIndexingConfig } from '../gameProfile';
+export type { GameProfile, GameProfileRegistration, GameIndexingConfig, GameXlinkVersions } from '../gameProfile';
 export type { ProjectAdapter, ProjectOptionRef, ProjectOptionPickResult } from '../projectAdapters/types';
 
 export function createTkvscApi(options: CreateTkvscApiOptions): TkvscApi {

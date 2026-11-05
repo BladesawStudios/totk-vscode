@@ -44,6 +44,25 @@ function parseGameProfile(raw: unknown): GameProfileRegistration | undefined {
     if (typeof obj.msbtConfigPath === 'string' && obj.msbtConfigPath.trim()) {
         profile.msbtConfigPath = obj.msbtConfigPath.trim();
     }
+    for (const key of ['zsDicPath', 'hashNamesPath', 'aampHashNamesPath', 'hostPlugin'] as const) {
+        const value = obj[key];
+        if (typeof value === 'string' && value.trim()) {
+            profile[key] = value.trim();
+        }
+    }
+    if (isStringArray(obj.compressedSuffixes)) {
+        profile.compressedSuffixes = obj.compressedSuffixes;
+    }
+    if (obj.aampNameTable === 'totk' || obj.aampNameTable === 'botw' || obj.aampNameTable === 'none') {
+        profile.aampNameTable = obj.aampNameTable;
+    }
+    if (obj.xlinkVersions && typeof obj.xlinkVersions === 'object') {
+        const versions = obj.xlinkVersions as Record<string, unknown>;
+        profile.xlinkVersions = {
+            elink: typeof versions.elink === 'number' ? versions.elink : undefined,
+            slink: typeof versions.slink === 'number' ? versions.slink : undefined,
+        };
+    }
     if (obj.ainb && typeof obj.ainb === 'object') {
         const ainb = obj.ainb as Record<string, unknown>;
         profile.ainb = {

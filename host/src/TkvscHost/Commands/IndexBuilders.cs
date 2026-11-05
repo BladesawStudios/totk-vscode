@@ -7,7 +7,7 @@ namespace TkvscHost;
 public static class IndexBuilders
 {
     private static bool IsArchiveFile(Env env, string name)
-        => env.ArchiveExtensions.Any(ext => name.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+        => env.ArchiveExtensions.Any(ext => name.EndsWith(ext, StringComparison.OrdinalIgnoreCase) || env.StripCompressedSuffix(name).EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 
     private static string NormalizeRel(string path) => path.Replace('\\', '/').Trim('/');
 

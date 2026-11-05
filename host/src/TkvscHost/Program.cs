@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using TkvscHost.Plugins;
 
 namespace TkvscHost;
 
@@ -28,14 +29,28 @@ public static class Program
             return stdin = copy.ToArray();
         }
 
-        CommandContext context = new(command, args[1..], env, ReadStdin);
+        GamePlugin plugin = GamePlugin.None;
 
         try
         {
-            if (Commands.Find(command) is not { } handler) throw new ArgumentException($"Unknown command '{command}'");
+            plugin = PluginLoader.Load(env);
+
+            // Standard output carries the one JSON result; anything a plugin prints goes to standard error.
+            if (plugin != GamePlugin.None) Console.SetOut(Console.Error);
+
+            CommandContext context = new(command, args[1..], env, ReadStdin, plugin);
+
+            // A plugin's command comes first, so it can replace a built-in one for its game.
+            CommandHandler handler = plugin.FindCommand(command) ?? Commands.Find(command)
+                ?? throw new ArgumentException($"Unknown command '{command}'");
 
             JsonNode result = handler(context);
             WriteJson(result);
+            return 0;
+        }
+        catch (Exception e) when (plugin != GamePlugin.None && e is MissingMemberException or TypeLoadException)
+        {
+            WriteJson(new JsonObject { ["error"] = PluginLoader.DescribeMismatch(plugin, e), ["traceback"] = e.ToString() });
             return 0;
         }
         catch (Exception e)

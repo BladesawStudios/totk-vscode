@@ -11,6 +11,8 @@
     <TieredPGO>true</TieredPGO>
     <TieredCompilationQuickJitForLoops>true</TieredCompilationQuickJitForLoops>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- The plugin contract's documentation is for plugin authors; the extension doesn't need to carry it. -->
+    <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\TkvscHost.PluginApi\TkvscHost.PluginApi.csproj" />
     <ProjectReference Include="$(LibRoot)\SarcSharp\src\SarcSharp\SarcSharp.csproj" />
     <ProjectReference Include="$(LibRoot)\Yaz0Sharp\src\Yaz0Sharp\Yaz0Sharp.csproj" />
     <ProjectReference Include="$(LibRoot)\ZsDicSharp\src\ZsDicSharp\ZsDicSharp.csproj" />

@@ -28,16 +28,16 @@ public static class FontCommands
         return new JsonObject { ["path"] = path };
     }
 
-    // A font file on disk as a font program: decompressed if it is .zs, decrypted if it is a BFTTF/BFOTF.
+    // A font file on disk as a font program: decompressed if its name says so, decrypted if it is a BFTTF/BFOTF.
     private static JsonNode ReadFontDisk(CommandContext c)
     {
         string filePath = c.Arg(0);
         byte[] data = File.ReadAllBytes(filePath);
         string logical = filePath.Replace('\\', '/');
-        if (logical.EndsWith(".zs", StringComparison.OrdinalIgnoreCase))
+        if (c.Env.IsCompressedName(logical))
         {
             data = c.Containers.Decompress(data, logical).Data;
-            logical = logical[..^3];
+            logical = c.Env.StripCompressedSuffix(logical);
         }
 
         if (BFont.IsEncryptedFontPath(logical)) data = BFont.ToOpenFont(data);
@@ -55,7 +55,7 @@ public static class FontCommands
         byte[]? existing = null;
         try
         {
-            existing = Archives.SplitFsPath(targetPath) is var (archive, locator)
+            existing = Archives.SplitFsPath(targetPath, c.Env) is var (archive, locator)
                 ? new Archives(c.Containers).ReadArchiveEntryStoredBytes(archive, locator)
                 : File.ReadAllBytes(targetPath);
         }

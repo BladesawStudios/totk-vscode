@@ -96,8 +96,8 @@ public static class TextureCommands
     private static void SaveBntx(CommandContext c, Archives archives, string archive, Archives.BntxView view, byte[] bntx)
     {
         bool zstd = view.Prefix.Length > 0
-            ? view.Prefix.EndsWith(".zs", StringComparison.Ordinal)
-            : archive.EndsWith(".zs", StringComparison.Ordinal);
+            ? c.Env.IsCompressedName(view.Prefix)
+            : c.Env.IsCompressedName(archive);
         if (zstd) bntx = c.Containers.Compress(bntx, view.Prefix.Length > 0 ? view.Prefix : archive, wasZstd: true, wasYaz0: false);
 
         if (view.Prefix.Length > 0) archives.WriteArchiveFileBytes(archive, view.Prefix, bntx);

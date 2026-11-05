@@ -49,6 +49,7 @@ import {
     getActiveGameId,
     getGameProfileRegistry,
     isRomfsPathValid,
+    getCompressedSuffixes,
 } from './gameProfile';
 import {
     getGameIndexPaths,
@@ -563,7 +564,7 @@ class SarcProvider implements vscode.FileSystemProvider {
 
     private rejectArchiveMutation(operation: string): never {
         throw vscode.FileSystemError.NoPermissions(
-            `Cannot ${operation} paths inside .pack / .sarc / .genvb / .blarc / .bfarc / .bkres / .bntx archives. Extract the file or use a dedicated modding tool.`,
+            `Cannot ${operation} paths inside archives. Extract the file or use a dedicated modding tool.`,
         );
     }
 
@@ -2092,7 +2093,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             filters: {
                 'TotK Files': [
                     ...coreFilterExtensions,
-                    'zs',
+                    ...getCompressedSuffixes().map((suffix) => suffix.replace(/^\./, '')),
                     ...aampFilterExtensions,
                 ]
             },
@@ -2141,7 +2142,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         const fileUri = await vscode.window.showOpenDialog({
             canSelectMany: false,
             filters: {
-                'TotK Archives': ['pack', 'sarc', 'genvb', 'blarc', 'bfarc', 'bkres', 'bntx', 'zs'],
+                'TotK Archives': ['pack', 'sarc', 'genvb', 'blarc', 'bfarc', 'bkres', 'bntx', ...getCompressedSuffixes().map((suffix) => suffix.replace(/^\./, ''))],
+                // A game's add-on can have archive extensions of its own.
+                'All Files': ['*'],
             },
         });
 

@@ -1,3 +1,5 @@
+using Tkvsc.Plugins;
+using TkvscHost.Plugins;
 using Yaz0Sharp;
 using ZsDicSharp;
 using ZstdSharp;
@@ -8,13 +10,21 @@ namespace TkvscHost;
 public readonly record struct Unwrapped(byte[] Data, bool WasZstd, bool WasYaz0);
 
 /// <summary>Zstd (with the game's dictionaries) and Yaz0 wrapping, the equivalent of <c>totk_compression</c>.</summary>
-public sealed class Containers(Env env)
+public sealed class Containers(Env env, GamePlugin? plugin = null)
 {
-    private const string RomfsHelp = "Set TKVSC.romfsPath to your extracted game RomFS folder (must contain Pack/ZsDic.pack.zs).";
+    private string RomfsHelp => $"Set your extracted game RomFS folder in the TKVSC settings (it must contain {env.ZsDicPath}).";
 
     private ZsDic? _dictionaries;
     private bool _triedDictionaries;
     private readonly object _lock = new();
+
+    public Env Env => env;
+
+    /// <summary>The archive formats the game's plugin adds.</summary>
+    public IReadOnlyList<IArchiveFormat> ArchiveFormats => plugin?.ArchiveFormats ?? [];
+
+    // Looked up on use, as a plugin can register after it receives the host's services.
+    private ICompressionBackend? Backend => plugin?.Compression;
 
     private bool Plain => env.CompressionBackend == "plain-zstd-yaz0";
 
@@ -25,15 +35,22 @@ public sealed class Containers(Env env)
             if (_triedDictionaries) return _dictionaries;
             _triedDictionaries = true;
 
-            if (env.Romfs.Length > 0 && File.Exists(Path.Combine(env.Romfs, "Pack", "ZsDic.pack.zs")))
-                _dictionaries = ZsDic.FromRomfs(env.Romfs);
+            if (env.Romfs.Length == 0) return null;
+
+            string pack = Path.Combine(env.Romfs, env.ZsDicPath.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(pack)) _dictionaries = ZsDic.FromPack(File.ReadAllBytes(pack));
             return _dictionaries;
         }
     }
 
     public Unwrapped Decompress(byte[] data, string logicalPath = "")
     {
-        if (ZsDic.IsCompressed(data))
+        // A plugin's backend stands in for zstd entirely, so whatever it reads it can write back. Yaz0 stays available.
+        if (Backend is { } backend)
+        {
+            if (backend.IsCompressed(data)) return new(backend.Decompress(data, logicalPath), true, false);
+        }
+        else if (ZsDic.IsCompressed(data))
         {
             if (!Plain && Dictionaries() is { } zs)
                 return new(zs.Decompress(data, logicalPath.Length > 0 ? logicalPath : "file.zs"), true, false);
@@ -59,6 +76,8 @@ public sealed class Containers(Env env)
         if (wasYaz0) return Yaz0.Compress(data);
         if (!wasZstd) return data;
 
+        if (Backend is { } backend) return backend.Compress(data, logicalPath);
+
         if (Plain)
         {
             using Compressor plain = new();
@@ -69,5 +88,6 @@ public sealed class Containers(Env env)
         return zs.Compress(data, logicalPath.Length > 0 ? logicalPath : "file.zs");
     }
 
-    public static bool IsZstd(byte[] data) => ZsDic.IsCompressed(data);
+    /// <summary>Whether the data is in the game's main compression: zstd, or the plugin's backend.</summary>
+    public bool IsCompressed(byte[] data) => Backend is { } backend ? backend.IsCompressed(data) : ZsDic.IsCompressed(data);
 }

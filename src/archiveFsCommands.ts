@@ -1,3 +1,4 @@
+import { getCompressedSuffixes, stripCompressedSuffix } from './gameProfile';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -91,11 +92,11 @@ function selectedItems(item?: unknown, selection?: unknown): ArchiveTreeItem[] {
 }
 
 function isMsbtFileName(name: string): boolean {
-    return /\.msbt(\.zs)?$/i.test(name);
+    return /\.msbt$/i.test(stripCompressedSuffix(name));
 }
 
 function isBymlFileName(name: string): boolean {
-    return /\.(byml|byaml|bgyml)(\.zs)?$/i.test(name);
+    return /\.(byml|byaml|bgyml)$/i.test(stripCompressedSuffix(name));
 }
 
 type TemplatePromptConfig = {
@@ -104,31 +105,32 @@ type TemplatePromptConfig = {
 };
 
 function templatePromptConfigForName(name: string): TemplatePromptConfig | undefined {
+    const compressed = getCompressedSuffixes().map((suffix) => suffix.replace(/^\./, ''));
     if (isMsbtFileName(name)) {
         return {
             kindLabel: 'MSBT',
-            filters: { MSBT: ['msbt', 'zs'], All: ['*'] },
+            filters: { MSBT: ['msbt', ...compressed], All: ['*'] },
         };
     }
     if (isBymlFileName(name)) {
         return {
             kindLabel: 'BYML',
-            filters: { BYML: ['byml', 'byaml', 'bgyml', 'zs'], All: ['*'] },
+            filters: { BYML: ['byml', 'byaml', 'bgyml', ...compressed], All: ['*'] },
         };
     }
     if (isAampExtension(name)) {
         return {
             kindLabel: 'AAMP',
-            filters: { AAMP: ['zs'], All: ['*'] },
+            filters: { AAMP: compressed, All: ['*'] },
         };
     }
     if (isArchiveFileName(name)) {
-        const extMatch = name.match(/\.([a-z0-9]+)(\.zs)?$/i);
+        const extMatch = stripCompressedSuffix(name).match(/\.([a-z0-9]+)$/i);
         const primaryExt = extMatch ? extMatch[1]!.toLowerCase() : 'sarc';
         const label = primaryExt.toUpperCase();
         return {
             kindLabel: label,
-            filters: { [label]: [primaryExt, 'zs'], All: ['*'] },
+            filters: { [label]: [primaryExt, ...compressed], All: ['*'] },
         };
     }
     return undefined;
@@ -219,7 +221,7 @@ function isBntxOrTexToGo(uri: vscode.Uri): boolean {
     return (
         isBntxTextureUri(uri) ||
         isTxtgFile(fsPath) ||
-        /\.bntx(\.zs)?$/i.test(fsPath)
+        /\.bntx$/i.test(stripCompressedSuffix(fsPath))
     );
 }
 
@@ -326,10 +328,11 @@ async function getUniqueTargetUri(folderUri: vscode.Uri, name: string): Promise<
 
     let base = name;
     let ext = '';
-    const compoundMatch = name.match(/^(.+?)(\.(?:pack|sarc|genvb|blarc|bfarc|bkres|bntx|byml|byaml|bgyml|msbt|txtg|bfres|bars|bwav)(?:\.zs)?)$/i);
+    const stripped = stripCompressedSuffix(name);
+    const compoundMatch = stripped.match(/^(.+?)(\.(?:pack|sarc|genvb|blarc|bfarc|bkres|bntx|byml|byaml|bgyml|msbt|txtg|bfres|bars|bwav))$/i);
     if (compoundMatch) {
         base = compoundMatch[1]!;
-        ext = compoundMatch[2]!;
+        ext = compoundMatch[2]! + name.slice(stripped.length);
     } else {
         const lastDot = name.lastIndexOf('.');
         if (lastDot > 0) {

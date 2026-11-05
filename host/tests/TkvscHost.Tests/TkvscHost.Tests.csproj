@@ -20,6 +20,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TkvscHost\TkvscHost.csproj" />
+    <!-- Built first, not referenced: the tests load it the way the host does, from a folder of its own. -->
+    <ProjectReference Include="..\..\samples\SamplePlugin\SamplePlugin.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
+
+  <Target Name="CopySamplePlugin" AfterTargets="Build">
+    <ItemGroup>
+      <SamplePluginFiles Include="..\..\samples\SamplePlugin\bin\$(Configuration)\net10.0\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SamplePluginFiles)" DestinationFolder="$(OutDir)plugins\sample" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

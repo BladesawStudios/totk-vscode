@@ -1,3 +1,4 @@
+import { isCompressedName, stripCompressedSuffix } from '../gameProfile';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -68,15 +69,15 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
     let finalPath = tempRawPath;
     let isFinalTemp = isTempRaw;
 
-    // 2. If the file is ZSTD compressed (.zs), decompress it
-    const isZstd = fsPath.toLowerCase().endsWith('.zs') || path.basename(fsPath).toLowerCase().includes('.zs');
+    // 2. If the file's name says it is compressed, decompress it
+    const isZstd = isCompressedName(fsPath);
     logger.info(`[HexEditor] isZstd: ${isZstd}`);
     if (isZstd) {
         if (!hostExe) {
             if (isTempRaw) {
                 try { fs.unlinkSync(tempRawPath); } catch {}
             }
-            logger.info(`[HexEditor] ERROR: host not available for .zs decompression`);
+            logger.info(`[HexEditor] ERROR: host not available for decompression`);
             throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
         }
 
@@ -94,7 +95,7 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
                 try { fs.unlinkSync(tempRawPath); } catch {}
             }
             logger.info(`[HexEditor] ERROR: decompressed temp file missing at "${result?.path}"`);
-            throw new Error('Failed to decompress .zs file data.');
+            throw new Error('Failed to decompress the file data.');
         }
 
         if (isTempRaw) {
@@ -116,7 +117,7 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
 
     let resolvedName = path.basename(fsPath);
     if (isZstd) {
-        resolvedName = resolvedName.replace(/\.zs$/i, '');
+        resolvedName = stripCompressedSuffix(resolvedName);
     }
     logger.info(`[HexEditor] resolvedName: ${resolvedName}`);
 
@@ -184,9 +185,9 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 logger.info(`[HexEditor] Decoded save payload: ${content.length} bytes`);
                 
                 // If it is ZSTD compressed, compress it back first!
-                const isZstd = uri.fsPath.toLowerCase().endsWith('.zs') || path.basename(uri.fsPath).toLowerCase().includes('.zs');
+                const isZstd = isCompressedName(uri.fsPath);
                 if (isZstd) {
-                    logger.info(`[HexEditor] File is .zs - recompressing before save`);
+                    logger.info(`[HexEditor] File is compressed - recompressing before save`);
                     const hostExe = getHost();
                     if (!hostExe) {
                         throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');

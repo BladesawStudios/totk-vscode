@@ -1,3 +1,4 @@
+import { stripCompressedSuffix } from './gameProfile';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
@@ -55,9 +56,10 @@ function isExternalToolPromptDocument(document: vscode.TextDocument): boolean {
 
 function extensionAssociationKey(filePath: string): string {
     const normalized = filePath.toLowerCase().replace(/\\/g, '/');
-    const multi = normalized.match(/(\.[^./\\]+\.zs)$/);
-    if (multi) {
-        return multi[1]!;
+    const stripped = stripCompressedSuffix(normalized);
+    const inner = stripped === normalized ? '' : path.extname(stripped);
+    if (inner) {
+        return normalized.slice(stripped.length - inner.length);
     }
     const ext = path.extname(normalized);
     return ext || path.basename(normalized);

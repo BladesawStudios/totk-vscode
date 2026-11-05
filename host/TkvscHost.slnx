@@ -1,6 +1,11 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/TkvscHost.PluginApi/TkvscHost.PluginApi.csproj" />
     <Project Path="src/TkvscHost/TkvscHost.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/SamplePlugin.Helper/SamplePlugin.Helper.csproj" />
+    <Project Path="samples/SamplePlugin/SamplePlugin.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/TkvscHost.Tests/TkvscHost.Tests.csproj" />

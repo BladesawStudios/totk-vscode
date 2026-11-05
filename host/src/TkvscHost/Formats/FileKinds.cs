@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using TkvscHost.Plugins;
 
 namespace TkvscHost.Formats;
 
@@ -7,7 +8,7 @@ namespace TkvscHost.Formats;
 /// Which handler a file gets: the manifest the extension writes maps extensions to handler kinds,
 /// and a few kinds are told by their contents. Port of <c>handler_manifest.py</c> and <c>_file_kind</c>.
 /// </summary>
-public sealed class FileKinds(Env env, Containers containers)
+public sealed class FileKinds(Env env, Containers containers, GamePlugin? plugin = null)
 {
     /// <summary>Kinds the host reads and writes. Other kinds in the manifest are for add-ons' own editors, which read raw bytes.</summary>
     public static readonly HashSet<string> Native = ["byml", "msbt", "aamp", "xlnk"];
@@ -42,10 +43,9 @@ public sealed class FileKinds(Env env, Containers containers)
         }
     }
 
-    public static string Extension(string logicalPath)
+    public string Extension(string logicalPath)
     {
-        string lower = logicalPath.ToLowerInvariant().Replace('\\', '/');
-        if (lower.EndsWith(".zs", StringComparison.Ordinal)) lower = lower[..^3];
+        string lower = env.StripCompressedSuffix(logicalPath.ToLowerInvariant().Replace('\\', '/'));
         int dot = lower.LastIndexOf('.');
         return dot < 0 ? "" : lower[(dot + 1)..];
     }
@@ -75,6 +75,9 @@ public sealed class FileKinds(Env env, Containers containers)
         {
             plain = data;
         }
+
+        foreach (var (kind, handler) in (plugin ?? GamePlugin.None).Formats)
+            if (handler.Matches(plain)) return kind;
 
         if (plain.AsSpan().StartsWith("AAMP"u8)) return "aamp";
         if (plain.AsSpan().StartsWith("XLNK"u8)) return "xlnk";

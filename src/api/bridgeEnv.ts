@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import {
     getActiveGameProfile,
     getActiveMsbtConfigPath,
+    getCompressedSuffixes,
     getGameProfileRegistry,
     resolveRomfsPathForGame,
 } from '../gameProfile';
@@ -27,6 +28,15 @@ export function getBridgeEnv(): NodeJS.ProcessEnv {
         TKVSC_GAME_ID: profile.id,
         TKVSC_COMPRESSION_BACKEND: profile.compressionBackend,
         TKVSC_ARCHIVE_EXTENSIONS: archiveExtensions.join(','),
+        TKVSC_ARCHIVE_PATTERNS: JSON.stringify(profile.archivePatterns ?? []),
+        TKVSC_COMPRESSED_SUFFIXES: getCompressedSuffixes(profile.id).join(','),
+        TKVSC_ZSDIC_PATH: profile.zsDicPath ?? '',
+        TKVSC_HASH_NAMES: profile.hashNamesResolvedPath ?? '',
+        TKVSC_AAMP_NAME_TABLE: profile.aampNameTable ?? '',
+        TKVSC_PROFILE_AAMP_NAMES: profile.aampHashNamesResolvedPath ?? '',
+        TKVSC_XLINK_ELINK_VERSION: profile.xlinkVersions?.elink?.toString() ?? '',
+        TKVSC_XLINK_SLINK_VERSION: profile.xlinkVersions?.slink?.toString() ?? '',
+        TKVSC_HOST_PLUGIN: profile.hostPluginResolvedPath ?? '',
         TKVSC_HANDLER_MANIFEST: manifestPath,
         TKVSC_AAMP_HASH_NAMES: aampHashNamesPath,
         TKVSC_ROMFS_INDEX: indexPaths?.romfsIndex ?? '',

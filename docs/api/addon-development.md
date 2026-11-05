@@ -56,7 +56,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 ## Declarative formats (`contributes.tkvsc`)
 
-Declare formats in your addon `package.json`. Core merges them with built-in TotK formats and writes a handler manifest for the host. Core only converts the built-in kinds (BYML, MSBT, AAMP, XLNK) to text; any other kind is for your own custom editor, which reads and writes raw bytes with `readRawBytes` / `writeRawBytes`.
+Declare formats in your addon `package.json`. Core merges them with built-in TotK formats and writes a handler manifest for the host. Core converts the built-in kinds (BYML, MSBT, AAMP, XLNK) to text, plus any kind your game's [host plugin](host-plugins.md) adds; any other kind is for your own custom editor, which reads and writes raw bytes with `readRawBytes` / `writeRawBytes`.
 
 ```json
 {

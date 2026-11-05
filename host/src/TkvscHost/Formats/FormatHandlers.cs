@@ -5,22 +5,30 @@ using System.Text.RegularExpressions;
 using AampSharp;
 using BymlSharp;
 using MsbtSharp;
+using Tkvsc.Plugins;
+using TkvscHost.Plugins;
 using XLinkSharp;
 
 namespace TkvscHost.Formats;
 
 /// <summary>Turns a file's bytes into the text the editor shows, and edited text back into bytes.</summary>
-public sealed partial class FormatHandlers(Env env, Containers containers, FileKinds kinds)
+public sealed partial class FormatHandlers(Env env, Containers containers, FileKinds kinds, GamePlugin? plugin = null)
 {
     private const string BinaryMessageFormat =
         "<Binary Data: {0} bytes. Editable types: .byml, .byaml, .bgyml, .msbt, .belnk, .bslnk, " +
         "AAMP (many extensions - see aamp-extensions.json)>";
+
+    private IFormatHandler? PluginFormat(string? kind) => kind is null ? null : plugin?.Format(kind);
 
     // ---- reading ----
 
     public string ReadContent(byte[] fileData, string logicalPath)
     {
         string? kind = kinds.KindOf(logicalPath, fileData);
+
+        // The game's plugin comes first, so it can replace a built-in format.
+        if (PluginFormat(kind) is { } handler) return handler.Read(containers.Decompress(fileData, logicalPath).Data, logicalPath);
+
         return kind switch
         {
             "byml" => ReadByml(fileData, logicalPath),
@@ -121,30 +129,39 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
 
     private NameTable AampNames()
     {
-        NameTable names = (env.GameId == "botw" ? NameTable.BotW : NameTable.TotK).Copy();
-
-        if (env.AampHashNamesPath.Length > 0 && File.Exists(env.AampHashNamesPath))
+        NameTable names = env.AampNameTable switch
         {
-            try
-            {
-                var custom = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(env.AampHashNamesPath)) ?? [];
-                foreach (var (hashKey, name) in custom)
-                {
-                    if (name.Length == 0) continue;
-                    names.Add(name);
+            "botw" => NameTable.BotW.Copy(),
+            "none" => new NameTable(),
+            _ => NameTable.TotK.Copy(),
+        };
 
-                    uint actual = AampSharp.Crc32.Hash(name);
-                    if (TryParseHash(hashKey, out uint declared) && declared != actual)
-                        Console.Error.WriteLine($"AAMP hash name mismatch: \"{name}\" hashes to 0x{actual:x8}, not {hashKey} as declared in TKVSC.aampHashNames");
-                }
-            }
-            catch (Exception e) when (e is IOException or JsonException)
+        AddAampNames(names, env.ProfileAampNamesPath);
+        AddAampNames(names, env.AampHashNamesPath);
+        return names;
+    }
+
+    private static void AddAampNames(NameTable names, string path)
+    {
+        if (path.Length == 0 || !File.Exists(path)) return;
+
+        try
+        {
+            var custom = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path)) ?? [];
+            foreach (var (hashKey, name) in custom)
             {
-                Console.Error.WriteLine($"Failed to read AAMP hash names from {env.AampHashNamesPath}: {e.Message}");
+                if (name.Length == 0) continue;
+                names.Add(name);
+
+                uint actual = AampSharp.Crc32.Hash(name);
+                if (TryParseHash(hashKey, out uint declared) && declared != actual)
+                    Console.Error.WriteLine($"AAMP hash name mismatch: \"{name}\" hashes to 0x{actual:x8}, not {hashKey} as declared in {path}");
             }
         }
-
-        return names;
+        catch (Exception e) when (e is IOException or JsonException)
+        {
+            Console.Error.WriteLine($"Failed to read AAMP hash names from {path}: {e.Message}");
+        }
     }
 
     private static bool TryParseHash(string text, out uint value)
@@ -164,8 +181,8 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
         return ParameterIO.FromBinary(data).ToYaml(AampNames());
     }
 
-    // The text only names the module; BotW's files use its 32-bit layouts, TotK's the library defaults.
-    private uint? XlinkVersion(ModuleType module) => env.GameId == "botw" ? (module == ModuleType.ELink ? 0x1Eu : 0x1Cu) : null;
+    // The text only names the module; the game's profile can say which version its files use, or the library's default stands.
+    private uint? XlinkVersion(ModuleType module) => module == ModuleType.ELink ? env.XlinkELinkVersion : env.XlinkSLinkVersion;
 
     private string ReadXlnk(byte[] fileData, string logicalPath)
         => XLinkFile.FromBinary(containers.Decompress(fileData, logicalPath).Data).ToText();
@@ -174,6 +191,12 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
 
     public byte[] WriteContent(string kind, byte[] original, string editorText, string logicalPath)
     {
+        if (PluginFormat(kind) is { } handler)
+        {
+            Unwrapped unwrapped = containers.Decompress(original, logicalPath);
+            return Wrap(handler.Write(unwrapped.Data, editorText, logicalPath), logicalPath, unwrapped);
+        }
+
         return kind switch
         {
             "byml" => WriteByml(original, editorText, logicalPath),
@@ -186,7 +209,7 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
 
     private byte[] Wrap(byte[] bytes, string logicalPath, Unwrapped original)
         => containers.Compress(bytes, logicalPath,
-            original.WasZstd || logicalPath.EndsWith(".zs", StringComparison.OrdinalIgnoreCase), original.WasYaz0);
+            original.WasZstd || env.IsCompressedName(logicalPath), original.WasYaz0);
 
     private byte[] WriteByml(byte[] original, string editorText, string logicalPath)
     {
@@ -257,7 +280,7 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
     {
         // The wrapping is told from the magic alone: decompressing just to find out would need the dictionaries.
         bool yaz0 = original.AsSpan().StartsWith("Yaz0"u8);
-        bool zstd = !yaz0 && (Containers.IsZstd(original) || logicalPath.EndsWith(".zs", StringComparison.OrdinalIgnoreCase));
+        bool zstd = !yaz0 && (containers.IsCompressed(original) || env.IsCompressedName(logicalPath));
 
         XLinkFile file = XLinkFile.FromText(editorText);
         if (OriginalXlinkVersion(original, logicalPath, zstd, file.Module) is { } kept) file.Version = kept;

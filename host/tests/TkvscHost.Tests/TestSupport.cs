@@ -12,7 +12,8 @@ public sealed class Workspace : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(Root, true); } catch (IOException) { }
+        // Windows keeps a loaded plugin's DLL locked until the test process ends, so this is best effort.
+        try { Directory.Delete(Root, true); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
     /// <summary>Settings for tests: no game dictionaries, so .zs files use plain zstd.</summary>

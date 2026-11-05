@@ -12,8 +12,6 @@ namespace TkvscHost.Formats;
 /// </summary>
 public sealed partial class HashNames
 {
-    public const string FileName = "zelda-totk.hashes.csv";
-
     private readonly Dictionary<uint, string> _names;
 
     private HashNames(Dictionary<uint, string> names) => _names = names;
@@ -28,15 +26,15 @@ public sealed partial class HashNames
     private static string? _loadedFrom;
     private static HashNames? _loaded;
 
-    /// <summary>The names from the extension's vendor folder, read once; empty when the file is not there.</summary>
+    /// <summary>The active game's names, read once; empty when it has none or the file is not there.</summary>
     public static HashNames Load(Env env)
     {
-        string path = Path.Combine(env.ExtensionRoot, "vendor", FileName);
+        string path = env.HashNamesPath;
         lock (Gate)
         {
             if (_loaded is not null && _loadedFrom == path) return _loaded;
             _loadedFrom = path;
-            return _loaded = File.Exists(path) ? Parse(File.ReadAllLines(path, Encoding.UTF8)) : Empty;
+            return _loaded = path.Length > 0 && File.Exists(path) ? Parse(File.ReadAllLines(path, Encoding.UTF8)) : Empty;
         }
     }
 

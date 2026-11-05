@@ -7,6 +7,9 @@
 //
 // It needs the .NET SDK (10) and the format libraries (the submodules in host/libs, or another folder: see
 // host/Directory.Build.props, or pass --lib-root <folder>).
+//
+// Don't turn on trimming or ahead-of-time compilation: game plugins are loaded at run time, and they use whatever part of the
+// framework and the format libraries they need.
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');

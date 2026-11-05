@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Nodes;
+using TkvscHost.Plugins;
 
 namespace TkvscHost;
 
@@ -9,14 +10,18 @@ public sealed class CommandContext
     private readonly Func<byte[]> _readStdin;
     private byte[]? _stdin;
 
-    public CommandContext(string command, string[] args, Env env, Func<byte[]> readStdin)
+    public CommandContext(string command, string[] args, Env env, Func<byte[]> readStdin, GamePlugin? plugin = null)
     {
         Command = command;
         Args = args;
         Env = env;
-        Containers = new Containers(env);
+        Plugin = plugin ?? GamePlugin.None;
+        Containers = new Containers(env, Plugin);
         _readStdin = readStdin;
     }
+
+    /// <summary>What the active game's plugin registered, if it has one.</summary>
+    public GamePlugin Plugin { get; }
 
     public string Command { get; }
 
