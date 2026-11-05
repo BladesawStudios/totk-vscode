@@ -33,7 +33,7 @@ public static class BntxNames
     private static string ReadString(byte[] d, long offset, bool le)
     {
         if (offset < 0 || offset >= d.Length) return "";
-        if (offset + 3 <= d.Length && d.AsSpan((int)offset, 3).SequenceEqual("NX "u8)) return "";
+        if (offset + 4 <= d.Length && (d.AsSpan((int)offset, 3).SequenceEqual("NX "u8) || d.AsSpan((int)offset, 4).SequenceEqual("Ounc"u8))) return "";
 
         if (offset + 2 <= d.Length)
         {
