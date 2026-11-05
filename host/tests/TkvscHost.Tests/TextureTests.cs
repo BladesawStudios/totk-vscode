@@ -86,7 +86,8 @@ public class TextureTests
         byte[] data = new byte[0x50];
         BinaryPrimitives.WriteUInt16LittleEndian(data, 0x50);
         "6PK0"u8.CopyTo(data.AsSpan(4));
-        data[0x18] = red; data[0x19] = green; data[0x1A] = blue; data[0x1B] = alpha;
+        data[0x14] = red; data[0x15] = green; data[0x16] = blue; data[0x17] = alpha;
+        data[0x18] = 0; data[0x19] = 1; data[0x1A] = 2; data[0x1B] = 3;
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x3C), format);
         return data;
     }
@@ -99,12 +100,49 @@ public class TextureTests
 
         byte[] changed = Textures.UpdateTxtgMetadata(header, edit);
 
+        Assert.Equal([2, 1, 0, 5], changed[0x14..0x18]);
         Assert.Equal([2, 1, 0, 5], changed[0x18..0x1C]);
         Assert.Equal(0x203, BinaryPrimitives.ReadUInt16LittleEndian(changed.AsSpan(0x3C)));
         Assert.Equal(0x202, BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(0x3C))); // the input is not touched
 
         byte[] back = Textures.UpdateTxtgMetadata(changed, new JsonObject { ["useSRGB"] = false });
         Assert.Equal(0x202, BinaryPrimitives.ReadUInt16LittleEndian(back.AsSpan(0x3C)));
+    }
+
+    [Fact]
+    public void TxtgChannelsComeFromTheBytesTheGameReads()
+    {
+        // As the game's files have them: flags above the low three bits, and an identity at 0x18 that says nothing.
+        byte[] opaque = SampleTxtgHeader(0x202, red: 8, green: 9, blue: 10, alpha: 5);
+        JsonNode channels = Textures.TxtgTextureResult(opaque, "x.txtg")["metadata"]!["channels"]!;
+
+        Assert.Equal("Red", channels["red"]!.GetValue<string>());
+        Assert.Equal("Blue", channels["blue"]!.GetValue<string>());
+        Assert.Equal("One", channels["alpha"]!.GetValue<string>());
+
+        byte[] edited = Textures.UpdateTxtgMetadata(opaque, new JsonObject { ["alpha"] = "Red" });
+        Assert.Equal([8, 9, 10, 0], edited[0x14..0x18]);
+        Assert.Equal([0, 1, 2, 0], edited[0x18..0x1C]);
+    }
+
+    [Fact]
+    public void EditingOneChannelOfATxtgReadAsItIsKeepsTheOthers()
+    {
+        byte[] readAsIs = SampleTxtgHeader(0x202, red: 7, green: 7, blue: 7, alpha: 7);
+
+        Assert.Equal("Green", Textures.TxtgTextureResult(readAsIs, "x.txtg")["metadata"]!["channels"]!["green"]!.GetValue<string>());
+
+        byte[] edited = Textures.UpdateTxtgMetadata(readAsIs, new JsonObject { ["alpha"] = "One" });
+        Assert.Equal([0, 1, 2, 5], edited[0x14..0x18]);
+    }
+
+    [Fact]
+    public void SavingTxtgChannelsUnchangedLeavesTheHeaderAlone()
+    {
+        byte[] opaque = SampleTxtgHeader(0x202, red: 8, green: 9, blue: 10, alpha: 5);
+        JsonObject same = new() { ["red"] = "Red", ["green"] = "Green", ["blue"] = "Blue", ["alpha"] = "One" };
+
+        Assert.Equal(opaque, Textures.UpdateTxtgMetadata(opaque, same));
     }
 
     [Fact]

@@ -325,7 +325,7 @@ public static class Textures
         int height = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(0x0A));
         int arrayCount = Math.Max((int)BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(0x0C)), 1);
         int mipCount = Math.Max((int)data[0x0E], 1);
-        byte compR = data[0x18], compG = data[0x19], compB = data[0x1A], compA = data[0x1B];
+        byte[] selectors = TxtgSelectors(data);
         int formatId = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(0x3C));
         uint setting2 = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x44));
         uint setting4 = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x4C));
@@ -371,7 +371,7 @@ public static class Textures
             ["metadata"] = new JsonObject
             {
                 ["name"] = textureName,
-                ["channels"] = new JsonObject { ["red"] = Channel(compR), ["green"] = Channel(compG), ["blue"] = Channel(compB), ["alpha"] = Channel(compA) },
+                ["channels"] = new JsonObject { ["red"] = Channel(selectors[0]), ["green"] = Channel(selectors[1]), ["blue"] = Channel(selectors[2]), ["alpha"] = Channel(selectors[3]) },
                 ["imageInfo"] = new JsonObject
                 {
                     ["width"] = width,
@@ -448,13 +448,31 @@ public static class Textures
             BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x3C), (ushort)format);
         }
 
-        string[] selectors = ["Red", "Green", "Blue", "Alpha", "Zero", "One"];
+        string[] names = ["Red", "Green", "Blue", "Alpha", "Zero", "One"];
         string[] keys = ["red", "green", "blue", "alpha"];
+        byte[] current = TxtgSelectors(data), edited = (byte[])current.Clone();
         for (int i = 0; i < keys.Length; i++)
-            if (metadata[keys[i]] is JsonValue v && v.TryGetValue(out string? channel) && Array.IndexOf(selectors, channel) is var code and >= 0)
-                data[0x18 + i] = (byte)code;
+            if (metadata[keys[i]] is JsonValue v && v.TryGetValue(out string? channel) && Array.IndexOf(names, channel) is var code and >= 0)
+                edited[i] = (byte)code;
+
+        // All four go in together, since one left as "read as it is" (see TxtgSelectors) would turn the others off.
+        // The bits above the low three aren't understood, so they stay; 0x18 holds a copy the game doesn't read.
+        if (!edited.AsSpan().SequenceEqual(current))
+            for (int i = 0; i < keys.Length; i++)
+            {
+                data[0x14 + i] = (byte)((data[0x14 + i] & ~7) | edited[i]);
+                data[0x18 + i] = edited[i];
+            }
 
         return data;
+    }
+
+    // What TxtgFile.ChannelSelectors reads, for a header too broken to parse as a whole file: the low three bits of
+    // bytes 0x14 to 0x17, where a 6 or 7 in any of them means the texture is read as it is.
+    private static byte[] TxtgSelectors(byte[] data)
+    {
+        byte[] selectors = [.. data[0x14..0x18].Select(b => (byte)(b & 7))];
+        return selectors.Max() > 5 ? [0, 1, 2, 3] : selectors;
     }
 
     /// <summary>Puts the pixels of a DDS in a TXTG, keeping the rest of its header.</summary>
