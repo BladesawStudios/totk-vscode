@@ -86,6 +86,25 @@ public class FormatTests
         Assert.Equal(expected.Replace("\r\n", "\n"), BymlEditorFormat.ToEditorText(doc, 1));
     }
 
+    [Theory]
+    [InlineData(@"%PROJECT_WORK%\UI\Tex")]
+    [InlineData("@home")]
+    [InlineData("`tick")]
+    [InlineData("&anchor")]
+    [InlineData("*alias")]
+    [InlineData("!tag")]
+    [InlineData("|pipe")]
+    [InlineData(">fold")]
+    [InlineData(" spaced ")]
+    public void StringsStartingWithAYamlIndicatorReadBack(string value)
+    {
+        Byml doc = Byml.Map(new Dictionary<string, Byml> { ["Text"] = value });
+
+        Byml read = BymlFile.FromYaml(BymlEditorFormat.ToEditorText(doc)).Root;
+
+        Assert.Equal(value, read["Text"]!.String);
+    }
+
     [Fact]
     public void TheEditorTextReadsBackAsTheSameDocument()
     {

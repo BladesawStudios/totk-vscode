@@ -131,7 +131,9 @@ public sealed class BymlEditorFormat(int inlineMaxCount)
             return marker + "\n" + string.Join("\n", value.Split('\n').Select(line => line.Length > 0 ? sp + line : sp));
         }
 
-        bool needsQuotes = value.Length == 0 || value.IndexOfAny([':', '#', '[', ']', '{', '}', ',', '"', '\'', '\n', '\t']) >= 0 || value[0] is '-' or '?';
+        // A plain YAML scalar can't start with an indicator, such as the % of "%PROJECT_WORK%\UI", or keep outer spaces.
+        bool needsQuotes = value.Length == 0 || value.IndexOfAny([':', '#', '[', ']', '{', '}', ',', '"', '\'', '\n', '\t']) >= 0
+            || value[0] is '-' or '?' or '%' or '@' or '`' or '&' or '*' or '!' or '|' or '>' or ' ' || value[^1] == ' ';
         return needsQuotes
             ? "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n") + "\""
             : value;
