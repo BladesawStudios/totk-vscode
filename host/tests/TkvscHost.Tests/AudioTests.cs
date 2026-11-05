@@ -123,6 +123,23 @@ public class AudioTests
     }
 
     [Fact]
+    public void AVoiceBarsFindsItsStreamInTheVoiceFolder()
+    {
+        using Workspace w = new();
+        string folder = Directory.CreateDirectory(Path.Combine(w.Root, "Voice", "Resource", "Stream")).FullName;
+        string file = Path.Combine(w.Root, "Voice", "Resource", "Line.bars");
+        File.WriteAllBytes(file, Bars("Line", null));
+        File.WriteAllBytes(Path.Combine(folder, "Line.bwav"), Bwav.Build([Tone(3000)], 32000));
+
+        var listed = w.Run("list-bars", [file, ""])["entries"]![0]!;
+        var full = w.Run("read-bars-audio", [file, "", "0", "false"]);
+
+        Assert.True(listed["has_romfs_bwav"]!.GetValue<bool>());
+        Assert.False(full["isPrefetch"]!.GetValue<bool>());
+        File.Delete(full["wavPath"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void ABarsEntryWithoutAnyAudioSaysSo()
     {
         using Workspace w = new();

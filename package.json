@@ -72,6 +72,12 @@
             "filenamePattern": "*.bfotf"
           },
           {
+            "filenamePattern": "*.bfttf.zs"
+          },
+          {
+            "filenamePattern": "*.bfotf.zs"
+          },
+          {
             "filenamePattern": "*.ttf"
           },
           {
@@ -220,6 +226,8 @@
         "extensions": [
           ".bfttf",
           ".bfotf",
+          ".bfttf.zs",
+          ".bfotf.zs",
           ".ttf",
           ".otf"
         ],
@@ -843,14 +851,14 @@
         },
         {
           "command": "totk-editor.importFontReplacement",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile) && (resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf)",
+          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile) && (resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf || resourceFilename =~ /\\.(bfotf|bfttf)\\.zs$/i)",
           "group": "7_modification@5"
         }
       ],
       "editor/title/context": [
         {
           "command": "totk-editor.importFontReplacement",
-          "when": "resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf",
+          "when": "resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf || resourceFilename =~ /\\.(bfotf|bfttf)\\.zs$/i",
           "group": "1_font@1"
         }
       ],
@@ -867,7 +875,7 @@
         },
         {
           "command": "totk-editor.importFontReplacement",
-          "when": "resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf",
+          "when": "resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf || resourceFilename =~ /\\.(bfotf|bfttf)\\.zs$/i",
           "group": "7_modification@1"
         }
       ]

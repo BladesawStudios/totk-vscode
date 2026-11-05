@@ -45,21 +45,23 @@ public static class FontCommands
     }
 
     // What to write over a font: the imported file, encrypted the way the file it replaces is (or the way the game
-    // makes that name) when the target is a BFTTF/BFOTF.
+    // makes that name) when the target is a BFTTF/BFOTF, and compressed if the target's name says it is.
     private static JsonNode PrepareFontReplacement(CommandContext c)
     {
         string importPath = c.Arg(0), targetPath = c.Arg(1);
         byte[] imported = File.ReadAllBytes(importPath);
+        bool compressed = c.Env.IsCompressedName(targetPath);
 
-        // The target as stored, still encrypted, so the key it uses can be told. It may not exist yet.
+        // The target, still encrypted, so the key it uses can be told. It may not exist yet.
         byte[]? existing = null;
         try
         {
             existing = Archives.SplitFsPath(targetPath, c.Env) is var (archive, locator)
                 ? new Archives(c.Containers).ReadArchiveEntryStoredBytes(archive, locator)
                 : File.ReadAllBytes(targetPath);
+            if (compressed) existing = c.Containers.Decompress(existing, targetPath).Data;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException or KeyNotFoundException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or ArgumentException or KeyNotFoundException)
         {
         }
 
@@ -73,6 +75,7 @@ public static class FontCommands
             throw new InvalidDataException($"Not a valid font file: {importPath}");
         }
 
+        if (compressed) output = c.Containers.Compress(output, targetPath, wasZstd: true, wasYaz0: false);
         return TempResult("totk-font-out-", Path.GetFileName(targetPath.Replace('\\', '/')), output);
     }
 }

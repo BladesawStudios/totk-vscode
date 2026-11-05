@@ -105,6 +105,43 @@ public class FormatTests
         Assert.Equal(value, read["Text"]!.String);
     }
 
+    [Theory]
+    [InlineData("False")]
+    [InlineData("true")]
+    [InlineData("null")]
+    [InlineData("~")]
+    [InlineData("00")]
+    [InlineData("12")]
+    [InlineData("+1")]
+    [InlineData("0x10")]
+    [InlineData("0o7")]
+    [InlineData("0.1")]
+    [InlineData("1e5")]
+    [InlineData(".5")]
+    [InlineData(".inf")]
+    [InlineData(".NaN")]
+    public void StringsThatLookLikeAnotherTypeStayStrings(string value)
+    {
+        Byml doc = Byml.Map(new Dictionary<string, Byml> { ["Text"] = value, ["List"] = Byml.Array([value, value]) });
+
+        Byml read = BymlFile.FromYaml(BymlEditorFormat.ToEditorText(doc)).Root;
+
+        Assert.Equal(BymlType.String, read["Text"]!.Type);
+        Assert.Equal(value, read["Text"]!.String);
+        Assert.Equal(value, read["List"]!.AsArray[1].String);
+    }
+
+    [Theory]
+    [InlineData("Falsehood")]
+    [InlineData("10_Foo")]
+    [InlineData("1.2.3")]
+    public void OrdinaryStringsStayPlain(string value)
+    {
+        Byml doc = Byml.Map(new Dictionary<string, Byml> { ["Text"] = value });
+
+        Assert.Contains($"Text: {value}", BymlEditorFormat.ToEditorText(doc));
+    }
+
     [Fact]
     public void TheEditorTextReadsBackAsTheSameDocument()
     {

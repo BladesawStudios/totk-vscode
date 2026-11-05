@@ -94,11 +94,18 @@ public sealed class Archives(Containers containers)
         return entry.Data;
     }
 
+    // Every entry of that name: OOT's Layout2 archives hold four copies of each file, and the game could load any of them.
     private static void SetFile(OpenArchive archive, string internalPath, byte[] data)
     {
-        int at = archive.Entries.FindIndex(e => e.Name == internalPath);
-        if (at >= 0) archive.Entries[at] = archive.Entries[at] with { Data = data };
-        else archive.Entries.Add(new SarcEntry(internalPath, data));
+        bool found = false;
+        for (int i = 0; i < archive.Entries.Count; i++)
+        {
+            if (archive.Entries[i].Name != internalPath) continue;
+            archive.Entries[i] = archive.Entries[i] with { Data = data };
+            found = true;
+        }
+
+        if (!found) archive.Entries.Add(new SarcEntry(internalPath, data));
     }
 
     /// <summary>A .bntx the path leads into: its bytes, the texture named after it, and the path up to and including the .bntx.</summary>

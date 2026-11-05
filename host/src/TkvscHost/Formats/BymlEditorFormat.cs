@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using BymlSharp;
 
 namespace TkvscHost.Formats;
@@ -66,7 +67,7 @@ public static class PyFloat
 /// The text a BYML shows in the editor: block YAML with small containers on one line.
 /// Port of <c>byml_editor_format.py</c>; it reads back with BymlSharp (and oead).
 /// </summary>
-public sealed class BymlEditorFormat(int inlineMaxCount)
+public sealed partial class BymlEditorFormat(int inlineMaxCount)
 {
     public static string ToEditorText(Byml document, int inlineMaxCount = 1)
     {
@@ -119,6 +120,10 @@ public sealed class BymlEditorFormat(int inlineMaxCount)
         }
     }
 
+    // What the BYML YAML reader types as something other than a string when it isn't quoted.
+    [GeneratedRegex(@"^(?:~|null|Null|NULL|true|True|TRUE|false|False|FALSE|\.(?:nan|NaN|NAN)|[-+]?(?:0x[0-9a-fA-F]+|0o[0-7]+|(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?|\.(?:inf|Inf|INF)))$")]
+    private static partial Regex ReadsAsAnotherType();
+
     private static string FormatString(string value, int indent)
     {
         if (value.Contains('\n'))
@@ -132,8 +137,10 @@ public sealed class BymlEditorFormat(int inlineMaxCount)
         }
 
         // A plain YAML scalar can't start with an indicator, such as the % of "%PROJECT_WORK%\UI", or keep outer spaces.
+        // Nor can it look like another type: the strings "False", "00" and "0.1" would come back as a bool, an int and a float.
         bool needsQuotes = value.Length == 0 || value.IndexOfAny([':', '#', '[', ']', '{', '}', ',', '"', '\'', '\n', '\t']) >= 0
-            || value[0] is '-' or '?' or '%' or '@' or '`' or '&' or '*' or '!' or '|' or '>' or ' ' || value[^1] == ' ';
+            || value[0] is '-' or '?' or '%' or '@' or '`' or '&' or '*' or '!' or '|' or '>' or ' ' || value[^1] == ' '
+            || ReadsAsAnotherType().IsMatch(value);
         return needsQuotes
             ? "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n") + "\""
             : value;

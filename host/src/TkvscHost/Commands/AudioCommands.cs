@@ -99,13 +99,14 @@ public static class AudioCommands
 
     // ---- BARS ----
 
-    // The romfs root a mod's BARS sits in: the folder above its Sound/Resource segment, or "" if it isn't laid out that way.
+    // The romfs root a mod's BARS sits in: the folder above its Sound/Resource or Voice/Resource segment, or "" if it isn't laid out that way.
     private static string ModRomfsRoot(string archivePath)
     {
         bool rooted = archivePath.StartsWith('/') || archivePath.StartsWith('\\');
         string[] parts = archivePath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
         for (int i = parts.Length - 2; i >= 0; i--)
-            if (parts[i].Equals("sound", StringComparison.OrdinalIgnoreCase) && parts[i + 1].Equals("resource", StringComparison.OrdinalIgnoreCase))
+            if ((parts[i].Equals("sound", StringComparison.OrdinalIgnoreCase) || parts[i].Equals("voice", StringComparison.OrdinalIgnoreCase))
+                && parts[i + 1].Equals("resource", StringComparison.OrdinalIgnoreCase))
                 return i > 0 ? (rooted ? Path.DirectorySeparatorChar.ToString() : "") + string.Join(Path.DirectorySeparatorChar, parts[..i]) : "";
         return "";
     }
@@ -116,7 +117,7 @@ public static class AudioCommands
         foreach (string root in new[] { modRoot, romfs })
         {
             if (root.Length == 0) continue;
-            foreach (string pattern in new[] { "Sound/Resource/Stream/{0}.bwav", "Sound/Resource/{0}.bwav" })
+            foreach (string pattern in new[] { "Sound/Resource/Stream/{0}.bwav", "Sound/Resource/{0}.bwav", "Voice/Resource/Stream/{0}.bwav" })
             {
                 string candidate = Path.Combine(root, string.Format(pattern, name));
                 if (File.Exists(candidate)) return File.ReadAllBytes(candidate);

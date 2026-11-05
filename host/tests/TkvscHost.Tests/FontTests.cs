@@ -58,6 +58,26 @@ public class FontTests
     }
 
     [Fact]
+    public void ANewFontForACompressedBfttfKeepsItsKeyAndStaysCompressed()
+    {
+        using Workspace w = new();
+        string import = TempFile(w, "new.otf");
+        File.WriteAllBytes(import, Otf());
+        Containers containers = new(w.Env());
+        string target = TempFile(w, "Symbol.bfttf.zs");
+        File.WriteAllBytes(target, containers.Compress(BFont.Encrypt(Otf(), BFontPlatform.Win), target, wasZstd: true, wasYaz0: false));
+
+        string output = w.Run("prepare-font-replacement", [import, target])["path"]!.GetValue<string>();
+        try
+        {
+            byte[] written = File.ReadAllBytes(output);
+            Assert.True(containers.IsCompressed(written));
+            Assert.Equal(BFontPlatform.Win, BFont.DetectPlatform(containers.Decompress(written, target).Data));
+        }
+        finally { File.Delete(output); }
+    }
+
+    [Fact]
     public void ANewFontForAFontThatIsNotThereGetsTheKeyTheGameUsesForTheName()
     {
         using Workspace w = new();

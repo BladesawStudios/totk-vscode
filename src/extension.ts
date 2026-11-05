@@ -1667,10 +1667,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         let streamSavedTo: string | undefined;
                         if (result.needsStreamFile && result.fullBwavTempPath) {
                             // Streamed sounds: the BARS only holds a prefetch clip, so the full
-                            // BWAV goes to Sound/Resource/Stream/ beside the BARS in the same romfs.
+                            // BWAV goes to Stream/ beside the BARS in Sound/Resource or Voice/Resource.
                             const archiveDir = path.dirname(diskArchive);
                             let target: string | undefined;
-                            if (/[\\/]sound[\\/]resource$/i.test(archiveDir)) {
+                            if (/[\\/](?:sound|voice)[\\/]resource$/i.test(archiveDir)) {
                                 target = path.join(archiveDir, 'Stream', `${result.name}.bwav`);
                             } else {
                                 // BARS isn't under a romfs Sound/Resource folder; ask where the stream goes.

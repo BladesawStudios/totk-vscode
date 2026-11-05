@@ -1,5 +1,7 @@
 // WIP
 
+#pragma array_limit 10000000
+#pragma pattern_limit 10000000
 #pragma endian big
 #include <std/mem.pat>
 

@@ -105,6 +105,21 @@ public class ArchiveTests
     }
 
     [Fact]
+    public void WritingANameHeldTwiceChangesEveryCopy()
+    {
+        using Workspace w = new();
+        string file = w.Path("Layout.blarc");
+        File.WriteAllBytes(file, Workspace.Sarc(("Box.buil", new byte[] { 1 }), ("Box.buil", new byte[] { 1 }), ("Other.buil", new byte[] { 2 })).Write());
+
+        w.Run("write-raw", [file, "Box.buil"], Convert.ToBase64String([7, 7]));
+
+        SarcFile saved = SarcFile.FromBinary(File.ReadAllBytes(file));
+        Assert.Equal(3, saved.Entries.Count);
+        Assert.All(saved.Entries.Where(e => e.Name == "Box.buil"), e => Assert.Equal(new byte[] { 7, 7 }, e.Data));
+        Assert.Equal(new byte[] { 2 }, saved["Other.buil"]!.Data);
+    }
+
+    [Fact]
     public void DeleteRemovesAFileOrWholeFolder()
     {
         using Workspace w = new();
