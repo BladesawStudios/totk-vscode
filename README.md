@@ -46,6 +46,7 @@ Preview and edit subfiles of SARC and BNTX archives
 - MSBT
 - XLINK
 - PCHTXT
+- PTCL
 - TKMM Config Files
 
 #### Texture Viewer/Replacer
@@ -55,7 +56,7 @@ Preview and edit subfiles of SARC and BNTX archives
 - - VSP
 
 #### Audio Player/Replacer
-- Bars (play entries, and replace their audio from WAV/BWAV — or any common format like MP3, OGG, or FLAC when ffmpeg is installed. Audio is encoded to DSP-ADPCM automatically, with loop points taken from the file or set by hand)
+- Bars
 - BWAV
 
 #### Font Viewer/Replacer
