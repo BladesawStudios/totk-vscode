@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import {
-    contributionToBridgeHandlers,
     mergeArchivePatternLists,
     parseTkvscContribution,
     type TkvscManifestContribution,
@@ -15,7 +14,6 @@ import {
 import {
     getFormatRegistry,
     type FormatRegistration,
-    type BridgeHandlerRegistration,
 } from './formatRegistry';
 import { writeHandlerManifest } from './handlerManifest';
 import { writeAampHashNames } from './aampHashNames';
@@ -80,9 +78,6 @@ function applyManifestContribution(
         formatRegistry.registerAampExtensions(contribution.aampExtensions, source);
     }
 
-    for (const handler of contributionToBridgeHandlers(contribution, extensionRoot)) {
-        formatRegistry.registerBridgeHandler(handler, source);
-    }
 }
 
 export function registerFormatHandler(
@@ -93,17 +88,6 @@ export function registerFormatHandler(
     writeHandlerManifest(context.globalStorageUri.fsPath);
     return new vscode.Disposable(() => {
         // Manifest merge does not track per-registration removal in v1.
-    });
-}
-
-export function registerBridgeHandler(
-    context: vscode.ExtensionContext,
-    registration: BridgeHandlerRegistration,
-): vscode.Disposable {
-    getFormatRegistry().registerBridgeHandler(registration, 'api');
-    writeHandlerManifest(context.globalStorageUri.fsPath);
-    return new vscode.Disposable(() => {
-        // See registerFormatHandler.
     });
 }
 

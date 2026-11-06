@@ -1,3 +1,4 @@
+import { stripCompressedSuffix } from './gameProfile';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -18,48 +19,24 @@ export interface FormatRegistration {
     editable?: boolean;
 }
 
-export interface BridgeHandlerRegistration {
-    kind: string;
-    modulePath: string;
-    readFunction?: string;
-    writeFunction?: string;
-}
-
 export interface HandlerManifestJson {
     version: number;
     extensionToHandler: Record<string, string>;
     aampExtensions: string[];
-    handlers: Record<
-        string,
-        {
-            modulePath: string;
-            readFunction: string;
-            writeFunction: string;
-        }
-    >;
 }
 
 const LANGUAGE_BY_HANDLER: Record<string, string> = {
     byml: 'byml',
     msbt: 'msbt',
-    ainb: 'json',
-    asb: 'json',
-    baev: 'json',
     xlnk: 'totk-xlnk',
-    rstb: 'totk-rstb',
 };
-
-const BUILTIN_HANDLERS = new Set(['byml', 'msbt', 'aamp', 'ainb', 'asb', 'baev', 'xlnk', 'rstb']);
 
 function normalizeExtension(ext: string): string {
     return ext.toLowerCase().replace(/^\./, '');
 }
 
 export function fileExtensionFromPath(filePath: string): string {
-    let lower = filePath.toLowerCase().replace(/\\/g, '/');
-    if (lower.endsWith('.zs')) {
-        lower = lower.slice(0, -3);
-    }
+    const lower = stripCompressedSuffix(filePath.toLowerCase().replace(/\\/g, '/'));
     const dot = lower.lastIndexOf('.');
     return dot === -1 ? '' : lower.slice(dot + 1);
 }
@@ -67,7 +44,6 @@ export function fileExtensionFromPath(filePath: string): string {
 class FormatRegistry {
     private readonly extensionToFormat = new Map<string, FormatDefinition>();
     private readonly baseAampExtensions = new Set<string>();
-    private readonly bridgeHandlers = new Map<string, BridgeHandlerRegistration>();
     private initialized = false;
 
     initBuiltin(extensionPath: string): void {
@@ -78,7 +54,6 @@ class FormatRegistry {
 
         this.extensionToFormat.clear();
         this.baseAampExtensions.clear();
-        this.bridgeHandlers.clear();
 
         for (const [ext, handler] of Object.entries(core)) {
             this.registerFormat(
@@ -123,14 +98,6 @@ class FormatRegistry {
         for (const ext of extensions) {
             this.baseAampExtensions.add(normalizeExtension(ext));
         }
-    }
-
-    registerBridgeHandler(registration: BridgeHandlerRegistration, source: FormatSource = 'api'): void {
-        this.bridgeHandlers.set(registration.kind, {
-            ...registration,
-            readFunction: registration.readFunction ?? 'read_content',
-            writeFunction: registration.writeFunction ?? 'write_content',
-        });
     }
 
     private getExtraAampFromSettings(): Set<string> {
@@ -189,37 +156,16 @@ class FormatRegistry {
         return map;
     }
 
-    isBuiltinHandler(kind: string): boolean {
-        return BUILTIN_HANDLERS.has(kind);
-    }
-
-    getBridgeHandler(kind: string): BridgeHandlerRegistration | undefined {
-        return this.bridgeHandlers.get(kind);
-    }
-
     buildHandlerManifest(): HandlerManifestJson {
         const extensionToHandler: Record<string, string> = {};
         for (const [ext, def] of this.extensionToFormat.entries()) {
             extensionToHandler[ext] = def.handler;
         }
 
-        const handlers: HandlerManifestJson['handlers'] = {};
-        for (const [kind, reg] of this.bridgeHandlers.entries()) {
-            if (this.isBuiltinHandler(kind)) {
-                continue;
-            }
-            handlers[kind] = {
-                modulePath: reg.modulePath,
-                readFunction: reg.readFunction ?? 'read_content',
-                writeFunction: reg.writeFunction ?? 'write_content',
-            };
-        }
-
         return {
             version: 1,
             extensionToHandler,
             aampExtensions: [...this.getAampExtensions()].sort(),
-            handlers,
         };
     }
 

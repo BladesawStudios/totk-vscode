@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { getBwavViewerHtml } from './bwavViewer';
-import { runBridgeJsonAsync } from './bridge';
-import { getCachedPythonExecutable } from './pythonEnv';
+import { getNativeHostExecutable, runBridgeJsonAsync } from './bridge';
 import { getDiskArchivePath, getLocatorInsideDiskArchive, isPathInsideArchive } from './archives';
 
 export class BwavEditorProvider implements vscode.CustomReadonlyEditorProvider {
@@ -52,19 +51,17 @@ export class BwavEditorProvider implements vscode.CustomReadonlyEditorProvider {
         webviewPanel.webview.onDidReceiveMessage(async (message) => {
             if (message.type === 'fetch-audio') {
                 try {
-                    const python = getCachedPythonExecutable();
-                    if (!python) {
-                        throw new Error("Python executable not found.");
+                    const hostExe = getNativeHostExecutable();
+                    if (!hostExe) {
+                        throw new Error("The TKVSC host is not available for this platform.");
                     }
-                    const bridgePath = path.join(this.context.extensionPath, 'python', 'totk_bridge.py');
 
                     const isInsideArchive = isPathInsideArchive(document.uri.fsPath);
                     const diskArchive = isInsideArchive ? getDiskArchivePath(document.uri.fsPath) : document.uri.fsPath;
                     const internalPath = isInsideArchive ? getLocatorInsideDiskArchive(document.uri.fsPath, diskArchive) : "";
 
                     const res = await runBridgeJsonAsync<any>(
-                        python,
-                        bridgePath,
+                        hostExe,
                         ['read-bwav-audio', diskArchive, internalPath]
                     );
 

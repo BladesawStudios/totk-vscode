@@ -1,6 +1,14 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 
+/** Errors have no enumerable fields, so JSON.stringify would print them as {}. */
+function formatArg(a: unknown): string {
+    if (a instanceof Error) {
+        return a.stack ?? a.message;
+    }
+    return typeof a === 'object' ? JSON.stringify(a) : String(a);
+}
+
 export enum LogLevel {
     Debug = 0,
     Info = 1,
@@ -90,7 +98,7 @@ class ExtensionLogger {
         if (this.getLogLevel() <= LogLevel.Warning) {
             this.write('WARN', message, args);
             if (this.shouldShowToast()) {
-                const formatted = args.length ? `${message} ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}` : message;
+                const formatted = args.length ? `${message} ${args.map(formatArg).join(' ')}` : message;
                 void vscode.window.showWarningMessage(`TKVSC: ${formatted}`);
             }
         }
@@ -102,7 +110,7 @@ class ExtensionLogger {
         if (this.getLogLevel() <= LogLevel.Error) {
             this.write('ERROR', `${errMessage}${stack}`, args);
             if (this.shouldShowToast()) {
-                const formatted = args.length ? `${errMessage} ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}` : errMessage;
+                const formatted = args.length ? `${errMessage} ${args.map(formatArg).join(' ')}` : errMessage;
                 void vscode.window.showErrorMessage(`TKVSC: ${formatted}`);
             }
         }
@@ -112,7 +120,7 @@ class ExtensionLogger {
         const formatted = this.formatMessage(level, message);
         let fullMsg = formatted;
         if (args.length) {
-            fullMsg += ' ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+            fullMsg += ' ' + args.map(formatArg).join(' ');
         }
         
         // Write to dev console

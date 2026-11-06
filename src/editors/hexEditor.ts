@@ -1,11 +1,13 @@
+import { isCompressedName, stripCompressedSuffix } from '../gameProfile';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { runBridgeJsonAsync } from '../bridge';
+import { getNativeHostExecutable, runBridgeJsonAsync } from '../bridge';
 import { getBridgeEnv } from '../api/bridgeEnv';
-import { getCachedPythonExecutable } from '../pythonEnv';
 import { logger } from '../logger';
+import { requireRawIo } from '../archiveFsCommands';
+import { isEditableFile } from '../editableFiles';
 import {
     getDiskArchivePath,
     getLocatorInsideDiskArchive,
@@ -14,24 +16,17 @@ import {
 
 const panels = new Map<string, vscode.WebviewPanel>();
 
-function getPython(): string {
-    const config = vscode.workspace.getConfiguration('TKVSC');
-    const override = config.get<string>('pythonPath', '');
-    if (override) {
-        return override;
-    }
-    return getCachedPythonExecutable() ?? '';
+function getHost(): string {
+    return getNativeHostExecutable() ?? '';
 }
 
 async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Promise<{ data: Uint8Array; resolvedName: string }> {
     const fsPath = uri.fsPath;
-    const python = getPython();
-    const bridgePath = path.join(extensionUri.fsPath, 'python', 'totk_bridge.py');
+    const hostExe = getHost();
     const env = getBridgeEnv();
 
     logger.info(`[HexEditor] getRawBinaryBytes: uri=${uri.toString()} scheme=${uri.scheme}`);
-    logger.info(`[HexEditor] python executable: "${python || '(none)'}"`);
-    logger.info(`[HexEditor] bridgePath: ${bridgePath}`);
+    logger.info(`[HexEditor] hostExe executable: "${hostExe || '(none)'}"`);
     logger.info(`[HexEditor] isPathInsideArchive: ${isPathInsideArchive(fsPath)}`);
     
     let tempRawPath = '';
@@ -39,9 +34,9 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
 
     // 1. If inside an archive, export it to a temp file
     if (isPathInsideArchive(fsPath)) {
-        if (!python) {
-            logger.info(`[HexEditor] ERROR: Python not available for archive export`);
-            throw new Error('Python environment is not ready. Please configure Python first.');
+        if (!hostExe) {
+            logger.info(`[HexEditor] ERROR: host not available for archive export`);
+            throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
         }
         const diskArchive = getDiskArchivePath(fsPath);
         const locator = getLocatorInsideDiskArchive(fsPath, diskArchive);
@@ -53,8 +48,7 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
 
         logger.info(`[HexEditor] Calling bridge export-temp...`);
         const result = await runBridgeJsonAsync<{ path: string }>(
-            python,
-            bridgePath,
+            hostExe,
             ['export-temp', diskArchive, locator],
             undefined,
             env,
@@ -77,22 +71,21 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
     let finalPath = tempRawPath;
     let isFinalTemp = isTempRaw;
 
-    // 2. If the file is ZSTD compressed (.zs), decompress it
-    const isZstd = fsPath.toLowerCase().endsWith('.zs') || path.basename(fsPath).toLowerCase().includes('.zs');
+    // 2. If the file's name says it is compressed, decompress it
+    const isZstd = isCompressedName(fsPath);
     logger.info(`[HexEditor] isZstd: ${isZstd}`);
     if (isZstd) {
-        if (!python) {
+        if (!hostExe) {
             if (isTempRaw) {
                 try { fs.unlinkSync(tempRawPath); } catch {}
             }
-            logger.info(`[HexEditor] ERROR: Python not available for .zs decompression`);
-            throw new Error('Python environment is not ready. Decompression of .zs requires Python.');
+            logger.info(`[HexEditor] ERROR: host not available for decompression`);
+            throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
         }
 
         logger.info(`[HexEditor] Calling bridge decompress-file: tempRawPath=${tempRawPath} basename=${path.basename(fsPath)}`);
         const result = await runBridgeJsonAsync<{ path: string }>(
-            python,
-            bridgePath,
+            hostExe,
             ['decompress-file', tempRawPath, path.basename(fsPath)],
             undefined,
             env,
@@ -104,7 +97,7 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
                 try { fs.unlinkSync(tempRawPath); } catch {}
             }
             logger.info(`[HexEditor] ERROR: decompressed temp file missing at "${result?.path}"`);
-            throw new Error('Failed to decompress .zs file data.');
+            throw new Error('Failed to decompress the file data.');
         }
 
         if (isTempRaw) {
@@ -126,7 +119,7 @@ async function getRawBinaryBytes(uri: vscode.Uri, extensionUri: vscode.Uri): Pro
 
     let resolvedName = path.basename(fsPath);
     if (isZstd) {
-        resolvedName = resolvedName.replace(/\.zs$/i, '');
+        resolvedName = stripCompressedSuffix(resolvedName);
     }
     logger.info(`[HexEditor] resolvedName: ${resolvedName}`);
 
@@ -194,14 +187,13 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 logger.info(`[HexEditor] Decoded save payload: ${content.length} bytes`);
                 
                 // If it is ZSTD compressed, compress it back first!
-                const isZstd = uri.fsPath.toLowerCase().endsWith('.zs') || path.basename(uri.fsPath).toLowerCase().includes('.zs');
+                const isZstd = isCompressedName(uri.fsPath);
                 if (isZstd) {
-                    logger.info(`[HexEditor] File is .zs - recompressing before save`);
-                    const python = getPython();
-                    if (!python) {
-                        throw new Error('Python environment is not ready. Re-compression of .zs requires Python.');
+                    logger.info(`[HexEditor] File is compressed - recompressing before save`);
+                    const hostExe = getHost();
+                    if (!hostExe) {
+                        throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                     }
-                    const bridgePath = path.join(extensionUri.fsPath, 'python', 'totk_bridge.py');
                     const env = getBridgeEnv();
 
                     // Create a temp file with the uncompressed data
@@ -211,8 +203,7 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
 
                     try {
                         const result = await runBridgeJsonAsync<{ path: string }>(
-                            python,
-                            bridgePath,
+                            hostExe,
                             ['compress-file', tempUncomp, path.basename(uri.fsPath)],
                             undefined,
                             env,
@@ -235,7 +226,12 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 }
 
                 logger.info(`[HexEditor] Writing ${content.length} bytes to ${uri.fsPath}`);
-                await vscode.workspace.fs.writeFile(uri, content);
+                // These are raw bytes, but the sarc provider's writeFile reads editable formats as YAML text.
+                if (uri.scheme === 'sarc' && isEditableFile(uri.fsPath)) {
+                    await requireRawIo().writeStoredBytes(uri, content);
+                } else {
+                    await vscode.workspace.fs.writeFile(uri, content);
+                }
                 logger.info(`[HexEditor] Save successful`);
                 vscode.window.showInformationMessage(`Successfully saved: ${path.basename(uri.fsPath)}`);
             } catch (err) {
@@ -245,11 +241,10 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
             }
         } else if (message.type === 'evaluate-hexpat') {
             try {
-                const python = getPython();
-                if (!python) {
-                    throw new Error('Python environment is not ready.');
+                const hostExe = getHost();
+                if (!hostExe) {
+                    throw new Error('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
                 }
-                const bridgePath = path.join(extensionUri.fsPath, 'python', 'totk_bridge.py');
                 const env = getBridgeEnv();
 
                 // Create a temp file with the binary data
@@ -257,14 +252,18 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 await fs.promises.writeFile(tempBin, Buffer.from(message.base64Data, 'base64'));
 
                 try {
-                    const result = await runBridgeJsonAsync<{ ast: any }>(
-                        python,
-                        bridgePath,
+                    const result = await runBridgeJsonAsync<{ ast: any; log?: string[]; evaluationError?: string }>(
+                        hostExe,
                         ['evaluate-hexpat', tempBin],
                         message.hexpatCode,
                         env,
                     );
-                    panel.webview.postMessage({ type: 'evaluate-hexpat-result', ast: result?.ast || [] });
+                    panel.webview.postMessage({
+                        type: 'evaluate-hexpat-result',
+                        ast: result?.ast || [],
+                        log: result?.log || [],
+                        evaluationError: result?.evaluationError || '',
+                    });
                 } finally {
                     try { fs.unlinkSync(tempBin); } catch {}
                 }
@@ -1876,6 +1875,13 @@ function buildHtml(
                     astTree.innerHTML = "";
                     highlightArray.fill(0);
                     preHighlightAst(message.ast);
+                    // Where the pattern stopped, and what it printed, above what it found.
+                    if (message.evaluationError) {
+                        astTree.insertAdjacentHTML('beforeend', '<div style="color: var(--vscode-errorForeground, #ff6b6b); font-weight: bold; padding: 6px 10px;">Stopped: ' + escapeHtml(message.evaluationError) + '</div>');
+                    }
+                    if (message.log && message.log.length > 0) {
+                        astTree.insertAdjacentHTML('beforeend', '<details style="padding: 4px 10px; opacity: 0.8;"><summary>Pattern output (' + message.log.length + ' lines)</summary><pre style="white-space: pre-wrap;">' + escapeHtml(message.log.slice(0, 200).join('\\n')) + '</pre></details>');
+                    }
                     renderGenericAst(message.ast, astTree);
                 }
                 renderVisibleRows();

@@ -1,6 +1,5 @@
 import type * as vscode from 'vscode';
-import type { runBridgeJsonAsync } from '../bridge';
-import type { FormatRegistration, BridgeHandlerRegistration } from '../formatRegistry';
+import type { FormatRegistration } from '../formatRegistry';
 import type { GameProfile, GameProfileRegistration } from '../gameProfile';
 import type { ProjectAdapter } from '../projectAdapters/types';
 import type { TKVSC_API_VERSION, TKVSC_ARCHIVE_CONTEXT, TKVSC_VIEWS } from './constants';
@@ -12,10 +11,21 @@ export type TkvscTreeItemLike = {
 };
 
 export interface TkvscBridgeAccess {
+    /** Unused; always ''. Kept so existing add-ons still compile. */
     bridgePath: string;
+    /** The path of the TKVSC host executable, or '' when none is available for this platform. */
+    getHost(): string;
+    /** @deprecated Same as {@link getHost}. */
     getPython(): string;
     getBridgeEnv(): NodeJS.ProcessEnv;
-    runBridgeJsonAsync: typeof runBridgeJsonAsync;
+    /** Runs a host command. `bridgePath` is ignored; pass '' or {@link TkvscBridgeAccess.bridgePath}. */
+    runBridgeJsonAsync<T>(
+        host: string,
+        bridgePath: string,
+        args: string[],
+        stdin?: string,
+        env?: NodeJS.ProcessEnv,
+    ): Promise<T>;
 }
 
 /**
@@ -43,8 +53,6 @@ export interface TkvscApi {
     getProjectRoots(): string[];
     /** @see docs/api/v1.md#registerformathandlerregistration */
     registerFormatHandler(registration: FormatRegistration): vscode.Disposable;
-    /** @see docs/api/v1.md#registerbridgehandlerregistration */
-    registerBridgeHandler(registration: BridgeHandlerRegistration): vscode.Disposable;
     /** @see docs/api/v1.md#registergameprofileregistration */
     registerGameProfile(
         registration: GameProfileRegistration,
@@ -66,13 +74,11 @@ export interface TkvscApi {
 
 export interface CreateTkvscApiOptions {
     extensionId: string;
-    bridgePath: string;
-    getPython: () => string;
+    getHost: () => string;
     getBridgeEnv: () => NodeJS.ProcessEnv;
     getProjectRoots: () => string[];
     onDidReadyEmitter: TkvscReadyEmitter;
     registerFormatHandler: (registration: FormatRegistration) => vscode.Disposable;
-    registerBridgeHandler: (registration: BridgeHandlerRegistration) => vscode.Disposable;
     registerGameProfile: (
         registration: GameProfileRegistration,
         options?: { extensionRoot?: string },

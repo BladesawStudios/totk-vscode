@@ -1,3 +1,4 @@
+import { stripCompressedSuffix } from './gameProfile';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
@@ -25,8 +26,7 @@ type ExternalToolConfig = {
 };
 
 type RegisterExternalToolOptions = {
-    bridgePath: string;
-    getPython: () => string;
+    getHost: () => string;
     getBridgeEnv: () => NodeJS.ProcessEnv;
 };
 
@@ -56,9 +56,10 @@ function isExternalToolPromptDocument(document: vscode.TextDocument): boolean {
 
 function extensionAssociationKey(filePath: string): string {
     const normalized = filePath.toLowerCase().replace(/\\/g, '/');
-    const multi = normalized.match(/(\.[^./\\]+\.zs)$/);
-    if (multi) {
-        return multi[1]!;
+    const stripped = stripCompressedSuffix(normalized);
+    const inner = stripped === normalized ? '' : path.extname(stripped);
+    if (inner) {
+        return normalized.slice(stripped.length - inner.length);
     }
     const ext = path.extname(normalized);
     return ext || path.basename(normalized);
@@ -118,10 +119,10 @@ export function registerExternalToolSupport(
             return uri.fsPath;
         }
 
-        const python = options.getPython();
-        if (!python) {
+        const hostExe = options.getHost();
+        if (!hostExe) {
             throw new Error(
-                'Python environment is not ready. Run "TKVSC: Set Up Python Environment" first.',
+                'The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).',
             );
         }
 
@@ -132,8 +133,7 @@ export function registerExternalToolSupport(
         }
 
         const result = await runBridgeJsonAsync<{ path: string }>(
-            python,
-            options.bridgePath,
+            hostExe,
             ['export-temp', diskArchive, locator],
             undefined,
             options.getBridgeEnv(),

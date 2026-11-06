@@ -6,7 +6,7 @@
     <img src="https://img.shields.io/discord/1508590792149827745?style=for-the-badge&logoColor=5865F2&color=5865F2&labelColor=2A2C33&logo=discord&label=discord" alt="Discord"/>
   </a> &nbsp;
   <a href="https://github.com/BladesawStudios/totk-vscode/releases/latest">
-    <img src="https://img.shields.io/github/v/tag/BladesawStudios/totk-vscode?style=for-the-badge&logoColor=ffffff&color=C71B42&labelColor=2A2C33&logo=github&label=Version" alt="Latest Release"
+    <img src="https://img.shields.io/github/v/tag/BladesawStudios/totk-vscode?style=for-the-badge&logoColor=ffffff&color=C71B42&labelColor=2A2C33&logo=github&label=Version" alt="Latest Release"/>
   </a> &nbsp;
   <a href="https://github.com/BladesawStudios/totk-vscode">
     <img src="https://img.shields.io/github/stars/BladesawStudios/totk-vscode?style=for-the-badge&color=FFCB41&labelColor=2A2C33&logo=github" alt="Stars"/>
@@ -29,7 +29,7 @@ The **T**ears of the **K**ingdom **V**isual **S**tudio **C**ode Extension or **T
 **Game Dump Guide** (required): https://gamebanana.com/tuts/19858
 
 ## DISCLAIMER
-**WE ARE NOT RESPONSIBLE IF YOUR MOD BREAKS. THIS TOOL IS IN ACTIVE BETA AND THINGS WILL BREAK. MAKE FREQUENT BACKUPS**
+**WE ARE NOT RESPONSIBLE IF YOUR MOD BREAKS. THIS TOOL IS IN ACTIVE DEVELOPMENT AND THINGS CAN BREAK. MAKE FREQUENT BACKUPS**
 
 ## Features
 Preview and edit subfiles of SARC and BNTX archives
@@ -44,16 +44,9 @@ Preview and edit subfiles of SARC and BNTX archives
 - BGYML
 - AAMP
 - MSBT
-- AINB
-- ASB (Changes automatically applied to corresponding BAEV)
-- BAEV (Changes automatically applied to corresponding ASB)
 - XLINK
-- RESTBL (`.rsizetable` resource size tables, with CRC32 hashes resolved to resource paths)
 - PCHTXT
 - TKMM Config Files
-
-#### Node Editor
-- AINB (visual node graph, opens by default - use "Reopen Editor With" for the text editor)
 
 #### Texture Viewer/Replacer
 - BNTX
@@ -63,7 +56,7 @@ Preview and edit subfiles of SARC and BNTX archives
 
 #### Audio Player/Replacer
 - Bars (play entries, and replace their audio from WAV/BWAV — or any common format like MP3, OGG, or FLAC when ffmpeg is installed. Audio is encoded to DSP-ADPCM automatically, with loop points taken from the file or set by hand)
-- BFWAV
+- BWAV
 
 #### Font Viewer/Replacer
 - bfttf
@@ -105,7 +98,6 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 
 *( if there are any features you don't see on here, feel free to make an issue on this GitHub! )*
 
-- Node Based Editors (ASB, BAEV, and EVFL are all planned.)
 - BFRES Support (Preview, Editing.)
 - Actor Tooling (Automating the process as much as possible.)
 - Full romfs file content string searching
@@ -115,37 +107,31 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 ## Setup
 
 ### Requirements
-* [Python 3.13+](https://www.python.org/downloads/)
-* [Microsoft C++ Redis](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
-* Node.js (if building extension from source)
-* Python 3.13-venv (on Linux)
+* Node.js and the .NET 10 SDK (if building extension from source; see `host/README.md`)
 * Valid TotK dump
 
 ### Steps
-1. Install the extension (VSIX).
+1. Download the VSIX for your platform from [Releases](https://github.com/BladesawStudios/totk-vscode/releases/latest) (`win32-x64`, `linux-x64`, `darwin-x64` or `darwin-arm64`) and install it.
 2. Follow the prompt to select your romfs dump path.
 
+### Other games
 
-### Python troubleshooting
+[Add-ons](https://github.com/BladesawStudios/tkvsc-addons) add support for Splatoon 3 and Ocarina of Time.
 
-**`python3` works in CMD but the extension cannot find Python?** VSCode is often launched without your full user PATH (unlike a terminal you opened yourself). Fix:
-
-1. **TKVSC: Select Python (from detected installs)** - scans `where python3`, common install folders, and `py`.
-2. **TKVSC: Browse for python.exe** - point at the real interpreter (e.g. `%LocalAppData%\Programs\Python\Python314\python.exe`).
-3. Or set **TKVSC → Python Path** to that full path, then **TKVSC: Set Up Python Environment** again.
-
-If setup fails, run **TKVSC: Set Up Python Environment** from the Command Palette.
 
 ## Build Instructions
 
-A VSIX file is the installable extension package. Build it from the project root:
+A VSIX file is the installable extension package. It carries the C# host for one platform, so it is built per platform. You need Node.js and the .NET 10 SDK:
 
 ```bash
+git clone --recurse-submodules https://github.com/BladesawStudios/totk-vscode.git
+cd totk-vscode
 npm install
-npm run package:vsix
+npm run package:vsix                      # for this machine
+node scripts/package-vsix.js linux-x64    # or win32-x64, linux-x64, darwin-x64, darwin-arm64
 ```
 
-That produces `totk-vscode-0.0.3-beta.1.vsix` (version comes from `package.json`).
+That produces `out/totk-vscode-<target>-<version>.vsix` (version comes from `package.json`).
 
 
 ### Contributing:
@@ -164,18 +150,20 @@ Companion VS Code extensions can extend TKVSC via the exported API. See [docs/ap
 
 ### Contributors
 **Clonephaze** - [GitHub Template Refactor](https://github.com/BladesawStudios/totk-vscode/pull/62)\
-**Bryn** - [ASB Splatoon 3 Formats](https://github.com/FemBryn/asb-Spl3)\
-**lucythegoosey07** - [RSTB Support](https://github.com/BladesawStudios/totk-vscode/pull/124)
+**Bryn** - [ASB Splatoon 3 Formats](https://github.com/FemBryn/asb-Spl3) (since removed)\
+**lucythegoosey07** - [RSTB Support](https://github.com/BladesawStudios/totk-vscode/pull/124) (since removed)
 
 ### Third-Parties
-**dt13245**: [ASB fork](https://github.com/BladesawStudios/asb), [AINB fork](https://github.com/BladesawStudios/AINB), and [XLink2](https://github.com/dt-12345/xlink2) (v1.1.4) binaries integrated into codebase\
-**P1gyy**: [pymsbt fork](https://github.com/BladesawStudios/pymsbt) integrated into codebase\
+**dt13245**: References for many formats within the game\
 **AeonSake**: [MSBT Editor](https://gitlab.com/AeonSake/msbt-editor) - TotK Config included\
 **LordBubbles**: [TKMM](https://tkmm.org/) - Assistance with implementing TKMM compatibility\
 **KillzXGaming**: [Switch Toolbox](https://github.com/KillzXGaming/Switch-Toolbox) - image handling referenced\
 **Arch Leaders**: [NX Editor](https://github.com/NX-Editor/NxEditor) - text formatting referenced\
-**SolidLink**: [Totkbits](https://github.com/SolidLink95/TotkBits) - Tag.Product & text formatting referenced, bphcl & ptcl implementation used\
-**MrMystery & The5thTear**: [Starlight](https://github.com/Mindstormman06/Starlight-Dev) - AINB node editor design and auto-layout algorithm referenced; node definition database converted into `config/ainbNodeDefs.json.gz`
+**MacSpazzy & MrCheeze**: [TotK save variable hashes](https://www.marcrobledo.com/savegame-editors/zelda-totk/) - cracked names for the GameDataList hashes, bundled as `vendor/zelda-totk.hashes.csv`\
+**SolidLink**: [Totkbits](https://github.com/SolidLink95/TotkBits) - Tag.Product & text formatting referenced\
+**lostromb**: [Concentus](https://github.com/lostromb/concentus) (BSD-3-Clause) - Opus decoding for BWAV audio
+
+Licences of the libraries bundled with TKVSC are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Help and Community
 

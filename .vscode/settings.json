@@ -7,6 +7,5 @@
         "out": true,
         "dist": true
     },
-    "typescript.tsc.autoDetect": "off",
-    "python-envs.defaultEnvManager": "ms-python.python:system"
+    "typescript.tsc.autoDetect": "off"
 }

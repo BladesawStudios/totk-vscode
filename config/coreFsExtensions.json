@@ -3,10 +3,6 @@
   "byaml": "byml",
   "bgyml": "byml",
   "msbt": "msbt",
-  "ainb": "ainb",
-  "asb": "asb",
-  "baev": "baev",
   "belnk": "xlnk",
-  "bslnk": "xlnk",
-  "rsizetable": "rstb"
+  "bslnk": "xlnk"
 }

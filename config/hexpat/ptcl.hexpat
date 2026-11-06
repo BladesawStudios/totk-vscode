@@ -60,7 +60,9 @@ struct BinaryFileHeader {
     u32 relocation_table_offset;
     u32 file_size;
     
-    char filename[] @ addressof(this) + filename_offset;
+    if (addressof(this) + filename_offset < std::mem::size()) {
+        char filename[] @ addressof(this) + filename_offset;
+    }
 };
 
 } // namespace util
@@ -397,13 +399,13 @@ struct BinaryData {
         ("PRMA" | "TRMA"): {}
         ("PRIM" | "TRIM") : { ResPrimitive primitive @ addressof(this) + section_offset; }
         // nn::g3d2::ResFile (BFRES), this section also serves as a container section for G3NT
-        ("G3PR"): { util::BinaryFileHeader res_file @ addressof(this) + section_offset; }
+        ("G3PR"): { if (section_offset != 0xFFFFFFFF) { util::BinaryFileHeader res_file @ addressof(this) + section_offset; } }
         // stores a G3d primitive
         ("G3NT"): { ResG3dPrimitiveTableRecord res_g3d_primitive_table_record @ addressof(this) + section_offset; }
         // Shader array, serves as a container for GRSR, GRRI, GRRE, GRCI, or GRCE sections
         ("GRSN"): {}
         // nn::gfx::ResShaderFile (BNSH), GRSR is for regular shaders, GRSC is for compute shaders
-        ("GRSR" | "GRSC"): { util::BinaryFileHeader res_shader @ addressof(this) + section_offset; } 
+        ("GRSR" | "GRSC"): { if (section_offset != 0xFFFFFFFF) { util::BinaryFileHeader res_shader @ addressof(this) + section_offset; } } 
         // GRRI is only found in the static ptcl file and serves as a global registry of all ptcl shaders
         // GRRE is for shaders used in that specific file, each shader must match one found in the GRRI section of the static ptcl
         // GRCI is identical to GRRI except it is for compute shaders instead

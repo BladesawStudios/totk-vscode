@@ -5,8 +5,11 @@ import * as path from 'path';
 
 interface PanelCallbacks {
     onSave?: (data: any) => Promise<void>;
-    onImport?: () => Promise<void>;
-    onExport?: () => Promise<void>;
+    /** Import or export act on one layer of an array texture; 0 for a single texture. */
+    onImport?: (layer: number) => Promise<void>;
+    onExport?: (layer: number) => Promise<void>;
+    /** Show another layer of an array texture. */
+    onSelectLayer?: (layer: number) => Promise<void>;
 }
 
 const panels = new Map<string, vscode.WebviewPanel>();
@@ -24,12 +27,13 @@ export function openTextureViewer(
     diskArchive?: string,
     filePath?: string,
     onSave?: (data: any) => Promise<void>,
-    onImport?: () => Promise<void>,
-    onExport?: () => Promise<void>,
+    onImport?: (layer: number) => Promise<void>,
+    onExport?: (layer: number) => Promise<void>,
     panelKey?: string,
+    onSelectLayer?: (layer: number) => Promise<void>,
 ): void {
     const key = panelKey ?? textureName;
-    panelCallbacks.set(key, { onSave, onImport, onExport });
+    panelCallbacks.set(key, { onSave, onImport, onExport, onSelectLayer });
 
     const existing = panels.get(key);
 
@@ -96,16 +100,23 @@ export function openTextureViewer(
                 const err = e instanceof Error ? e.message : String(e);
                 vscode.window.showErrorMessage(`Failed to save metadata: ${err}`);
             }
+        } else if (message.type === 'select-layer' && callbacks?.onSelectLayer) {
+            try {
+                await callbacks.onSelectLayer(Number(message.layer) || 0);
+            } catch (e) {
+                const err = e instanceof Error ? e.message : String(e);
+                vscode.window.showErrorMessage(`Could not show that layer: ${err}`);
+            }
         } else if (message.type === 'import-dds' && callbacks?.onImport) {
             try {
-                await callbacks.onImport();
+                await callbacks.onImport(Number(message.layer) || 0);
             } catch (e) {
                 const err = e instanceof Error ? e.message : String(e);
                 vscode.window.showErrorMessage(`DDS import failed: ${err}`);
             }
         } else if (message.type === 'export-dds' && callbacks?.onExport) {
             try {
-                await callbacks.onExport();
+                await callbacks.onExport(Number(message.layer) || 0);
             } catch (e) {
                 const err = e instanceof Error ? e.message : String(e);
                 vscode.window.showErrorMessage(`DDS export failed: ${err}`);
@@ -127,6 +138,19 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnl
         ? webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'icons', 'resize.svg'))
         : '';
 
+    const layerCount = meta?.arrayCount ?? 1;
+    const currentLayer = Math.min(Math.max(result.layer ?? 0, 0), Math.max(layerCount - 1, 0));
+    const layerPicker = layerCount > 1
+        ? `<div class="layer-picker">
+            <button class="size-toggle" onclick="stepLayer(-1)" title="Previous layer">&#9664;</button>
+            <select id="layerSelect" onchange="selectLayer(this.value)">
+                ${Array.from({ length: layerCount }, (_, i) => `<option value="${i}"${i === currentLayer ? ' selected' : ''}>Layer ${i}</option>`).join('')}
+            </select>
+            <button class="size-toggle" onclick="stepLayer(1)" title="Next layer">&#9654;</button>
+            <span class="size-label">of ${layerCount}</span>
+        </div>`
+        : '';
+
     const texW = meta?.imageInfo?.width ?? 256;
     const texH = meta?.imageInfo?.height ?? 256;
     const maxDim = 256;
@@ -138,7 +162,7 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnl
         ? buildSection('Channels', buildChannelRows(meta.channels, isReadOnly))
         : '';
     const imageInfoSection = meta?.imageInfo
-        ? buildSection('Image Info', buildImageInfoRows(meta.imageInfo, isReadOnly))
+        ? buildSection('Image Info', buildImageInfoRows(meta.imageInfo, isReadOnly, layerCount))
         : '';
     const miscSection = meta?.misc
         ? buildSection('Misc', buildMiscRows(meta.misc, isReadOnly))
@@ -322,6 +346,19 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnl
         outline: 1px solid var(--vscode-focusBorder, #007acc);
         outline-offset: -1px;
     }
+    .layer-picker {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 0 8px 0;
+    }
+    .layer-picker select {
+        background: var(--vscode-dropdown-background, #3c3c3c);
+        color: var(--vscode-dropdown-foreground, #ccc);
+        border: 1px solid var(--vscode-dropdown-border, #555);
+        padding: 3px 6px;
+        border-radius: 2px;
+    }
     .save-btn {
         background: var(--vscode-button-background, #0e639c);
         color: var(--vscode-button-foreground, #fff);
@@ -354,6 +391,7 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnl
       </defs>
     </svg>
     <div class="image-panel">
+        ${layerPicker}
         ${imgSrc ? `<div class="image-toolbar">
             <button class="size-toggle" id="sizeBtn" onclick="toggleSize()" title="Toggle size">
                 <img src="${resizeIconUri}" alt="resize" width="16" height="16" />
@@ -400,7 +438,15 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnl
     </div>
     <script>
         const vscode = acquireVsCodeApi();
+        const currentLayer = ${currentLayer};
+        const layerCount = ${layerCount};
         let scaled = true;
+        function selectLayer(layer) {
+            vscode.postMessage({ type: 'select-layer', layer: Number(layer) });
+        }
+        function stepLayer(step) {
+            selectLayer((currentLayer + step + layerCount) % layerCount);
+        }
         function setChannel(ch, el) {
             const img = document.getElementById('texImg');
             if (!img) return;
@@ -450,10 +496,10 @@ function buildHtml(result: BntxTextureResult, webview: vscode.Webview, isReadOnl
             vscode.postMessage({ type: 'save-metadata', data });
         }
         function importDds() {
-            vscode.postMessage({ type: 'import-dds' });
+            vscode.postMessage({ type: 'import-dds', layer: currentLayer });
         }
         function exportDds() {
-            vscode.postMessage({ type: 'export-dds' });
+            vscode.postMessage({ type: 'export-dds', layer: currentLayer });
         }
     </script>
 </body>
@@ -488,13 +534,14 @@ function buildChannelRows(ch: BntxChannelInfo, isReadOnly: boolean): string {
     ].join('');
 }
 
-function buildImageInfoRows(info: BntxImageInfo, isReadOnly: boolean): string {
+function buildImageInfoRows(info: BntxImageInfo, isReadOnly: boolean, arrayCount = 1): string {
     const srgbChecked = info.useSRGB === 'True' ? 'checked' : '';
     
     return [
         row('Width', String(info.width)),
         row('Height', String(info.height)),
         row('Mip Count', String(info.mipCount)),
+        ...(arrayCount > 1 ? [row('Layers', String(arrayCount))] : []),
         row('Format', info.format),
         row('Use SRGB', isReadOnly ? (info.useSRGB === 'True' ? 'Yes' : 'No') : `<input type="checkbox" id="useSRGB" ${srgbChecked} />`),
         row('Name', isReadOnly ? escapeHtml(info.name) : `<input type="text" id="metaName" class="meta-input" value="${escapeHtml(info.name)}" />`),

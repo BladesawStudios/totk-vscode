@@ -4,6 +4,7 @@
   "romfsSentinel": "Pack/ZsDic.pack.zs",
   "compressionBackend": "totk-zstd",
   "romfsSettingsKey": "romfsPath",
+  "hashNamesPath": "vendor/zelda-totk.hashes.csv",
   "indexing": {
     "enableRomfsSearch": true,
     "enableCanonicalPaths": true,

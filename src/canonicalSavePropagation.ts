@@ -1,3 +1,4 @@
+import { stripCompressedSuffix } from './gameProfile';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -29,8 +30,7 @@ export interface CanonicalSavePropagationOptions {
     enabled: boolean;
     romfsPath: string;
     canonicalIndexPath: string;
-    bridgePath: string;
-    pythonExecutable: string;
+    hostExe: string;
     bridgeEnv: NodeJS.ProcessEnv;
     projectRoots: ProjectRootInfo[];
     projectOverlayDbPath: string;
@@ -101,7 +101,7 @@ function pathContainsBlacklistedArchiveType(pathValue: string, archiveTypes: str
             continue;
         }
         for (const segment of segments) {
-            if (segment.endsWith(ext) || segment.endsWith(`${ext}.zs`)) {
+            if (segment.endsWith(ext) || stripCompressedSuffix(segment).endsWith(ext)) {
                 return true;
             }
         }
@@ -131,7 +131,7 @@ function pathMatchesBlacklistedFileSuffix(pathValue: string, fileSuffixes: strin
         if (!suffix) {
             continue;
         }
-        if (fileName.endsWith(suffix) || fileName.endsWith(`${suffix}.zs`)) {
+        if (fileName.endsWith(suffix) || stripCompressedSuffix(fileName).endsWith(suffix)) {
             return true;
         }
     }
@@ -399,16 +399,14 @@ export async function propagateCanonicalSave(
         try {
             if (writeMode === 'text') {
                 await runBridgeJsonAsync<{ success: boolean }>(
-                    options.pythonExecutable,
-                    options.bridgePath,
+                    options.hostExe,
                     ['write', projectArchivePath, match.canonicalPath],
                     options.writeInput.textContent ?? '',
                     options.bridgeEnv,
                 );
             } else {
                 await runBridgeJsonAsync<{ success: boolean }>(
-                    options.pythonExecutable,
-                    options.bridgePath,
+                    options.hostExe,
                     ['write-raw', projectArchivePath, match.canonicalPath],
                     encodedRaw,
                     options.bridgeEnv,
@@ -453,8 +451,7 @@ export async function propagateCanonicalSave(
                 projectRoot: modRoot,
                 archiveAbsPath,
                 romfsPath: options.romfsPath,
-                pythonExecutable: options.pythonExecutable,
-                bridgePath: options.bridgePath,
+                hostExe: options.hostExe,
                 bridgeEnv: options.bridgeEnv,
                 output: options.output,
                 importSchemaVersion: options.importSchemaVersion,

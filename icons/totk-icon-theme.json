@@ -19,17 +19,8 @@
     "_totk_xlnk": {
       "iconPath": "./xlnk.svg"
     },
-    "_totk_ainb": {
-      "iconPath": "./nodes.svg"
-    },
-    "_totk_asb": {
-      "iconPath": "./armature.svg"
-    },
     "_totk_aamp": {
       "iconPath": "./aamp.svg"
-    },
-    "_totk_baev": {
-      "iconPath": "./armature.svg"
     },
     "_totk_texture": {
       "iconPath": "./texture.svg"
@@ -39,9 +30,6 @@
     },
     "_totk_font": {
       "iconPath": "./font.svg"
-    },
-    "_totk_rstb": {
-      "iconPath": "./rstb.svg"
     }
   },
   "folderNames": {
@@ -88,12 +76,6 @@
     "bslnk": "_totk_xlnk",
     "belnk.zs": "_totk_xlnk",
     "bslnk.zs": "_totk_xlnk",
-    "ainb": "_totk_ainb",
-    "ainb.zs": "_totk_ainb",
-    "asb": "_totk_asb",
-    "asb.zs": "_totk_asb",
-    "baev": "_totk_baev",
-    "baev.zs": "_totk_baev",
     "aamp": "_totk_aamp",
     "aamp.zs": "_totk_aamp",
     "baglblm": "_totk_aamp",
@@ -174,9 +156,7 @@
     "bfttf": "_totk_font",
     "bfotf": "_totk_font",
     "ttf": "_totk_font",
-    "otf": "_totk_font",
-    "rsizetable": "_totk_rstb",
-    "rsizetable.zs": "_totk_rstb"
+    "otf": "_totk_font"
   },
   "fileNames": {
     ".tkproj": "_totk_tkproj",
@@ -186,10 +166,8 @@
     "byml": "_totk_byml",
     "bgyml": "_totk_bgyml",
     "msbt": "_totk_msbt",
-    "totk-ainb": "_totk_ainb",
     "totk-xlnk": "_totk_xlnk",
     "totk-tkvsc": "_totk_tkvsc",
-    "totk-font": "_totk_font",
-    "totk-rstb": "_totk_rstb"
+    "totk-font": "_totk_font"
   }
 }

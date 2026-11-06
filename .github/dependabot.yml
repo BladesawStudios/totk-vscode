@@ -3,9 +3,8 @@
 # Dependabot automatically opens pull requests when dependencies have updates
 # available. This keeps the project secure and up to date without manual checks.
 #
-# Each "updates" block targets one package ecosystem. This repository has two:
+# Each "updates" block targets one package ecosystem. This repository has one:
 #   - npm  : Node.js dependencies defined in package.json
-#   - pip  : Python dependencies defined in pyproject.toml / requirements files
 #
 # Key options:
 #
@@ -65,20 +64,3 @@ updates:
         patterns:
           - "@vscode/*"
           - "@types/vscode"
-
-  # ── pip (Python) ───────────────────────────────────────────────────────────
-  # Watches pyproject.toml / requirements files at the repo root.
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "America/Chicago"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "automated"
-    commit-message:
-      prefix: "chore"
-      include: "scope"

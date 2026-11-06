@@ -4,9 +4,36 @@ import * as path from 'path';
 import { logger } from './logger';
 
 const MAX_BUFFER = 1024 * 1024 * 500;
+
+/**
+ * Every bridge command runs in the C# host (`tkvsc-host`). The first argument of the `runBridge*` functions is its path.
+ */
+let nativeHost: { executable: string; extensionRoot: string } | undefined;
+
+export function configureNativeHost(executable: string | undefined, extensionRoot: string): void {
+    nativeHost = executable ? { executable, extensionRoot } : undefined;
+}
+
+/** The C# host, if one was found for this platform. */
+export function getNativeHostExecutable(): string | undefined {
+    return nativeHost?.executable;
+}
+
+interface Launch {
+    file: string;
+    env: NodeJS.ProcessEnv;
+}
+
+function launchFor(executable: string, env?: NodeJS.ProcessEnv): Launch {
+    const merged = env ? { ...process.env, ...env } : { ...process.env };
+    return {
+        file: executable,
+        env: nativeHost ? { ...merged, TKVSC_EXTENSION_ROOT: nativeHost.extensionRoot } : merged,
+    };
+}
+
 export function runBridge(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     args: string[],
     stdin?: string,
     env?: NodeJS.ProcessEnv,
@@ -14,12 +41,13 @@ export function runBridge(
     const startTime = Date.now();
     logger.debug(`bridge: Running sync command [${args[0]}] with args: ${args.slice(1).join(' ')}`);
     try {
-        const result = execFileSync(pythonExecutable, [bridgePath, ...args], {
+        const launch = launchFor(hostExe, env);
+        const result = execFileSync(launch.file, args, {
             encoding: 'utf-8',
             maxBuffer: MAX_BUFFER,
             input: stdin,
-            env: env ? { ...process.env, ...env } : process.env,
-            cwd: path.dirname(bridgePath),
+            env: launch.env,
+            cwd: nativeHost?.extensionRoot,
         });
         const elapsed = Date.now() - startTime;
         logger.debug(`bridge: Sync command [${args[0]}] finished successfully in ${elapsed}ms (output size: ${result.length} chars)`);
@@ -32,8 +60,16 @@ export function runBridge(
 }
 
 export function runBridgeAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
+    args: string[],
+    stdin?: string,
+    env?: NodeJS.ProcessEnv,
+): Promise<string> {
+    return runBridgeOnce(hostExe, args, stdin, env);
+}
+
+function runBridgeOnce(
+    hostExe: string,
     args: string[],
     stdin?: string,
     env?: NodeJS.ProcessEnv,
@@ -41,14 +77,15 @@ export function runBridgeAsync(
     const startTime = Date.now();
     logger.debug(`bridge: Running async command [${args[0]}] with args: ${args.slice(1).join(' ')}`);
     return new Promise((resolve, reject) => {
+        const launch = launchFor(hostExe, env);
         const child = execFile(
-            pythonExecutable,
-            [bridgePath, ...args],
+            launch.file,
+            args,
             {
                 encoding: 'utf-8',
                 maxBuffer: MAX_BUFFER,
-                env: env ? { ...process.env, ...env } : process.env,
-                cwd: path.dirname(bridgePath),
+                env: launch.env,
+                cwd: nativeHost?.extensionRoot,
             },
             (error, stdout) => {
                 const elapsed = Date.now() - startTime;
@@ -70,13 +107,12 @@ export function runBridgeAsync(
 }
 
 export function runBridgeJson<T>(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     args: string[],
     stdin?: string,
     env?: NodeJS.ProcessEnv,
 ): T {
-    const output = runBridge(pythonExecutable, bridgePath, args, stdin, env);
+    const output = runBridge(hostExe, args, stdin, env);
     const result = JSON.parse(output) as T & { error?: string };
     if (result && typeof result === 'object' && 'error' in result && result.error) {
         throw new Error(result.error);
@@ -85,13 +121,12 @@ export function runBridgeJson<T>(
 }
 
 export async function runBridgeJsonAsync<T>(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     args: string[],
     stdin?: string,
     env?: NodeJS.ProcessEnv,
 ): Promise<T> {
-    const output = await runBridgeAsync(pythonExecutable, bridgePath, args, stdin, env);
+    const output = await runBridgeAsync(hostExe, args, stdin, env);
     const result = JSON.parse(output) as T & { error?: string };
     if (result && typeof result === 'object' && 'error' in result && result.error) {
         throw new Error(result.error);
@@ -188,6 +223,8 @@ export interface BarsReplaceResult extends BridgeResult {
 export interface BntxTextureResult {
     bntxTexture: true;
     error?: string;
+    /** The layer of an array texture that the picture shows (0 for a single texture). */
+    layer?: number;
     metadata?: {
         name: string;
         channels: BntxChannelInfo;
@@ -202,6 +239,8 @@ export interface BntxTextureResult {
         tileMode: string;
         blockH: number;
         blockHLog2: number;
+        /** How many layers the texture has; more than one makes it an array. */
+        arrayCount?: number;
     };
     pngBase64?: string;
     pngPath?: string;
@@ -215,31 +254,28 @@ export function isBntxTextureResult(result: BridgeReadResult): result is BntxTex
 
 /** Read file from bridge. Returns either text content or a BNTX texture result. */
 export function runBridgeRead(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     args: string[],
     env?: NodeJS.ProcessEnv,
 ): BridgeReadResult {
-    return runBridgeJson<BridgeReadResult>(pythonExecutable, bridgePath, args, undefined, env);
+    return runBridgeJson<BridgeReadResult>(hostExe, args, undefined, env);
 }
 
 export async function runBridgeReadAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     args: string[],
     env?: NodeJS.ProcessEnv,
 ): Promise<BridgeReadResult> {
-    return runBridgeJsonAsync<BridgeReadResult>(pythonExecutable, bridgePath, args, undefined, env);
+    return runBridgeJsonAsync<BridgeReadResult>(hostExe, args, undefined, env);
 }
 
 /** Read editable file text from the bridge (supports spill files for large XLNK text). */
 export function runBridgeReadContent(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     args: string[],
     env?: NodeJS.ProcessEnv,
 ): string {
-    const result = runBridgeJson<BridgeReadPayload>(pythonExecutable, bridgePath, args, undefined, env);
+    const result = runBridgeJson<BridgeReadPayload>(hostExe, args, undefined, env);
     if (result.contentPath) {
         try {
             return fs.readFileSync(result.contentPath, 'utf-8');
@@ -256,14 +292,12 @@ export function runBridgeReadContent(
 
 /** Async version of runBridgeReadContent. */
 export async function runBridgeReadContentAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     args: string[],
     env?: NodeJS.ProcessEnv,
 ): Promise<string> {
     const result = await runBridgeJsonAsync<BridgeReadPayload>(
-        pythonExecutable,
-        bridgePath,
+        hostExe,
         args,
         undefined,
         env,
@@ -283,16 +317,14 @@ export async function runBridgeReadContentAsync(
 }
 
 export async function runBridgeUpdateBntxMetadataAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     archivePath: string,
     internalPath: string,
     metadata: Record<string, any>,
     env?: NodeJS.ProcessEnv,
 ): Promise<void> {
     await runBridgeJsonAsync(
-        pythonExecutable,
-        bridgePath,
+        hostExe,
         ['update-bntx-metadata', archivePath, internalPath],
         JSON.stringify(metadata),
         env,
@@ -300,16 +332,14 @@ export async function runBridgeUpdateBntxMetadataAsync(
 }
 
 export async function runBridgeUpdateTxtgMetadataAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     archivePath: string,
     internalPath: string,
     metadata: Record<string, any>,
     env?: NodeJS.ProcessEnv,
 ): Promise<void> {
     await runBridgeJsonAsync(
-        pythonExecutable,
-        bridgePath,
+        hostExe,
         ['update-txtg-metadata', archivePath, internalPath],
         JSON.stringify(metadata),
         env,
@@ -317,16 +347,14 @@ export async function runBridgeUpdateTxtgMetadataAsync(
 }
 
 export async function runBridgeRenameBntxTextureAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     archivePath: string,
     internalPath: string,
     newName: string,
     env?: NodeJS.ProcessEnv,
 ): Promise<void> {
     await runBridgeJsonAsync(
-        pythonExecutable,
-        bridgePath,
+        hostExe,
         ['rename-bntx-texture', archivePath, internalPath, newName],
         undefined,
         env,
@@ -334,50 +362,52 @@ export async function runBridgeRenameBntxTextureAsync(
 }
 
 export async function runBridgeDeleteBntxTextureAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     archivePath: string,
     internalPath: string,
     env?: NodeJS.ProcessEnv,
 ): Promise<void> {
     await runBridgeJsonAsync(
-        pythonExecutable,
-        bridgePath,
+        hostExe,
         ['delete-bntx-texture', archivePath, internalPath],
         undefined,
         env,
     );
 }
 
+/** What a DDS import reports back. `note` is set when the DDS had to be converted to fit an array layer. */
+export interface TexturePayloadReplaceResult {
+    note?: string;
+    converted?: string[];
+}
+
 export async function runBridgeReplaceBntxPayloadAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     archivePath: string,
     internalPath: string,
     rawPayload: Buffer,
     env?: NodeJS.ProcessEnv,
-): Promise<void> {
-    await runBridgeJsonAsync(
-        pythonExecutable,
-        bridgePath,
-        ['replace-bntx-payload', archivePath, internalPath],
+    layer?: number,
+): Promise<TexturePayloadReplaceResult> {
+    return await runBridgeJsonAsync<TexturePayloadReplaceResult>(
+        hostExe,
+        ['replace-bntx-payload', archivePath, internalPath, ...(layer ? [String(layer)] : [])],
         rawPayload.toString('base64'),
         env,
     );
 }
 
 export async function runBridgeReplaceTxtgPayloadAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     archivePath: string,
     internalPath: string,
     rawPayload: Buffer,
     env?: NodeJS.ProcessEnv,
-): Promise<void> {
-    await runBridgeJsonAsync(
-        pythonExecutable,
-        bridgePath,
-        ['replace-txtg-payload', archivePath, internalPath],
+    layer?: number,
+): Promise<TexturePayloadReplaceResult> {
+    return await runBridgeJsonAsync<TexturePayloadReplaceResult>(
+        hostExe,
+        ['replace-txtg-payload', archivePath, internalPath, ...(layer ? [String(layer)] : [])],
         rawPayload.toString('base64'),
         env,
     );
@@ -389,8 +419,7 @@ export async function runBridgeReplaceTxtgPayloadAsync(
 export type BarsLoopSpec = 'auto' | 'none' | number;
 
 export async function runBridgeReplaceBarsAudioAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     archivePath: string,
     internalPath: string,
     entryIndex: number,
@@ -401,8 +430,7 @@ export async function runBridgeReplaceBarsAudioAsync(
     env?: NodeJS.ProcessEnv,
 ): Promise<BarsReplaceResult> {
     return runBridgeJsonAsync<BarsReplaceResult>(
-        pythonExecutable,
-        bridgePath,
+        hostExe,
         [
             'replace-bars-audio',
             archivePath,
@@ -418,15 +446,13 @@ export async function runBridgeReplaceBarsAudioAsync(
 }
 
 export async function runBridgePrepareFontReplacementAsync(
-    pythonExecutable: string,
-    bridgePath: string,
+    hostExe: string,
     importPath: string,
     targetPath: string,
     env?: NodeJS.ProcessEnv,
 ): Promise<Buffer> {
     const result = await runBridgeJsonAsync<{ path: string }>(
-        pythonExecutable,
-        bridgePath,
+        hostExe,
         ['prepare-font-replacement', importPath, targetPath],
         undefined,
         env,

@@ -1,5 +1,5 @@
 import * as path from 'path';
-import type { FormatRegistration, BridgeHandlerRegistration } from './formatRegistry';
+import type { FormatRegistration } from './formatRegistry';
 import type { GameProfileRegistration } from './gameProfile';
 
 export interface TkvscManifestContribution {
@@ -8,12 +8,6 @@ export interface TkvscManifestContribution {
     formats?: FormatRegistration[];
     aampExtensions?: string[];
     archivePatterns?: string[];
-    bridgeHandlers?: Array<{
-        kind: string;
-        modulePath: string;
-        readFunction?: string;
-        writeFunction?: string;
-    }>;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -49,6 +43,25 @@ function parseGameProfile(raw: unknown): GameProfileRegistration | undefined {
     }
     if (typeof obj.msbtConfigPath === 'string' && obj.msbtConfigPath.trim()) {
         profile.msbtConfigPath = obj.msbtConfigPath.trim();
+    }
+    for (const key of ['zsDicPath', 'hashNamesPath', 'aampHashNamesPath', 'hostPlugin'] as const) {
+        const value = obj[key];
+        if (typeof value === 'string' && value.trim()) {
+            profile[key] = value.trim();
+        }
+    }
+    if (isStringArray(obj.compressedSuffixes)) {
+        profile.compressedSuffixes = obj.compressedSuffixes;
+    }
+    if (obj.aampNameTable === 'totk' || obj.aampNameTable === 'botw' || obj.aampNameTable === 'none') {
+        profile.aampNameTable = obj.aampNameTable;
+    }
+    if (obj.xlinkVersions && typeof obj.xlinkVersions === 'object') {
+        const versions = obj.xlinkVersions as Record<string, unknown>;
+        profile.xlinkVersions = {
+            elink: typeof versions.elink === 'number' ? versions.elink : undefined,
+            slink: typeof versions.slink === 'number' ? versions.slink : undefined,
+        };
     }
     if (obj.ainb && typeof obj.ainb === 'object') {
         const ainb = obj.ainb as Record<string, unknown>;
@@ -102,29 +115,6 @@ function parseFormats(raw: unknown): FormatRegistration[] | undefined {
     return formats.length > 0 ? formats : undefined;
 }
 
-function parseBridgeHandlers(raw: unknown): TkvscManifestContribution['bridgeHandlers'] {
-    if (!Array.isArray(raw)) {
-        return undefined;
-    }
-    const handlers: NonNullable<TkvscManifestContribution['bridgeHandlers']> = [];
-    for (const entry of raw) {
-        if (!entry || typeof entry !== 'object') {
-            continue;
-        }
-        const obj = entry as Record<string, unknown>;
-        if (typeof obj.kind !== 'string' || typeof obj.modulePath !== 'string') {
-            continue;
-        }
-        handlers.push({
-            kind: obj.kind,
-            modulePath: obj.modulePath,
-            readFunction: typeof obj.readFunction === 'string' ? obj.readFunction : undefined,
-            writeFunction: typeof obj.writeFunction === 'string' ? obj.writeFunction : undefined,
-        });
-    }
-    return handlers.length > 0 ? handlers : undefined;
-}
-
 export function mergeArchivePatternLists(
     ...lists: Array<string[] | undefined>
 ): string[] | undefined {
@@ -161,43 +151,15 @@ export function parseTkvscContribution(raw: unknown): TkvscManifestContribution 
         contribution.archivePatterns = obj.archivePatterns;
     }
 
-    const bridgeHandlers = parseBridgeHandlers(obj.bridgeHandlers);
-    if (bridgeHandlers) {
-        contribution.bridgeHandlers = bridgeHandlers;
-    }
-
     if (
         !contribution.id
         && !contribution.gameProfile
         && !contribution.formats?.length
         && !contribution.aampExtensions?.length
         && !contribution.archivePatterns?.length
-        && !contribution.bridgeHandlers?.length
     ) {
         return undefined;
     }
 
     return contribution;
-}
-
-export function contributionToBridgeHandlers(
-    contribution: TkvscManifestContribution,
-    extensionRoot: string,
-): BridgeHandlerRegistration[] {
-    const handlers: BridgeHandlerRegistration[] = [];
-    for (const entry of contribution.bridgeHandlers ?? []) {
-        if (!entry.kind || !entry.modulePath) {
-            continue;
-        }
-        const resolved = path.isAbsolute(entry.modulePath)
-            ? entry.modulePath
-            : path.join(extensionRoot, entry.modulePath);
-        handlers.push({
-            kind: entry.kind,
-            modulePath: resolved,
-            readFunction: entry.readFunction,
-            writeFunction: entry.writeFunction,
-        });
-    }
-    return handlers;
 }

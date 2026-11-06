@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A complete game plugin, and what the host's tests load. Copy it to start a real one. `dotnet publish` gives the folder to
+    ship in your add-on, and that add-on's game profile names the DLL in `hostPlugin`.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Lists private dependencies in the .deps.json the host reads, and lets the framework come from the host. -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The contract comes from the host at run time: compile against it, and don't ship a copy. -->
+    <ProjectReference Include="..\..\src\TkvscHost.PluginApi\TkvscHost.PluginApi.csproj">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+    <!-- Anything the host doesn't have ships beside the plugin. -->
+    <ProjectReference Include="..\SamplePlugin.Helper\SamplePlugin.Helper.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,21 +1,39 @@
-[submodule "vendor/ainb"]
-	path = vendor/ainb
-	url = https://github.com/BladesawStudios/AINB.git
-[submodule "vendor/asb"]
-	path = vendor/asb
-	url = https://github.com/BladesawStudios/asb.git
-[submodule "vendor/pymsbt"]
-	path = vendor/pymsbt
-	url = https://github.com/BladesawStudios/pymsbt.git
-[submodule "vendor/py-bntx"]
-	path = vendor/py-bntx
-	url = https://github.com/BladesawStudios/py-bntx.git
-[submodule "vendor/hexpyt"]
-	path = vendor/hexpyt
-	url = https://github.com/BladesawStudios/hexpyt.git
-[submodule "vendor/ptcl"]
-	path = vendor/ptcl
-	url = https://github.com/BladesawStudios/ptcl.git
-[submodule "vendor/bphcl"]
-	path = vendor/bphcl
-	url = https://github.com/BladesawStudios/bphcl.git
+[submodule "host/libs/SarcSharp"]
+	path = host/libs/SarcSharp
+	url = https://github.com/BladesawStudios/SarcSharp.git
+[submodule "host/libs/Yaz0Sharp"]
+	path = host/libs/Yaz0Sharp
+	url = https://github.com/BladesawStudios/Yaz0Sharp.git
+[submodule "host/libs/ZsDicSharp"]
+	path = host/libs/ZsDicSharp
+	url = https://github.com/BladesawStudios/ZsDicSharp.git
+[submodule "host/libs/BymlSharp"]
+	path = host/libs/BymlSharp
+	url = https://github.com/BladesawStudios/BymlSharp.git
+[submodule "host/libs/AampSharp"]
+	path = host/libs/AampSharp
+	url = https://github.com/BladesawStudios/AampSharp.git
+[submodule "host/libs/MsbtSharp"]
+	path = host/libs/MsbtSharp
+	url = https://github.com/BladesawStudios/MsbtSharp.git
+[submodule "host/libs/TexSharp"]
+	path = host/libs/TexSharp
+	url = https://github.com/BladesawStudios/TexSharp.git
+[submodule "host/libs/BntxSharp"]
+	path = host/libs/BntxSharp
+	url = https://github.com/BladesawStudios/BntxSharp.git
+[submodule "host/libs/TxtgSharp"]
+	path = host/libs/TxtgSharp
+	url = https://github.com/BladesawStudios/TxtgSharp.git
+[submodule "host/libs/BfAudioSharp"]
+	path = host/libs/BfAudioSharp
+	url = https://github.com/BladesawStudios/BfAudioSharp.git
+[submodule "host/libs/HexpatSharp"]
+	path = host/libs/HexpatSharp
+	url = https://github.com/BladesawStudios/HexpatSharp.git
+[submodule "host/libs/BFontSharp"]
+	path = host/libs/BFontSharp
+	url = https://github.com/BladesawStudios/BFontSharp.git
+[submodule "host/libs/XLinkSharp"]
+	path = host/libs/XLinkSharp
+	url = https://github.com/BladesawStudios/XLinkSharp.git

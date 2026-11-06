@@ -1,4 +1,5 @@
-/** Keep in sync with python/archive_resolve.py decrypt_bfttf */
+import { stripCompressedSuffix } from './gameProfile';
+/** Keep in sync with BFontSharp (the host uses it for fonts) */
 
 const ENCRYPTED_MAGICS = new Map<number, number>([
     [0xd99b871a, 2785117442],
@@ -74,7 +75,7 @@ export function decryptBfttf(data: Uint8Array): Uint8Array {
 
 export function isTotkFontPath(fsPath: string): boolean {
     const lower = fsPath.replace(/\\/g, '/').toLowerCase();
-    return /\.(?:bfotf|bfttf)(?:\.zs)?$/i.test(lower);
+    return /\.(?:bfotf|bfttf)$/i.test(stripCompressedSuffix(lower));
 }
 
 /** Decrypt TotK font containers when needed; no-op for plain OpenType/TrueType bytes. */
@@ -119,7 +120,7 @@ export function getFontFaceCss(data: Uint8Array, base64Font: string): string {
 }
 
 export function getFontFormatLabel(fsPath: string, data: Uint8Array): string {
-    const lower = fsPath.replace(/\\/g, '/').toLowerCase();
+    const lower = stripCompressedSuffix(fsPath.replace(/\\/g, '/').toLowerCase());
     if (lower.endsWith('.bfotf') || lower.endsWith('.bfttf')) {
         return 'TotK Font';
     }

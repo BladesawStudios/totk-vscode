@@ -1,13 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { getActiveGameId, getGameProfileRegistry } from './gameProfile';
+import { getActiveGameId, getGameProfileRegistry, stripCompressedSuffix } from './gameProfile';
 
 const DEFAULT_ARCHIVE_PATTERN = /\.(pack|sarc|genvb|blarc|bfarc|bkres|bntx)(\.zs)?$/i;
-
-const TXTG_FILE_PATTERN = /\.txtg(\.zs)?$/i;
-const BNTX_PARENT_PATTERN = /\.bntx(\.zs)?[/\\]/i;
-const BWAV_FILE_PATTERN = /\.bwav(\.zs)?$/i;
-const BARS_FILE_PATTERN = /\.bars(\.zs)?$/i;
 
 class ArchiveRegistry {
     private readonly patternsByGame = new Map<string, RegExp[]>();
@@ -58,12 +53,14 @@ class ArchiveRegistry {
 
     isArchiveFileName(name: string, gameId?: string): boolean {
         const normalized = name.replace(/\\/g, '/').split('/').pop() ?? name;
-        return this.getPatterns(gameId).some((pattern) => pattern.test(normalized));
+        const stripped = stripCompressedSuffix(normalized, gameId);
+        return this.getPatterns(gameId).some((pattern) => pattern.test(normalized) || pattern.test(stripped));
     }
 
     isArchiveFile(filePath: string, gameId?: string): boolean {
         const normalized = filePath.replace(/\\/g, '/');
-        return this.getPatterns(gameId).some((pattern) => pattern.test(normalized));
+        const stripped = stripCompressedSuffix(normalized, gameId);
+        return this.getPatterns(gameId).some((pattern) => pattern.test(normalized) || pattern.test(stripped));
     }
 
     getDiskArchivePath(fsPath: string, gameId?: string): string {
@@ -148,20 +145,25 @@ export function getDiskArchivePath(fsPath: string, gameId?: string): string {
     return registry.getDiskArchivePath(fsPath, gameId);
 }
 
+/** Whether a name has this extension once any compressed suffix is removed. */
+function hasExtension(name: string, extension: string): boolean {
+    return stripCompressedSuffix(name).toLowerCase().endsWith(extension);
+}
+
 export function isTxtgFile(filePath: string): boolean {
-    return TXTG_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
+    return hasExtension(filePath, '.txtg');
 }
 
 export function isBntxTextureUri(uri: { fsPath: string }): boolean {
-    return BNTX_PARENT_PATTERN.test(uri.fsPath);
+    return uri.fsPath.split(/[/\\]/).slice(0, -1).some((segment) => hasExtension(segment, '.bntx'));
 }
 
 export function isBwavAudioFile(filePath: string): boolean {
-    return BWAV_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
+    return hasExtension(filePath, '.bwav');
 }
 
 export function isBarsAudioArchive(filePath: string): boolean {
-    return BARS_FILE_PATTERN.test(filePath.replace(/\\/g, '/'));
+    return hasExtension(filePath, '.bars');
 }
 
 export function isPathInsideArchive(filePath: string, gameId?: string): boolean {

@@ -20,8 +20,7 @@ export interface EnsureProjectImportOptions {
     overlayDbPath: string;
     projectRoot: string;
     romfsPath: string;
-    pythonExecutable: string;
-    bridgePath: string;
+    hostExe: string;
     bridgeEnv: NodeJS.ProcessEnv;
     output: vscode.OutputChannel;
     importSchemaVersion: number;
@@ -33,8 +32,7 @@ export interface ImportArchiveOverlayOptions {
     projectRoot: string;
     archiveAbsPath: string;
     romfsPath: string;
-    pythonExecutable: string;
-    bridgePath: string;
+    hostExe: string;
     bridgeEnv: NodeJS.ProcessEnv;
     output: vscode.OutputChannel;
     importSchemaVersion: number;
@@ -356,8 +354,7 @@ export async function importArchiveCanonicalOverlay(
     let listed: string[] = [];
     try {
         listed = await runBridgeJsonAsync<string[]>(
-            options.pythonExecutable,
-            options.bridgePath,
+            options.hostExe,
             ['list', archiveAbsPath, ''],
             undefined,
             options.bridgeEnv,
@@ -470,8 +467,7 @@ export async function ensureProjectCanonicalImport(
             let listed: string[] = [];
             try {
                 listed = await runBridgeJsonAsync<string[]>(
-                    options.pythonExecutable,
-                    options.bridgePath,
+                    options.hostExe,
                     ['list', archive.archivePath, ''],
                     undefined,
                     options.bridgeEnv,

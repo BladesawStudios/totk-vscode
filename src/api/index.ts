@@ -24,14 +24,13 @@ export { getBridgeEnv } from './bridgeEnv';
 export { readFontBytes, readRawBytes, writeRawBytes } from './rawFileIo';
 export { resolveProjectRoot } from './resolveProjectRoot';
 export type { TkvscApi, TkvscBridgeAccess, TkvscTreeItemLike } from './types';
-export type { FormatRegistration, BridgeHandlerRegistration } from '../formatRegistry';
-export type { GameProfile, GameProfileRegistration, GameIndexingConfig } from '../gameProfile';
+export type { FormatRegistration } from '../formatRegistry';
+export type { GameProfile, GameProfileRegistration, GameIndexingConfig, GameXlinkVersions } from '../gameProfile';
 export type { ProjectAdapter, ProjectOptionRef, ProjectOptionPickResult } from '../projectAdapters/types';
 
 export function createTkvscApi(options: CreateTkvscApiOptions): TkvscApi {
     const ioContext = {
-        bridgePath: options.bridgePath,
-        getPython: options.getPython,
+        getHost: options.getHost,
         getBridgeEnv: options.getBridgeEnv,
     };
 
@@ -45,14 +44,16 @@ export function createTkvscApi(options: CreateTkvscApiOptions): TkvscApi {
         readRawBytes: (uri) => readRawBytes(uri, ioContext),
         writeRawBytes: (uri, data) => writeRawBytes(uri, data, ioContext),
         getBridge: () => ({
-            bridgePath: options.bridgePath,
-            getPython: options.getPython,
+            bridgePath: '',
+            getHost: options.getHost,
+            getPython: options.getHost,
             getBridgeEnv: options.getBridgeEnv,
-            runBridgeJsonAsync,
+            // The second argument used to be the bridge script's path; it is ignored.
+            runBridgeJsonAsync: <T>(host: string, _bridgePath: string, args: string[], stdin?: string, env?: NodeJS.ProcessEnv) =>
+                runBridgeJsonAsync<T>(host, args, stdin, env),
         }),
         getProjectRoots: options.getProjectRoots,
         registerFormatHandler: options.registerFormatHandler,
-        registerBridgeHandler: options.registerBridgeHandler,
         registerGameProfile: options.registerGameProfile,
         getActiveGameProfile: options.getActiveGameProfile,
         getGameProfile: options.getGameProfile,

@@ -1,10 +1,38 @@
 # TKVSC Extension API Changelog
 
-Programmatic API changes for addon extensions consuming `TKVSC-Team.totk-vscode` exports.
+Programmatic API changes for addon extensions consuming `BladesawStudios.totk-vscode` exports.
 
 Convention: **`api.apiVersion`** increments on breaking changes to the `TkvscApi` surface. Additive methods/properties within a major version do not require a bump (document them here under the same version).
 
 Reference docs: [v1.md](v1.md)
+
+---
+
+## Game support
+
+**Added**
+
+- [Host plugins](host-plugins.md): a game's add-on can ship a .NET DLL, named by the profile's `hostPlugin`, that gives the host formats, compression, archive formats and commands.
+- Game profile fields `compressedSuffixes`, `zsDicPath`, `hashNamesPath`, `aampNameTable`, `aampHashNamesPath` and `xlinkVersions`.
+- SARC archives on disk compressed with Yaz0 now open, and stay Yaz0 when saved.
+
+**Changed**
+
+- The host now uses the profile's `archivePatterns`, as the extension already did. A profile that leaves out an extension (Splatoon 3 leaves out `.bkres`) no longer has it opened as an archive by the host.
+- An archive pattern or extension now also matches with a compressed suffix added, so a `\.spack$` pattern covers `data.spack.zs`.
+- The hex editor now treats a file as compressed only when its name ends with a compressed suffix. It used to match `.zs` anywhere in the name, which included `.zsdic` files.
+- TotK's flag hash names now apply only to TotK. Another game gets them only from its own `hashNamesPath`.
+- A profile with the id `botw` no longer gets BotW's AAMP names and XLink versions automatically. Set `aampNameTable` and `xlinkVersions` (see [Adding a game](host-plugins.md)).
+
+---
+
+## Python handlers removed
+
+**Removed** (no add-on used them)
+
+- `registerBridgeHandler(registration)` and the `bridgeHandlers` entry of `contributes.tkvsc`; the extension no longer runs Python, so add-on Python modules are not loaded. A format of your own is read and written by your own custom editor (`registerFormatHandler` with `editable: false`, then `readRawBytes` / `writeRawBytes`).
+- `handlers` in `tkvsc-handler-manifest.json`.
+- `getBridge()` gains `getHost()`, the path of the TKVSC host. `getPython()` is a deprecated alias of it, and `bridgePath` is always empty and ignored (the signature of `runBridgeJsonAsync` is unchanged).
 
 ---
 

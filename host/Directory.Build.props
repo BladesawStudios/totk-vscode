@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <!-- The folder holding the format libraries (SarcSharp, BymlSharp, ...): the submodules in host/libs, or else a folder of siblings. Override with -p:LibRoot=... or the LIBROOT environment variable. -->
+    <LibRoot Condition="'$(LibRoot)' == '' and '$(LIBROOT)' != ''">$(LIBROOT)</LibRoot>
+    <LibRoot Condition="'$(LibRoot)' == '' and Exists('$(MSBuildThisFileDirectory)libs\SarcSharp')">$(MSBuildThisFileDirectory)libs</LibRoot>
+    <LibRoot Condition="'$(LibRoot)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\..\..\C# Libs'))</LibRoot>
+    <!-- BntxSharp and TxtgSharp each embed TexSharp; these make them share the one in LibRoot. A folder of siblings sets them itself. -->
+    <BntxLibRoot Condition="'$(BntxLibRoot)' == ''">$(LibRoot)</BntxLibRoot>
+    <TxtgLibRoot Condition="'$(TxtgLibRoot)' == ''">$(LibRoot)</TxtgLibRoot>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>
