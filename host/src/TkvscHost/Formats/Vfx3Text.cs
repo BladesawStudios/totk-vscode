@@ -22,15 +22,110 @@ public static class Vfx3Text
         "GlobalColor0/Color", "GlobalColor0/Alpha", "GlobalColor1/Color", "GlobalColor1/Alpha", "ColorScale/ColorScaleValue",
     ];
 
-    // Channel kinds, the low byte of the record's second u32.
-    private const byte ConstantScalar = 0x00, ConstantGray = 0x22, ConstantFloat4 = 0x0D;
-    private const byte KeyedFloat = 0x45, ListFloat3 = 0x50, KeyedFloat3 = 0x51;
+    // Channel kinds, as the game's nn::vfx3 ChannelManager::SetupEvaluators reads them. A kind says where the value is: in
+    // the record at +0x10, in the record's bits as a whole number, or in the bits as an index into the game's table of
+    // common numbers. A three-number kind with one value also says which of the three it fills; the others are 0.
+    private const int FloatInFile = 0x00, FloatWhole = 0x01, FloatFromTable = 0x02;
+    private const int Float3InFile = 0x0D, Float3Whole = 0x0E, Float3FromTable = 0x15, Float3OneInFile = 0x1C, Float3Patterns = 7;
+    private const int KeyedFloat = 0x45, ListFloat3 = 0x50, KeyedFloat3 = 0x51;
+
+    // The channels each form of a three-number kind fills, in kind order.
+    private static readonly bool[][] Patterns =
+    [
+        [true, false, false], [false, true, false], [false, false, true],
+        [true, true, false], [false, true, true], [true, false, true], [true, true, true],
+    ];
+
+    // The table the game keeps at 0x7103dfb6d8 in Ocarina of Time 1.0.0.
+    private static readonly uint[] CommonNumbers =
+    [
+        0xBF666666, 0xBF4CCCCD, 0xBF400000, 0xBF333333, 0xBF19999A, 0xBF000000, 0xBECCCCCD, 0xBE99999A, 0xBE800000, 0xBE4CCCCD, 0xBDCCCCCD, 0xBDB851EC,
+        0xBDA3D70A, 0xBD99999A, 0xBD8F5C29, 0xBD75C28F, 0xBD4CCCCD, 0xBD23D70A, 0xBCF5C28F, 0xBCCCCCCD, 0xBCA3D70A, 0xBC23D70A, 0xBBF5C28F, 0xBBA3D70A,
+        0xBB23D70A, 0xBA83126F, 0xBA03126F, 0xB8D1B717, 0x38D1B717, 0x3951B717, 0x399D4952, 0x39D1B717, 0x3A03126F, 0x3A1D4952, 0x3A378034, 0x3A51B717,
+        0x3A6BEDFA, 0x3A83126F, 0x3B03126F, 0x3B23D70A, 0x3B449BA6, 0x3B83126F, 0x3BA3D70A, 0x3BC49BA6, 0x3BE56042, 0x3BF5C28F, 0x3C03126F, 0x3C1374BC,
+        0x3C23D70A, 0x3CA3D70A, 0x3CCCCCCD, 0x3CF5C28F, 0x3D23D70A, 0x3D4CCCCD, 0x3D75C28F, 0x3D8F5C29, 0x3D99999A, 0x3DA3D70A, 0x3DB851EC, 0x3DCCCCCD,
+        0x3DE147AE, 0x3DF5C28F, 0x3E051EB8, 0x3E0F5C29, 0x3E19999A, 0x3E23D70A, 0x3E2E147B, 0x3E3851EC, 0x3E428F5C, 0x3E4CCCCD, 0x3E570A3D, 0x3E6147AE,
+        0x3E6B851F, 0x3E75C28F, 0x3E800000, 0x3E851EB8, 0x3E8A3D71, 0x3E8F5C29, 0x3E947AE1, 0x3E99999A, 0x3E9EB852, 0x3EA3D70A, 0x3EA8F5C3, 0x3EAE147B,
+        0x3EB33333, 0x3EB851EC, 0x3EBD70A4, 0x3EC28F5C, 0x3EC7AE14, 0x3ECCCCCD, 0x3ED1EB85, 0x3ED70A3D, 0x3EDC28F6, 0x3EE147AE, 0x3EE66666, 0x3EEB851F,
+        0x3EF0A3D7, 0x3EF5C28F, 0x3EFAE148, 0x3F000000, 0x3F028F5C, 0x3F051EB8, 0x3F07AE14, 0x3F0A3D71, 0x3F0CCCCD, 0x3F0F5C29, 0x3F11EB85, 0x3F147AE1,
+        0x3F170A3D, 0x3F19999A, 0x3F1C28F6, 0x3F1EB852, 0x3F2147AE, 0x3F23D70A, 0x3F266666, 0x3F28F5C3, 0x3F2B851F, 0x3F2E147B, 0x3F30A3D7, 0x3F333333,
+        0x3F35C28F, 0x3F3851EC, 0x3F3AE148, 0x3F3D70A4, 0x3F400000, 0x3F428F5C, 0x3F451EB8, 0x3F47AE14, 0x3F4A3D71, 0x3F4CCCCD, 0x3F4F5C29, 0x3F51EB85,
+        0x3F547AE1, 0x3F570A3D, 0x3F59999A, 0x3F5C28F6, 0x3F5EB852, 0x3F6147AE, 0x3F63D70A, 0x3F666666, 0x3F68F5C3, 0x3F6B851F, 0x3F6E147B, 0x3F70A3D7,
+        0x3F733333, 0x3F75C28F, 0x3F7851EC, 0x3F7AE148, 0x3F7D70A4, 0x3F7FBE77, 0x3F7FF972, 0x3F8147AE, 0x3F828F5C, 0x3F83D70A, 0x3F851EB8, 0x3F866666,
+        0x3F87AE14, 0x3F88F5C3, 0x3F8A3D71, 0x3F8B851F, 0x3F8CCCCD, 0x3F99999A, 0x3FA66666, 0x3FB33333, 0x3FC00000, 0x3FCCCCCD, 0x3FD9999A, 0x3FE66666,
+        0x3FF33333, 0x40200000, 0x40666666,
+    ];
 
     private const int HeaderKeysAt = 0x18, CountAt = 0x20, StrideAt = 0x24, RangeAt = 0x28;
+    private const int InfoAt = 12, ValueAt = 16, KindMask = 0x3FF, BitsShift = 13;
 
     public static bool IsVfx3(ReadOnlySpan<byte> data) => data.Length >= 4 && data[..4].SequenceEqual("BFFH"u8);
 
-    private readonly record struct Channel(string Emitter, string Renderer, string Name, long Record, byte Kind);
+    private readonly record struct Channel(string Emitter, string Renderer, string Name, long Record, int Kind);
+
+    private static bool IsThreeOfOne(int kind) => kind is >= Float3Whole and < Float3OneInFile + Float3Patterns;
+
+    // The kind a three-number kind's value is stored by, without its pattern.
+    private static int FormOf(int kind) => Float3Whole + (kind - Float3Whole) / Float3Patterns * Float3Patterns;
+
+    // The one number a kind with one value holds, or null if it holds something else.
+    private static float? OneValue(byte[] d, long record, int kind)
+    {
+        int form = IsThreeOfOne(kind) ? FormOf(kind) : kind;
+        uint bits = (U32(d, record + InfoAt) >> BitsShift) & 0xFFFF;
+        switch (form)
+        {
+            case FloatInFile or Float3OneInFile:
+                return F32(d, record + ValueAt);
+            case FloatWhole or Float3Whole:
+                return (short)bits;
+            case FloatFromTable or Float3FromTable:
+                return bits < CommonNumbers.Length
+                    ? BitConverter.UInt32BitsToSingle(CommonNumbers[bits])
+                    : throw new InvalidDataException($"A particle channel asks for common number {bits}, past the end of the table.");
+            default:
+                return null;
+        }
+    }
+
+    private static double[] ThreeOfOne(int kind, float value)
+    {
+        bool[] pattern = Patterns[kind - FormOf(kind)];
+        return [pattern[0] ? value : 0, pattern[1] ? value : 0, pattern[2] ? value : 0];
+    }
+
+    private static void SetKindAndBits(byte[] d, long record, int kind, uint? bits)
+    {
+        uint info = U32(d, record + InfoAt);
+        info = (info & ~(uint)KindMask) | (uint)kind;
+        if (bits is { } value) info = (info & ~(0xFFFFu << BitsShift)) | (value << BitsShift);
+        BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan((int)record + InfoAt), info);
+    }
+
+    // Stores one number by the kind's own form when it can, or by the other form that lives in the record's bits. A form
+    // that has only the bits has no room for a number of any other shape.
+    private static void PutOne(byte[] d, Channel c, float value, int pattern, string what)
+    {
+        bool threeNumbers = IsThreeOfOne(c.Kind);
+        int form = threeNumbers ? FormOf(c.Kind) : c.Kind;
+        int whole = threeNumbers ? Float3Whole : FloatWhole, table = threeNumbers ? Float3FromTable : FloatFromTable;
+
+        if (form is FloatInFile or Float3OneInFile)
+        {
+            PutF32(d, c.Record + ValueAt, value);
+            SetKindAndBits(d, c.Record, form + pattern, null);
+            return;
+        }
+
+        int common = Array.IndexOf(CommonNumbers, BitConverter.SingleToUInt32Bits(value));
+        bool isWhole = value == MathF.Truncate(value) && value is >= short.MinValue and <= short.MaxValue;
+        if (form == whole && isWhole || form == table && common < 0 && isWhole)
+            SetKindAndBits(d, c.Record, whole + pattern, (ushort)(short)value);
+        else if (common >= 0)
+            SetKindAndBits(d, c.Record, table + pattern, (uint)common);
+        else
+            throw new InvalidDataException($"{what} has no room for {PyYamlScalar.Float(value)}: this channel only holds a whole number or one of the game's common numbers, such as 0.5 or 0.75.");
+    }
 
     private static ulong U64(byte[] d, long pos)
     {
@@ -104,7 +199,7 @@ public static class Vfx3Text
                 foreach (string channel in ChannelNames)
                 {
                     if (Vfx3Hash.Of($"{name}/{renderer}/{channel}") is { } hash && records.TryGetValue(hash, out long record))
-                        channels.Add(new Channel(key, renderer, channel, record, (byte)U32(d, record + 12)));
+                        channels.Add(new Channel(key, renderer, channel, record, (int)U32(d, record + InfoAt) & KindMask));
                 }
             }
         }
@@ -151,12 +246,16 @@ public static class Vfx3Text
     {
         switch (c.Kind)
         {
-            case ConstantFloat4:
-                sb.Append(' ').Append(Flow(Floats(d, c.Record + 16, 4))).Append('\n');
+            case Float3InFile:
+                sb.Append(' ').Append(Flow(Floats(d, c.Record + ValueAt, 3))).Append('\n');
                 return;
 
-            case ConstantScalar or ConstantGray:
-                sb.Append(' ').Append(PyYamlScalar.Float(F32(d, c.Record + 16))).Append('\n');
+            case FloatInFile or FloatWhole or FloatFromTable:
+                sb.Append(' ').Append(PyYamlScalar.Float(OneValue(d, c.Record, c.Kind)!.Value)).Append('\n');
+                return;
+
+            case var kind when IsThreeOfOne(kind):
+                sb.Append(' ').Append(Flow(ThreeOfOne(kind, OneValue(d, c.Record, kind)!.Value))).Append('\n');
                 return;
 
             case KeyedFloat or KeyedFloat3 or ListFloat3:
@@ -187,7 +286,7 @@ public static class Vfx3Text
             }
 
             default:
-                // Set by something this doesn't read (a default, a random range, an expression), so it can't be edited here.
+                // Set by something this doesn't write (an expression, or a kind of key the colours don't use here).
                 sb.Append(" not_editable\n");
                 return;
         }
@@ -221,14 +320,20 @@ public static class Vfx3Text
             string what = $"{c.Emitter}/{c.Renderer}/{c.Name}";
             switch (c.Kind)
             {
-                case ConstantFloat4:
+                case Float3InFile:
                 {
-                    double[] values = Numbers(edit, 4, what);
-                    for (int i = 0; i < 4; i++) PutF32(data, c.Record + 16 + i * 4, values[i]);
+                    double[] values = Numbers(edit, 3, what);
+                    for (int i = 0; i < 3; i++) PutF32(data, c.Record + ValueAt + i * 4, values[i]);
                     break;
                 }
-                case ConstantScalar or ConstantGray:
-                    PutF32(data, c.Record + 16, Number(edit, what));
+                case FloatInFile or FloatWhole or FloatFromTable:
+                {
+                    float value = (float)Number(edit, what);
+                    if (!SameBits(value, OneValue(data, c.Record, c.Kind)!.Value)) PutOne(data, c, value, 0, what);
+                    break;
+                }
+                case var kind when IsThreeOfOne(kind):
+                    PutThreeOfOne(data, c, Numbers(edit, 3, what), what);
                     break;
                 case KeyedFloat or KeyedFloat3 or ListFloat3:
                     PutKeys(data, c, edit, what);
@@ -236,6 +341,25 @@ public static class Vfx3Text
             }
         }
         return data;
+    }
+
+    private static bool SameBits(float a, float b) => BitConverter.SingleToUInt32Bits(a) == BitConverter.SingleToUInt32Bits(b);
+
+    private static void PutThreeOfOne(byte[] d, Channel c, double[] values, string what)
+    {
+        double[] current = ThreeOfOne(c.Kind, OneValue(d, c.Record, c.Kind)!.Value);
+        if (Enumerable.Range(0, 3).All(i => SameBits((float)values[i], (float)current[i]))) return;
+
+        // The record holds one number, so every channel that isn't 0 has to share it.
+        float[] used = [.. values.Select(v => (float)v).Where(v => v != 0).Distinct()];
+        if (used.Length > 1)
+            throw new InvalidDataException($"{what} holds one number across its channels, so the ones that aren't 0 must match. The file has no room for three different numbers here.");
+
+        // All 0 fits any pattern, so it keeps the one it had.
+        int pattern = used.Length == 0
+            ? c.Kind - FormOf(c.Kind)
+            : Array.FindIndex(Patterns, p => p[0] == (values[0] != 0) && p[1] == (values[1] != 0) && p[2] == (values[2] != 0));
+        PutOne(d, c, used.Length == 0 ? 0f : used[0], pattern, what);
     }
 
     private static void PutKeys(byte[] d, Channel c, Byml edit, string what)

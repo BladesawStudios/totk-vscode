@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 using BymlSharp;
 
@@ -138,31 +139,57 @@ public static class TagProduct
         }
     }
 
-    /// <summary>Builds the BYML back: the actors' paths in a row, one bit per actor and tag, the tag list.</summary>
+    // Actors compared part by part, the order the game's files keep them in.
+    private static int CompareActors(string[] a, string[] b)
+    {
+        for (int i = 0; i < Math.Min(a.Length, b.Length); i++)
+            if (string.CompareOrdinal(a[i], b[i]) is var order and not 0) return order;
+        return a.Length - b.Length;
+    }
+
+    /// <summary>
+    /// Builds the BYML back as the game's own files have it: actors and tags in byte order, the actors' paths in a row,
+    /// one bit per actor and tag, the tag list, and the rank table.
+    /// </summary>
+    /// <remarks>
+    /// For each tag, for each run of 32 actors, the rank table holds a u32: how many actors up to the end of that run have
+    /// the tag. The game's reader works out the number of runs the same way; this rebuilds both games' tables byte for byte.
+    /// </remarks>
     public static Byml FromEditorText(Byml document)
     {
         List<string> tags = document["TagList"] is { IsArray: true } t ? [.. t.AsArray.Select(Text)] : [];
-        List<Byml> pathOut = [];
-        List<bool> bits = [];
+        tags = [.. tags.Distinct().Order(StringComparer.Ordinal)];
 
+        // A key that isn't a path has nothing to write, so it can't take up a row of bits either.
+        List<(string[] Path, HashSet<string> Tags)> actors = [];
         foreach (var (path, entries) in document["PathList"]!.AsMap)
+            if (path.Contains('|')) actors.Add((path.Split('|'), entries.IsArray ? [.. entries.AsArray.Select(Text)] : []));
+        actors.Sort((a, b) => CompareActors(a.Path, b.Path));
+
+        byte[] table = new byte[(actors.Count * tags.Count + 7) / 8];
+        int runs = (actors.Count + 31) / 32;
+        byte[] ranks = new byte[tags.Count * runs * 4];
+        for (int k = 0; k < tags.Count; k++)
         {
-            if (path.Contains('|')) pathOut.AddRange(path.Split('|').Select(s => (Byml)s));
-
-            HashSet<string> actorTags = entries.IsArray ? [.. entries.AsArray.Select(Text)] : [];
-            foreach (string tag in tags) bits.Add(actorTags.Contains(tag));
+            uint count = 0;
+            for (int i = 0; i < actors.Count; i++)
+            {
+                if (actors[i].Tags.Contains(tags[k]))
+                {
+                    int bit = i * tags.Count + k;
+                    table[bit / 8] |= (byte)(1 << (bit % 8));
+                    count++;
+                }
+                if (i % 32 == 31 || i == actors.Count - 1)
+                    BinaryPrimitives.WriteUInt32LittleEndian(ranks.AsSpan((k * runs + i / 32) * 4), count);
+            }
         }
-
-        int length = (bits.Count + 7) / 8;
-        byte[] table = new byte[length + (4 - length % 4) % 4];
-        for (int i = 0; i < bits.Count; i++)
-            if (bits[i]) table[i / 8] |= (byte)(1 << (i % 8));
 
         return Byml.Map(new Dictionary<string, Byml>
         {
-            ["PathList"] = Byml.Array(pathOut),
+            ["PathList"] = Byml.Array(actors.SelectMany(a => a.Path).Select(s => (Byml)s)),
             ["BitTable"] = Byml.From(table),
-            ["RankTable"] = "",
+            ["RankTable"] = Byml.From(ranks),
             ["TagList"] = Byml.Array(tags.Select(s => (Byml)s)),
         });
     }

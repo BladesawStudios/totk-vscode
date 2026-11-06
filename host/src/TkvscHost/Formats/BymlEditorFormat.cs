@@ -124,6 +124,15 @@ public sealed partial class BymlEditorFormat(int inlineMaxCount)
     [GeneratedRegex(@"^(?:~|null|Null|NULL|true|True|TRUE|false|False|FALSE|\.(?:nan|NaN|NAN)|[-+]?(?:0x[0-9a-fA-F]+|0o[0-7]+|(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?|\.(?:inf|Inf|INF)))$")]
     private static partial Regex ReadsAsAnotherType();
 
+    // A key can't come back as another type, but it can lose outer spaces ("Clockwise ") or stop being a plain scalar.
+    private static string Key(string key) => NeedsQuotes(key) ? Quoted(key) : key;
+
+    private static bool NeedsQuotes(string value)
+        => value.Length == 0 || value.IndexOfAny([':', '#', '[', ']', '{', '}', ',', '"', '\'', '\n', '\t']) >= 0
+            || value[0] is '-' or '?' or '%' or '@' or '`' or '&' or '*' or '!' or '|' or '>' or ' ' || value[^1] == ' ';
+
+    private static string Quoted(string value) => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n") + "\"";
+
     private static string FormatString(string value, int indent)
     {
         if (value.Contains('\n'))
@@ -138,12 +147,7 @@ public sealed partial class BymlEditorFormat(int inlineMaxCount)
 
         // A plain YAML scalar can't start with an indicator, such as the % of "%PROJECT_WORK%\UI", or keep outer spaces.
         // Nor can it look like another type: the strings "False", "00" and "0.1" would come back as a bool, an int and a float.
-        bool needsQuotes = value.Length == 0 || value.IndexOfAny([':', '#', '[', ']', '{', '}', ',', '"', '\'', '\n', '\t']) >= 0
-            || value[0] is '-' or '?' or '%' or '@' or '`' or '&' or '*' or '!' or '|' or '>' or ' ' || value[^1] == ' '
-            || ReadsAsAnotherType().IsMatch(value);
-        return needsQuotes
-            ? "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n") + "\""
-            : value;
+        return NeedsQuotes(value) || ReadsAsAnotherType().IsMatch(value) ? Quoted(value) : value;
     }
 
     private bool CanInline(Byml node)
@@ -163,7 +167,7 @@ public sealed partial class BymlEditorFormat(int inlineMaxCount)
 
     private string SerializeInline(Byml node)
     {
-        if (node.IsMap) return "{" + string.Join(", ", Keys(node).Select(k => $"{k}: {SerializeInline(node.AsMap[k])}")) + "}";
+        if (node.IsMap) return "{" + string.Join(", ", Keys(node).Select(k => $"{Key(k)}: {SerializeInline(node.AsMap[k])}")) + "}";
         if (node.IsArray) return node.Count == 0 ? "[]" : "[" + string.Join(", ", node.AsArray.Select(SerializeInline)) + "]";
         if (node.IsHashMap) throw new NotSupportedException("BYML hash maps");
         return FormatScalar(node, 0);
@@ -178,16 +182,16 @@ public sealed partial class BymlEditorFormat(int inlineMaxCount)
             Byml value = node.AsMap[key];
             if (value.IsContainer)
             {
-                if (CanInline(value)) lines.Add($"{sp}{key}: {SerializeInline(value)}");
+                if (CanInline(value)) lines.Add($"{sp}{Key(key)}: {SerializeInline(value)}");
                 else
                 {
-                    lines.Add($"{sp}{key}:");
+                    lines.Add($"{sp}{Key(key)}:");
                     lines.AddRange(Serialize(value, indent + 1));
                 }
             }
             else
             {
-                lines.Add($"{sp}{key}: {FormatScalar(value, indent)}");
+                lines.Add($"{sp}{Key(key)}: {FormatScalar(value, indent)}");
             }
         }
 
@@ -207,16 +211,16 @@ public sealed partial class BymlEditorFormat(int inlineMaxCount)
 
         if (first.IsContainer)
         {
-            if (CanInline(first)) lines.Add($"{sp}- {firstKey}: {SerializeInline(first)}");
+            if (CanInline(first)) lines.Add($"{sp}- {Key(firstKey)}: {SerializeInline(first)}");
             else
             {
-                lines.Add($"{sp}- {firstKey}:");
+                lines.Add($"{sp}- {Key(firstKey)}:");
                 lines.AddRange(Serialize(first, indent + 2));
             }
         }
         else
         {
-            lines.Add($"{sp}- {firstKey}: {FormatScalar(first, indent + 1)}");
+            lines.Add($"{sp}- {Key(firstKey)}: {FormatScalar(first, indent + 1)}");
         }
 
         foreach (string key in keys.Skip(1))
@@ -224,16 +228,16 @@ public sealed partial class BymlEditorFormat(int inlineMaxCount)
             Byml value = item.AsMap[key];
             if (value.IsContainer)
             {
-                if (CanInline(value)) lines.Add($"{sp}  {key}: {SerializeInline(value)}");
+                if (CanInline(value)) lines.Add($"{sp}  {Key(key)}: {SerializeInline(value)}");
                 else
                 {
-                    lines.Add($"{sp}  {key}:");
+                    lines.Add($"{sp}  {Key(key)}:");
                     lines.AddRange(Serialize(value, indent + 2));
                 }
             }
             else
             {
-                lines.Add($"{sp}  {key}: {FormatScalar(value, indent + 1)}");
+                lines.Add($"{sp}  {Key(key)}: {FormatScalar(value, indent + 1)}");
             }
         }
 
@@ -248,16 +252,16 @@ public sealed partial class BymlEditorFormat(int inlineMaxCount)
 
         if (value.IsContainer)
         {
-            if (CanInline(value)) lines.Add($"{sp}- {key}: {SerializeInline(value)}");
+            if (CanInline(value)) lines.Add($"{sp}- {Key(key)}: {SerializeInline(value)}");
             else
             {
-                lines.Add($"{sp}- {key}:");
+                lines.Add($"{sp}- {Key(key)}:");
                 lines.AddRange(Serialize(value, indent + 2));
             }
         }
         else if (IsScalar(value))
         {
-            lines.Add($"{sp}- {key}: {FormatScalar(value, indent + 1)}");
+            lines.Add($"{sp}- {Key(key)}: {FormatScalar(value, indent + 1)}");
         }
 
         return lines;
@@ -267,8 +271,8 @@ public sealed partial class BymlEditorFormat(int inlineMaxCount)
     {
         string sp = Spaces(indent);
         List<string> keys = Keys(item);
-        List<string> lines = [$"{sp}- {keys[0]}: {FormatScalar(item.AsMap[keys[0]], indent + 1)}"];
-        foreach (string key in keys.Skip(1)) lines.Add($"{sp}  {key}: {FormatScalar(item.AsMap[key], indent + 1)}");
+        List<string> lines = [$"{sp}- {Key(keys[0])}: {FormatScalar(item.AsMap[keys[0]], indent + 1)}"];
+        foreach (string key in keys.Skip(1)) lines.Add($"{sp}  {Key(key)}: {FormatScalar(item.AsMap[key], indent + 1)}");
         return lines;
     }
 

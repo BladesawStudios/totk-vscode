@@ -500,7 +500,7 @@ fn get_section_index(str magic, s32 index = -1) {
         }
     } else {
         for (u8 i = 0, i < std::core::member_count(tagfile.sections[index].sections), i = i + 1) {
-            if (tagfile.sections[index].sections[i] == magic) {
+            if (tagfile.sections[index].sections[i].signature == magic) {
                 return i;
             }
         }
@@ -551,11 +551,11 @@ fn read_int(auto t) {
     return val;
 };
 
-const u8 type_section_index = get_section_index("TYPE");
-const u8 type_name_index = get_section_index("TNAM", type_section_index) != -1 ? get_section_index("TNAM", type_section_index) : get_section_index("TNA1", type_section_index);
-const u8 index_section_index = get_section_index("INDX");
-const u8 item_section_index = get_section_index("ITEM", index_section_index);
-const u8 ptch_section_index = get_section_index("PTCH", index_section_index);
+const s16 type_section_index = get_section_index("TYPE");
+const s16 type_name_index = get_section_index("TNAM", type_section_index) != -1 ? get_section_index("TNAM", type_section_index) : get_section_index("TNA1", type_section_index);
+const s16 index_section_index = get_section_index("INDX");
+const s16 item_section_index = get_section_index("ITEM", index_section_index);
+const s16 ptch_section_index = get_section_index("PTCH", index_section_index);
 
 // handle relocations
 if (ptch_section_index != -1) {

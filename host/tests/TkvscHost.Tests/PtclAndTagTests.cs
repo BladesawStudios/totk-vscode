@@ -183,8 +183,45 @@ public class PtclAndTagTests
         Assert.Equal(["Work", "ActorA", "x.gyml", "Work", "ActorB", "y.gyml"], rebuilt["PathList"]!.AsArray.Select(x => x.String));
         Assert.Equal(["Alpha", "Beta", "Gamma"], rebuilt["TagList"]!.AsArray.Select(x => x.String));
         // Actor 0: Alpha, Beta, Gamma (bits 0-2); actor 1: Gamma (bit 5) -- Beta was added to actor 0 only.
-        Assert.Equal(new byte[] { 0b0010_0111, 0, 0, 0 }, rebuilt["BitTable"]!.Binary);
-        Assert.Equal("", rebuilt["RankTable"]!.String);
+        Assert.Equal(new byte[] { 0b0010_0111 }, rebuilt["BitTable"]!.Binary);
+        // One run of actors: Alpha on 1 actor, Beta on 1, Gamma on 2.
+        Assert.Equal(new byte[] { 1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0 }, rebuilt["RankTable"]!.Binary);
+    }
+
+    [Fact]
+    public void TheRankTableCountsUpToTheEndOfEachRunOf32Actors()
+    {
+        // 33 actors, so two runs. Tag A on the first actor and the last; tag B on none.
+        Dictionary<string, Byml> paths = [];
+        for (int i = 0; i < 33; i++)
+            paths[$"Work|Actor{i:00}|x"] = i is 0 or 32 ? Byml.Array(["A"]) : Byml.Array([]);
+        Byml document = Byml.Map(new Dictionary<string, Byml> { ["PathList"] = Byml.Map(paths), ["TagList"] = Byml.Array(["A", "B"]) });
+
+        Byml rebuilt = TagProduct.FromEditorText(document);
+
+        Assert.Equal(new byte[] { 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, rebuilt["RankTable"]!.Binary);
+        Assert.Equal((33 * 2 + 7) / 8, rebuilt["BitTable"]!.Binary.Length);
+    }
+
+    [Fact]
+    public void ANewTagOrActorTakesItsSortedPlace()
+    {
+        Byml document = Byml.Map(new Dictionary<string, Byml>
+        {
+            ["PathList"] = Byml.Map(new Dictionary<string, Byml>
+            {
+                ["Work|Zed|x"] = Byml.Array(["Zebra"]),
+                ["Work|Abe|x"] = Byml.Array(["Apple", "Zebra"]),
+            }),
+            ["TagList"] = Byml.Array(["Zebra", "Apple", "Zebra"]),
+        });
+
+        Byml rebuilt = TagProduct.FromEditorText(document);
+
+        Assert.Equal(["Apple", "Zebra"], rebuilt["TagList"]!.AsArray.Select(x => x.String));
+        Assert.Equal(["Work", "Abe", "x", "Work", "Zed", "x"], rebuilt["PathList"]!.AsArray.Select(x => x.String));
+        // Abe: Apple, Zebra (bits 0, 1); Zed: Zebra (bit 3).
+        Assert.Equal(new byte[] { 0b0000_1011 }, rebuilt["BitTable"]!.Binary);
     }
 
     [Fact]

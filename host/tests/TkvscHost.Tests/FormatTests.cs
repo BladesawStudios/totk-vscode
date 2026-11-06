@@ -60,7 +60,7 @@ public class FormatTests
             Empty: []
             Flag: true
             Hash: !u 0xdeadbeef
-            Key: odd: 7
+            "Key: odd": 7
             List:
               - A: 1
                 B: y
@@ -129,6 +129,28 @@ public class FormatTests
         Assert.Equal(BymlType.String, read["Text"]!.Type);
         Assert.Equal(value, read["Text"]!.String);
         Assert.Equal(value, read["List"]!.AsArray[1].String);
+    }
+
+    [Theory]
+    [InlineData("Clockwise ")]
+    [InlineData(" Leading")]
+    [InlineData("a: b")]
+    [InlineData("#hash")]
+    public void KeysThatArentPlainScalarsReadBack(string key)
+    {
+        Byml doc = Byml.Map(new Dictionary<string, Byml>
+        {
+            [key] = 1,
+            ["Other"] = Byml.Map(new Dictionary<string, Byml> { [key] = 2 }),
+            ["List"] = Byml.Array([Byml.Map(new Dictionary<string, Byml> { [key] = 3 }), Byml.Map(new Dictionary<string, Byml> { [key] = 4, ["Z"] = 5 })]),
+        });
+
+        Byml read = BymlFile.FromYaml(BymlEditorFormat.ToEditorText(doc)).Root;
+
+        Assert.Equal(1, read[key]!.Int);
+        Assert.Equal(2, read["Other"]![key]!.Int);
+        Assert.Equal(3, read["List"]!.AsArray[0][key]!.Int);
+        Assert.Equal(4, read["List"]!.AsArray[1][key]!.Int);
     }
 
     [Theory]
