@@ -17,6 +17,7 @@ import {
     runBridgeReplaceBarsAudioAsync,
     type BarsLoopSpec,
 } from './bridge';
+import { warnAboutLegacyExtensions } from './legacyExtension';
 import { resolveNativeHost } from './nativeHost';
 import { openTextureViewer, initTextureViewer } from './textureViewer';
 import { openAudioViewer, initAudioViewer } from './audioViewer';
@@ -844,6 +845,7 @@ function cleanupOldTempFiles() {
 export async function activate(context: vscode.ExtensionContext): Promise<TkvscApi> {
     logger.init(context);
     logger.info('Activating TKVSC extension...');
+    warnAboutLegacyExtensions();
 
     const onDidReadyEmitter = new TkvscReadyEmitter();
     context.subscriptions.push(onDidReadyEmitter);

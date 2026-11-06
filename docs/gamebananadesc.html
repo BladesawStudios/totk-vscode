@@ -27,8 +27,8 @@
 <h2>DISCLAIMER</h2>
 <p>
   <strong
-    >WE ARE NOT RESPONSIBLE IF YOUR MOD BREAKS. THIS TOOL IS IN ACTIVE BETA AND
-    THINGS WILL BREAK. MAKE FREQUENT BACKUPS</strong
+    >WE ARE NOT RESPONSIBLE IF YOUR MOD BREAKS. THIS TOOL IS IN ACTIVE
+    DEVELOPMENT AND THINGS CAN BREAK. MAKE FREQUENT BACKUPS</strong
   >
 </p>
 
@@ -53,8 +53,6 @@
   <li>BGYML</li>
   <li>AAMP</li>
   <li>MSBT</li>
-  <li>ASB (Changes automatically applied to corresponding BAEV)</li>
-  <li>BAEV (Changes automatically applied to corresponding ASB)</li>
   <li>XLINK</li>
   <li>PCHTXT</li>
   <li>TKMM Config Files</li>
@@ -72,10 +70,16 @@
   </li>
 </ul>
 
-<h4>Audio Player</h4>
+<h4>Audio Player/Replacer</h4>
 <ul>
   <li>Bars</li>
-  <li>BFWAV</li>
+  <li>BWAV</li>
+</ul>
+
+<h4>Font Viewer/Replacer</h4>
+<ul>
+  <li>bfttf</li>
+  <li>bfotf</li>
 </ul>
 
 <hr />
@@ -184,9 +188,7 @@
 </p>
 
 <ul>
-  <li>Node Based Editors (AINB, ASB, BAEV, and EVFL are all planned.)</li>
   <li>BFRES Support (Preview, Editing.)</li>
-  <li>Audio Support (BARS, BWAV.) (Read currently supported, write W.I.P)</li>
   <li>Actor Tooling (Automating the process as much as possible.)</li>
   <li>Full romfs file content string searching</li>
   <li><sub>PTCL/Effect support is being researched but not confirmed.</sub></li>
@@ -198,54 +200,23 @@
 
 <h3>Requirements</h3>
 <ul>
-  <li>
-    <a href="https://www.python.org/downloads/" target="_blank">Python 3.13+</a>
-  </li>
-  <li>
-    <a
-      href="https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170"
-      target="_blank"
-      >Microsoft C++ Redis</a
-    >
-  </li>
-  <li>Node.js (if building extension from source)</li>
-  <li>Python 3.13-venv (on Linux)</li>
+  <li>Node.js and the .NET 10 SDK (if building extension from source)</li>
   <li>Valid TotK dump</li>
 </ul>
 
 <h3>Steps</h3>
 <ol>
-  <li>Install the extension (VSIX).</li>
+  <li>
+    Install the VSIX for your platform (<code>win32-x64</code>,
+    <code>linux-x64</code>, <code>darwin-x64</code> or
+    <code>darwin-arm64</code>).
+  </li>
   <li>Follow the prompt to select your romfs dump path.</li>
 </ol>
 
-<h3>Python troubleshooting</h3>
+<h3>Upgrading from a beta</h3>
 <p>
-  <strong
-    ><code>python3</code> works in CMD but the extension cannot find
-    Python?</strong
-  >
-  VSCode is often launched without your full user PATH (unlike a terminal you
-  opened yourself). Fix:
-</p>
-
-<ol>
-  <li>
-    <strong>TKVSC: Select Python (from detected installs)</strong> - scans
-    <code>where python3</code>, common install folders, and <code>py</code>.
-  </li>
-  <li>
-    <strong>TKVSC: Browse for python.exe</strong> - point at the real
-    interpreter (e.g.
-    <code>%LocalAppData%\Programs\Python\Python314\python.exe</code>).
-  </li>
-  <li>
-    Or set <strong>TKVSC → Python Path</strong> to that full path, then
-    <strong>TKVSC: Set Up Python Environment</strong> again.
-  </li>
-</ol>
-
-<p>
-  If setup fails, run <strong>TKVSC: Set Up Python Environment</strong> from the
-  Command Palette.
+  TKVSC moved to a new publisher, so the old version stays installed beside
+  1.0.0. TKVSC offers to uninstall it on startup. Add-ons made for the old
+  publisher have to be replaced too, and your projects need adding again.
 </p>

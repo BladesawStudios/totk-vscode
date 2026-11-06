@@ -6,7 +6,7 @@
     <img src="https://img.shields.io/discord/1508590792149827745?style=for-the-badge&logoColor=5865F2&color=5865F2&labelColor=2A2C33&logo=discord&label=discord" alt="Discord"/>
   </a> &nbsp;
   <a href="https://github.com/BladesawStudios/totk-vscode/releases/latest">
-    <img src="https://img.shields.io/github/v/tag/BladesawStudios/totk-vscode?style=for-the-badge&logoColor=ffffff&color=C71B42&labelColor=2A2C33&logo=github&label=Version" alt="Latest Release"
+    <img src="https://img.shields.io/github/v/tag/BladesawStudios/totk-vscode?style=for-the-badge&logoColor=ffffff&color=C71B42&labelColor=2A2C33&logo=github&label=Version" alt="Latest Release"/>
   </a> &nbsp;
   <a href="https://github.com/BladesawStudios/totk-vscode">
     <img src="https://img.shields.io/github/stars/BladesawStudios/totk-vscode?style=for-the-badge&color=FFCB41&labelColor=2A2C33&logo=github" alt="Stars"/>
@@ -29,7 +29,7 @@ The **T**ears of the **K**ingdom **V**isual **S**tudio **C**ode Extension or **T
 **Game Dump Guide** (required): https://gamebanana.com/tuts/19858
 
 ## DISCLAIMER
-**WE ARE NOT RESPONSIBLE IF YOUR MOD BREAKS. THIS TOOL IS IN ACTIVE BETA AND THINGS WILL BREAK. MAKE FREQUENT BACKUPS**
+**WE ARE NOT RESPONSIBLE IF YOUR MOD BREAKS. THIS TOOL IS IN ACTIVE DEVELOPMENT AND THINGS CAN BREAK. MAKE FREQUENT BACKUPS**
 
 ## Features
 Preview and edit subfiles of SARC and BNTX archives
@@ -56,7 +56,7 @@ Preview and edit subfiles of SARC and BNTX archives
 
 #### Audio Player/Replacer
 - Bars (play entries, and replace their audio from WAV/BWAV — or any common format like MP3, OGG, or FLAC when ffmpeg is installed. Audio is encoded to DSP-ADPCM automatically, with loop points taken from the file or set by hand)
-- BFWAV
+- BWAV
 
 #### Font Viewer/Replacer
 - bfttf
@@ -107,13 +107,16 @@ To demonstrate with a direct comparison, modifying the defense of every level of
 ## Setup
 
 ### Requirements
-* [Microsoft C++ Redis](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
 * Node.js and the .NET 10 SDK (if building extension from source; see `host/README.md`)
 * Valid TotK dump
 
 ### Steps
-1. Install the extension (VSIX).
+1. Download the VSIX for your platform from [Releases](https://github.com/BladesawStudios/totk-vscode/releases/latest) (`win32-x64`, `linux-x64`, `darwin-x64` or `darwin-arm64`) and install it.
 2. Follow the prompt to select your romfs dump path.
+
+### Other games
+
+[Add-ons](https://github.com/BladesawStudios/tkvsc-addons) add support for Splatoon 3 and Ocarina of Time.
 
 
 ## Build Instructions
@@ -128,7 +131,7 @@ npm run package:vsix                      # for this machine
 node scripts/package-vsix.js linux-x64    # or win32-x64, linux-x64, darwin-x64, darwin-arm64
 ```
 
-That produces `out/totk-vscode-<version>.vsix` (version comes from `package.json`).
+That produces `out/totk-vscode-<target>-<version>.vsix` (version comes from `package.json`).
 
 
 ### Contributing:
@@ -147,7 +150,7 @@ Companion VS Code extensions can extend TKVSC via the exported API. See [docs/ap
 
 ### Contributors
 **Clonephaze** - [GitHub Template Refactor](https://github.com/BladesawStudios/totk-vscode/pull/62)\
-**Bryn** - [ASB Splatoon 3 Formats](https://github.com/FemBryn/asb-Spl3)\
+**Bryn** - [ASB Splatoon 3 Formats](https://github.com/FemBryn/asb-Spl3) (since removed)\
 **lucythegoosey07** - [RSTB Support](https://github.com/BladesawStudios/totk-vscode/pull/124) (since removed)
 
 ### Third-Parties
@@ -157,8 +160,10 @@ Companion VS Code extensions can extend TKVSC via the exported API. See [docs/ap
 **KillzXGaming**: [Switch Toolbox](https://github.com/KillzXGaming/Switch-Toolbox) - image handling referenced\
 **Arch Leaders**: [NX Editor](https://github.com/NX-Editor/NxEditor) - text formatting referenced\
 **MacSpazzy & MrCheeze**: [TotK save variable hashes](https://www.marcrobledo.com/savegame-editors/zelda-totk/) - cracked names for the GameDataList hashes, bundled as `vendor/zelda-totk.hashes.csv`\
-**SolidLink**: [Totkbits](https://github.com/SolidLink95/TotkBits) - Tag.Product & text formatting referenced
-**lostromb**: [Concentus](https://github.com/lostromb/concentus) (BSD-3-Clause) - Opus decoding for BWAV audio\
+**SolidLink**: [Totkbits](https://github.com/SolidLink95/TotkBits) - Tag.Product & text formatting referenced\
+**lostromb**: [Concentus](https://github.com/lostromb/concentus) (BSD-3-Clause) - Opus decoding for BWAV audio
+
+Licences of the libraries bundled with TKVSC are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Help and Community
 

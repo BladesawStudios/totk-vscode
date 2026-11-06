@@ -10,7 +10,7 @@ export interface GameIndexingConfig {
     archiveExtensions?: string[];
 }
 
-/** Where this game keeps its AINB, for the node definition harvester. */
+/** Kept so existing add-ons still load, but ignored: TKVSC no longer edits AINB. */
 export interface GameAinbConfig {
     /** Directories under romfs holding loose AINB, e.g. `Logic`. Archives are always swept. */
     categoryDirs?: string[];
