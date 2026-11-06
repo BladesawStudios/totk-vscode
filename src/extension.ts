@@ -2106,9 +2106,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     });
     context.subscriptions.push(openEditableFile);
 
-    const openHexEditorCommand = vscode.commands.registerCommand('totk-editor.openHexEditor', async (uri?: vscode.Uri) => {
-        const targetUri = uri ?? vscode.window.activeTextEditor?.document.uri;
+    // Tree menus pass the tree item; explorer menus, editor tabs and the CodeLens pass a Uri.
+    const openHexEditorCommand = vscode.commands.registerCommand('totk-editor.openHexEditor', async (target?: vscode.Uri | { resourceUri?: vscode.Uri }) => {
+        const targetUri = (target instanceof vscode.Uri ? target : target?.resourceUri)
+            ?? vscode.window.activeTextEditor?.document.uri;
         if (!targetUri) {
+            void vscode.window.showErrorMessage('No file selected to open in the hex editor.');
             return;
         }
 

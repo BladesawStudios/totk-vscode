@@ -40,7 +40,7 @@ export function invalidateArchiveListings(fsPath?: string): void {
     rawIo?.invalidateListings(fsPath);
 }
 
-function requireRawIo(): ArchiveRawIo {
+export function requireRawIo(): ArchiveRawIo {
     if (!rawIo) {
         throw new Error('The project file system is not ready yet.');
     }

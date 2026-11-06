@@ -6,6 +6,8 @@ import * as os from 'os';
 import { getNativeHostExecutable, runBridgeJsonAsync } from '../bridge';
 import { getBridgeEnv } from '../api/bridgeEnv';
 import { logger } from '../logger';
+import { requireRawIo } from '../archiveFsCommands';
+import { isEditableFile } from '../editableFiles';
 import {
     getDiskArchivePath,
     getLocatorInsideDiskArchive,
@@ -224,7 +226,12 @@ export function openHexEditor(uri: vscode.Uri, extensionUri: vscode.Uri, isReadO
                 }
 
                 logger.info(`[HexEditor] Writing ${content.length} bytes to ${uri.fsPath}`);
-                await vscode.workspace.fs.writeFile(uri, content);
+                // These are raw bytes, but the sarc provider's writeFile reads editable formats as YAML text.
+                if (uri.scheme === 'sarc' && isEditableFile(uri.fsPath)) {
+                    await requireRawIo().writeStoredBytes(uri, content);
+                } else {
+                    await vscode.workspace.fs.writeFile(uri, content);
+                }
                 logger.info(`[HexEditor] Save successful`);
                 vscode.window.showInformationMessage(`Successfully saved: ${path.basename(uri.fsPath)}`);
             } catch (err) {
@@ -1873,8 +1880,7 @@ function buildHtml(
                         astTree.insertAdjacentHTML('beforeend', '<div style="color: var(--vscode-errorForeground, #ff6b6b); font-weight: bold; padding: 6px 10px;">Stopped: ' + escapeHtml(message.evaluationError) + '</div>');
                     }
                     if (message.log && message.log.length > 0) {
-                        astTree.insertAdjacentHTML('beforeend', '<details style="padding: 4px 10px; opacity: 0.8;"><summary>Pattern output (' + message.log.length + ' lines)</summary><pre style="white-space: pre-wrap;">' + escapeHtml(message.log.slice(0, 200).join('
-')) + '</pre></details>');
+                        astTree.insertAdjacentHTML('beforeend', '<details style="padding: 4px 10px; opacity: 0.8;"><summary>Pattern output (' + message.log.length + ' lines)</summary><pre style="white-space: pre-wrap;">' + escapeHtml(message.log.slice(0, 200).join('\\n')) + '</pre></details>');
                     }
                     renderGenericAst(message.ast, astTree);
                 }
