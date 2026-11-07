@@ -570,6 +570,29 @@ export async function runBridgeReplaceBarsSectionsAsync(
     );
 }
 
+/** Puts the same audio, with the same loop, on every listed BARS entry, all or nothing. */
+export async function runBridgeReplaceBarsSameAsync(
+    hostExe: string,
+    archivePath: string,
+    internalPath: string,
+    spec: {
+        source: string;
+        loopStart: BarsLoopSpec;
+        loopEnd: BarsLoopSpec;
+        trim: boolean;
+        updateTable: boolean;
+        indices: number[];
+    },
+    env?: NodeJS.ProcessEnv,
+): Promise<BarsReplaceResult> {
+    return runBridgeJsonAsync<BarsReplaceResult>(
+        hostExe,
+        ['replace-bars-same', archivePath, internalPath],
+        JSON.stringify({ ...spec, loopStart: String(spec.loopStart), loopEnd: String(spec.loopEnd) }),
+        env,
+    );
+}
+
 /** Sets a BARS entry's loop without re-encoding, unless `trimAfterLoop` has to cut audio. */
 export async function runBridgeSetBarsLoopAsync(
     hostExe: string,

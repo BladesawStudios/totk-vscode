@@ -23,6 +23,7 @@ public static class AudioCommands
         commands["set-bars-loop"] = SetBarsLoop;
         commands["bars-section-info"] = BarsSectionInfo;
         commands["replace-bars-sections"] = ReplaceBarsSections;
+        commands["replace-bars-same"] = ReplaceBarsSame;
     }
 
     // ---- shared ----
@@ -578,8 +579,76 @@ public static class AudioCommands
         }
     }
 
-    // Makes these entries' table nodes play their whole file, in the exact shape of the table's other nodes that do.
-    private static (string? Path, int Changed) FreeFixedLengths(CommandContext c, string modRoot, List<string> names)
+    // Every entry in the list gets the same audio. The spec on stdin: { source, loopStart, loopEnd, trim, updateTable, indices }, the
+    // loop as replace-bars-audio takes it. All or nothing, like replace-bars-sections.
+    private static JsonNode ReplaceBarsSame(CommandContext c)
+    {
+        string archive = c.Arg(0), internalPath = c.ArgOr(1, "");
+        JsonNode spec = JsonNode.Parse(c.StdinText) ?? throw new InvalidDataException("Empty entry list.");
+        string sourcePath = spec["source"]!.GetValue<string>();
+        byte[] payload = File.ReadAllBytes(sourcePath);
+        var loopStartArg = ParseLoop(spec["loopStart"]?.ToString() ?? "auto");
+        var loopEndArg = ParseLoop(spec["loopEnd"]?.ToString() ?? "auto");
+        bool trim = spec["trim"]?.GetValue<bool>() ?? false;
+        bool updateTable = spec["updateTable"]?.GetValue<bool>() ?? false;
+        int[] indices = [.. spec["indices"]!.AsArray().Select(i => i!.GetValue<int>())];
+        if (indices.Length == 0) throw new InvalidDataException("No entries to replace.");
+        if (indices.Distinct().Count() != indices.Length) throw new InvalidDataException("An entry appears twice in the list.");
+
+        Archives archives = new(c.Containers);
+        byte[] original = File.ReadAllBytes(archive);
+        JsonArray results = [];
+        try
+        {
+            // The first entry of each channel count is encoded from the source; the rest get that same BWAV with the loop it
+            // ended up with, so they all match exactly and a long track isn't encoded again for each entry.
+            Dictionary<int, byte[]> encoded = [];
+            Dictionary<string, double> newSeconds = [];
+            foreach (int index in indices)
+            {
+                var (file, logical) = Source(archives, archive, internalPath);
+                Unwrapped unwrapped = c.Containers.Decompress(file, logical);
+                TotkBarsEntry entry = EntryAt(TotkBars.Parse(unwrapped.Data), index);
+                int channels = entry.Metadata.ChannelCount;
+
+                JsonNode result;
+                if (encoded.TryGetValue(channels, out byte[]? bwav))
+                {
+                    int end = BinaryPrimitives.ReadInt32LittleEndian(bwav.AsSpan(0x10 + 0x3C)), start = BinaryPrimitives.ReadInt32LittleEndian(bwav.AsSpan(0x10 + 0x40));
+                    var loopStart = end == -1 ? (false, true, 0) : (false, false, start);
+                    var loopEnd = end == -1 ? (false, true, 0) : (false, false, end);
+                    result = ReplaceEntryAudio(c, archives, archive, logical, unwrapped, index, loopStart, loopEnd, entry.Name, false, bwav);
+                }
+                else
+                {
+                    result = ReplaceEntryAudio(c, archives, archive, logical, unwrapped, index, loopStartArg, loopEndArg, Path.GetFileName(sourcePath), trim, payload);
+                    bwav = encoded[channels] = File.ReadAllBytes(result["fullBwavTempPath"]!.GetValue<string>());
+                }
+                results.Add(result);
+                newSeconds[entry.Name] = Bwav.SampleCount(bwav) / (double)Math.Max(1u, BinaryPrimitives.ReadUInt32LittleEndian(bwav.AsSpan(0x14)));
+            }
+
+            var (tablePath, changed) = updateTable ? FreeFixedLengths(c, ModRomfsRoot(archive), [.. newSeconds.Keys], newSeconds) : (null, 0);
+            return new JsonObject
+            {
+                ["success"] = true,
+                ["sections"] = results,
+                ["tableUpdatedAt"] = tablePath,
+                ["tableNodesChanged"] = changed,
+            };
+        }
+        catch
+        {
+            File.WriteAllBytes(archive, original);
+            foreach (JsonNode? result in results)
+                if (result?["fullBwavTempPath"]?.GetValue<string>() is { } temp) File.Delete(temp);
+            throw;
+        }
+    }
+
+    // Makes these entries' table nodes play their whole file, in the exact shape of the table's other nodes that do. Given the
+    // new lengths, a node already set to that length is left alone.
+    private static (string? Path, int Changed) FreeFixedLengths(CommandContext c, string modRoot, List<string> names, IReadOnlyDictionary<string, double>? newSeconds = null)
     {
         if (modRoot.Length == 0 || LoadBgmTable(c, modRoot) is not { } loaded) return (null, 0);
 
@@ -587,6 +656,7 @@ public static class AudioCommands
         foreach (Byml node in BgmGraphs(loaded.Table).SelectMany(GraphNodes))
         {
             if (!IsAsset(node) || node["Key"]?.AsString() is not { } key || !names.Contains(key) || !IsFixedLength(node)) continue;
+            if (newSeconds is not null && newSeconds.TryGetValue(key, out double seconds) && Math.Abs(seconds - SecondsOf(node["Duration"])) < 0.0005) continue;
             IDictionary<string, Byml> map = node.AsMap;
             map.Remove("Duration");
             map.Remove("StartOffset");

@@ -20,6 +20,7 @@ import {
     runBridgeSetBarsLoopAsync,
     runBridgeBarsSectionInfoAsync,
     runBridgeReplaceBarsSectionsAsync,
+    runBridgeReplaceBarsSameAsync,
     runBridgeReadBarsAudioManyAsync,
     type BarsEntry,
     type BarsLoopSpec,
@@ -1886,6 +1887,83 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                                     ? ` Music table updated for ${result.tableNodesChanged} fixed-length ${result.tableNodesChanged === 1 ? 'section' : 'sections'}.`
                                     : '';
                                 return `Replaced ${chosen.sections.length} tracks from "${sourceName}"${tableNote ? `.${tableNote} Saved` : ''}`;
+                            },
+                        );
+                    }, async (indices: number[]) => {
+                        const picked = await vscode.window.showOpenDialog({
+                            canSelectMany: false,
+                            title: `Select the audio to put on all ${indices.length} tracks`,
+                            filters: {
+                                'Audio': ['wav', 'bwav', 'mp3', 'ogg', 'oga', 'flac', 'm4a', 'aac', 'opus', 'wma', 'aiff', 'aif'],
+                                'All files': ['*'],
+                            },
+                        });
+                        if (!picked || picked.length === 0) {
+                            return undefined;
+                        }
+                        const sourcePath = picked[0].fsPath;
+                        const sourceName = path.basename(sourcePath);
+
+                        const loops = await promptForBarsLoopPoints(hostExe, sourcePath, sourceName);
+                        if (!loops) {
+                            return undefined;
+                        }
+
+                        // A track the music table cuts off at a set time would stop early (or leave a gap) with new audio.
+                        const info = await runBridgeBarsSectionInfoAsync(hostExe, barsPath, filePath, indices, getBridgeEnv());
+                        const fixed = (info.sections ?? []).filter((s) => s.fixedSeconds !== null && s.fixedSeconds !== undefined);
+                        let updateTable = false;
+                        if (fixed.length > 0) {
+                            const choice = await vscode.window.showQuickPick(
+                                [
+                                    {
+                                        label: 'Play the whole new track',
+                                        description: 'Updates the music table in your mod for these tracks, unless the new length already matches',
+                                        value: true,
+                                    },
+                                    {
+                                        label: 'Keep the table\'s lengths',
+                                        description: 'The game moves on at the old time, whatever the new length is',
+                                        value: false,
+                                    },
+                                ],
+                                {
+                                    title: `${fixed.length === 1 ? fixed[0]!.name + ' has' : fixed.length + ' of these tracks have'} a fixed length in the music table`,
+                                    placeHolder: fixed.map((s) => `${s.name}: ${s.fixedSeconds!.toFixed(3)}s`).join(', '),
+                                },
+                            );
+                            if (!choice) {
+                                return undefined;
+                            }
+                            updateTable = choice.value;
+                        }
+
+                        return applyBarsEdit(
+                            `Encoding and replacing ${indices.length} tracks…`,
+                            (barsFile) => runBridgeReplaceBarsSameAsync(
+                                hostExe, barsFile, filePath,
+                                {
+                                    source: sourcePath,
+                                    loopStart: loops.start,
+                                    loopEnd: loops.end,
+                                    trim: !!loops.trimAfterLoop,
+                                    updateTable,
+                                    indices,
+                                },
+                                getBridgeEnv(),
+                            ),
+                            (result) => {
+                                const tableNote = result.tableUpdatedAt
+                                    ? ` Music table updated for ${result.tableNodesChanged} fixed-length ${result.tableNodesChanged === 1 ? 'track' : 'tracks'}.`
+                                    : '';
+                                // No table edit is also right when the new length matches; it's only a problem when the table can't be found.
+                                if (updateTable && !result.tableUpdatedAt && !/[\\/](?:sound|voice)[\\/]resource[\\/][^\\/]+$/i.test(barsPath)) {
+                                    void vscode.window.showWarningMessage(
+                                        'The music table was not updated, so fixed-length tracks still move on at their old times. ' +
+                                        'Your BARS needs to be under a Sound/Resource folder for the tool to find where the table goes.',
+                                    );
+                                }
+                                return `Put "${sourceName}" on ${indices.length} tracks${tableNote ? `.${tableNote} Saved` : ''}`;
                             },
                         );
                     });

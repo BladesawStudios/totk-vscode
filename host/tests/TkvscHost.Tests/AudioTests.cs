@@ -581,6 +581,94 @@ public class AudioTests
         Assert.Equal(0f, two["FadeOutTime"]!["Value"]!.Float);
     }
 
+    // Sets the channel count an entry's AMTA asks for (ManyBars makes them all mono).
+    private static void SetChannels(byte[] bars, int entry, int channels)
+    {
+        int count = (int)BinaryPrimitives.ReadUInt32LittleEndian(bars.AsSpan(12));
+        int amta = (int)BinaryPrimitives.ReadUInt32LittleEndian(bars.AsSpan(0x10 + 4 * count + entry * 8));
+        bars[amta + 0x31] = (byte)channels;
+    }
+
+    private static string SameSpec(string source, string loopStart, string loopEnd, bool trim, bool updateTable, params int[] indices)
+        => new System.Text.Json.Nodes.JsonObject
+        {
+            ["source"] = source,
+            ["loopStart"] = loopStart,
+            ["loopEnd"] = loopEnd,
+            ["trim"] = trim,
+            ["updateTable"] = updateTable,
+            ["indices"] = new System.Text.Json.Nodes.JsonArray([.. indices.Select(i => (System.Text.Json.Nodes.JsonNode)i)]),
+        }.ToJsonString();
+
+    [Fact]
+    public void OneTrackGoesOnEveryEntryWithTheSameLoop()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        byte[] layout = File.ReadAllBytes(bars);
+        SetChannels(layout, 2, 2);
+        File.WriteAllBytes(bars, layout);
+        string source = w.Path("track.wav");
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 24000, Channels = [Tone(6000), Tone(6000)] }));
+
+        var result = w.Run("replace-bars-same", [bars, ""], SameSpec(source, "500", "4000", true, false, 0, 1, 2));
+
+        byte[] written = File.ReadAllBytes(bars);
+        TotkBars parsed = TotkBars.Parse(written);
+        byte[] Embedded(int i) => written[parsed.Entries[i].BwavOffset..(parsed.Entries[i].BwavOffset + Bwav.Build([Tone(4000)], 24000).Length)];
+        foreach (var section in result["sections"]!.AsArray()) File.Delete(section!["fullBwavTempPath"]!.GetValue<string>());
+
+        // Cut at the loop end once, and the same everywhere.
+        foreach (int i in new[] { 0, 1, 2 })
+        {
+            Assert.Equal((500, 4000), LoopIn(written.AsSpan(parsed.Entries[i].BwavOffset)));
+            Assert.Equal(4000, Bwav.SampleCount(written.AsSpan(parsed.Entries[i].BwavOffset)));
+        }
+        // The two mono entries hold the very same encoded bytes; the stereo one kept both channels.
+        Assert.Equal(Embedded(0), Embedded(1));
+        Assert.Equal(1, Bwav.ChannelCount(written.AsSpan(parsed.Entries[0].BwavOffset)));
+        Assert.Equal(2, Bwav.ChannelCount(written.AsSpan(parsed.Entries[2].BwavOffset)));
+        Assert.Equal(3, result["sections"]!.AsArray().Count);
+    }
+
+    [Fact]
+    public void OneTrackOnEveryEntryCanFreeOnlyTheFixedLengthsItChanges()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        string table = Path.Combine(w.Root, "Sound", "Bgm", "bgm.Product.100.byml");
+        string source = w.Path("track.wav");
+
+        // Song_02 is fixed at 0.1s; a track of exactly that length changes nothing in the table.
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 32000, Channels = [Tone(3200)] }));
+        byte[] before = File.ReadAllBytes(table);
+        var same = w.Run("replace-bars-same", [bars, ""], SameSpec(source, "none", "none", false, true, 2, 0));
+        foreach (var section in same["sections"]!.AsArray()) File.Delete(section!["fullBwavTempPath"]!.GetValue<string>());
+        Assert.Null(same["tableUpdatedAt"]);
+        Assert.Equal(before, File.ReadAllBytes(table));
+
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 32000, Channels = [Tone(5000)] }));
+        var longer = w.Run("replace-bars-same", [bars, ""], SameSpec(source, "none", "none", false, true, 2, 0));
+        foreach (var section in longer["sections"]!.AsArray()) File.Delete(section!["fullBwavTempPath"]!.GetValue<string>());
+        Assert.Equal(1, longer["tableNodesChanged"]!.GetValue<int>());
+        Assert.True(Byml.FromFile(table)["BGM"]!["Song"]!["Node"]!.AsArray.First(n => n["Key"]?.AsString() == "Song_02")["IsDurationAuto"]!.Bool);
+    }
+
+    [Fact]
+    public void OneTrackOnEveryEntryIsAllOrNothing()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        byte[] before = File.ReadAllBytes(bars);
+        string source = w.Path("track.wav");
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 24000, Channels = [Tone(3000)] }));
+
+        Assert.Throws<IndexOutOfRangeException>(() => w.Run("replace-bars-same", [bars, ""], SameSpec(source, "auto", "auto", false, false, 0, 1, 9)));
+        Assert.Equal(before, File.ReadAllBytes(bars));
+        Assert.Throws<InvalidDataException>(() => w.Run("replace-bars-same", [bars, ""], SameSpec(source, "auto", "auto", false, false, 0, 0)));
+        Assert.Equal(before, File.ReadAllBytes(bars));
+    }
+
     [Fact]
     public void AGroupThatFailsPartWayLeavesTheBarsAsItWas()
     {

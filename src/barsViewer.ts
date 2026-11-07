@@ -24,6 +24,7 @@ export function openBarsViewer(
     replaceAudio?: (index: number) => Promise<BarsEntry[] | undefined>,
     editLoop?: (index: number) => Promise<BarsEntry[] | undefined>,
     replaceGroup?: (indices: number[]) => Promise<BarsEntry[] | undefined>,
+    replaceSame?: (indices: number[]) => Promise<BarsEntry[] | undefined>,
 ): void {
     const existing = panels.get(key);
 
@@ -63,9 +64,10 @@ export function openBarsViewer(
     };
 
     panel.webview.onDidReceiveMessage(async (message) => {
-        if (message.type === 'replace-group' && replaceGroup) {
+        const groupEdit = message.type === 'replace-group' ? replaceGroup : message.type === 'replace-same' ? replaceSame : undefined;
+        if (groupEdit) {
             try {
-                const newEntries = await replaceGroup(message.indices);
+                const newEntries = await groupEdit(message.indices);
                 if (newEntries) {
                     for (const index of message.indices) {
                         if (newEntries[index]) {
@@ -490,7 +492,8 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
         <span>BARS: ${escapeHtml(barsName)}</span>
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             ${canReplace ? `<button id="select-shown" class="toolbar-btn" title="Select every entry the search is showing, or clear them if they all are">Select shown</button>
-            <button id="replace-group" class="toolbar-btn primary" disabled title="Cut one audio file across the selected entries">Select tracks to replace together</button>` : ''}
+            <button id="replace-group" class="toolbar-btn primary" disabled title="Cut one audio file into sections, one for each selected entry, in the order the game plays them">Select tracks to replace together</button>
+            <button id="replace-same" class="toolbar-btn primary" disabled title="Put the same audio, with the same loop points, on every selected entry">Use one track for all</button>` : ''}
             <span id="search-count"></span>
             <input id="search-input" type="search" placeholder="Search entries…" spellcheck="false" autocomplete="off" />
             <label for="sort-select" style="font-size: 13px; color: var(--vscode-descriptionForeground);">Sort by:</label>
@@ -735,12 +738,19 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
         const selectShown = document.getElementById('select-shown');
         let groupBusy = false;
 
+        const sameButton = document.getElementById('replace-same');
+
         function refreshGroup() {
             if (!groupButton) return;
-            groupButton.disabled = groupBusy || selected.size < 2;
+            const ready = !groupBusy && selected.size >= 2;
+            groupButton.disabled = !ready;
             groupButton.textContent = groupBusy
                 ? 'Replacing…'
-                : selected.size < 2 ? 'Select tracks to replace together' : 'Replace ' + selected.size + ' tracks from one file…';
+                : selected.size < 2 ? 'Select tracks to replace together' : 'Cut one file across ' + selected.size + ' tracks…';
+            // Only offered once there's a selection, so a lone hint button isn't doubled.
+            sameButton.style.display = selected.size >= 2 && !groupBusy ? '' : 'none';
+            sameButton.disabled = !ready;
+            sameButton.textContent = 'Use one track for all ' + selected.size + '…';
         }
 
         document.querySelector('.entry-list').addEventListener('change', ev => {
@@ -764,11 +774,14 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
             });
         }
         if (groupButton) {
-            groupButton.addEventListener('click', () => {
-                groupBusy = true;
-                refreshGroup();
-                vscode.postMessage({ type: 'replace-group', indices: Array.from(selected) });
-            });
+            for (const [button, type] of [[groupButton, 'replace-group'], [sameButton, 'replace-same']]) {
+                button.addEventListener('click', () => {
+                    groupBusy = true;
+                    refreshGroup();
+                    vscode.postMessage({ type, indices: Array.from(selected) });
+                });
+            }
+            refreshGroup();
         }
 
         function initPlayer(idx) {
