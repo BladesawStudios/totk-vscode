@@ -404,6 +404,11 @@
         "icon": "$(play)"
       },
       {
+        "command": "totk-editor.previewRecipe",
+        "title": "TKVSC: Preview Recipe Changes (.recipe.yaml)",
+        "icon": "$(diff)"
+      },
+      {
         "command": "totk-editor.openPack",
         "title": "TKVSC: Open Archive (.pack, .sarc, .genvb, .blarc, .bfarc, .bkres, .bntx, .bfres)",
         "icon": "$(package)"
@@ -892,6 +897,11 @@
           "command": "totk-editor.runRecipe",
           "when": "resourceFilename =~ /\\.recipe\\.ya?ml$/",
           "group": "navigation@91"
+        },
+        {
+          "command": "totk-editor.previewRecipe",
+          "when": "resourceFilename =~ /\\.recipe\\.ya?ml$/",
+          "group": "navigation@92"
         },
         {
           "command": "totk-editor.openHexEditor",

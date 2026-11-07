@@ -13,26 +13,34 @@ namespace TkvscHost;
 /// </summary>
 /// <remarks>
 /// <code>
+/// include: shared.recipe.yaml
 /// color: "#FF0000"
 ///
 /// Effect/static.Nin_Ounce_NVN2.vsetb.byml.zs:
 ///   Esets/Npc_Navi_*/*.emitter: tint $color
 ///
-/// Model/Npc_Navi.Npc_Navi.bfres.zs:
-///   Models/Npc_Navi/Materials/*.fmat: tint $color only ns_param_color[0-5]
+/// Tex/Npc_Navi_Body_Alb.00.bntx.zs:
+///   '*': tint $color
+///
+/// Tex/Copy.bntx.zs: copy Tex/Original.bntx.zs
 /// </code>
-/// A key with a plain value is a variable (<c>$color</c> or <c>${color}</c> in a step). A key with a map under it is a file
-/// in the game's RomFS, and each key of the map is a pattern for the files inside it (<c>*</c> inside a folder, <c>**</c>
-/// across folders) with the step, or a list of steps, to run on them. A file with steps directly under it (a string or a
-/// list) runs them on the file itself. A step is <c>tint COLOR [only REGEX]</c> or <c>replace FIND -> WITH</c>. The changed
-/// files are written to a <c>romfs</c> folder next to the recipe, and each run starts again from the game's own files.
+/// A key with a plain value is a variable (<c>$color</c> or <c>${color}</c> in a step); <c>include</c> names recipes (one
+/// or a list) that run first and share their variables with this one. A key with a map under it is a file in the game's
+/// RomFS, and each key of the map is a pattern for the entries inside it (<c>*</c> inside a folder, <c>**</c> across
+/// folders; a texture file's entries are its textures) with the step, or list of steps, to run on them. A file with steps
+/// directly under it (a string or a list) runs them on the file itself. A step is <c>tint COLOR [only REGEX]</c>,
+/// <c>replace FIND -> WITH</c>, <c>copy FILE</c> (the file becomes a copy of another) or <c>delete</c> (the file, or the
+/// matching entries, are removed). The changed files are written to a <c>romfs</c> folder next to the recipe, and each run
+/// starts again from the game's own files. A preview runs the same recipe into a temporary folder and reports what would
+/// change without keeping it.
 /// </remarks>
 public static partial class RecipeCommands
 {
     public static void Register(Dictionary<string, CommandHandler> commands)
     {
         commands["recipe-info"] = Info;
-        commands["apply-recipe"] = Apply;
+        commands["apply-recipe"] = c => Run(c, preview: false);
+        commands["preview-recipe"] = c => Run(c, preview: true);
     }
 
     private const string OutputFolder = "romfs";
@@ -56,8 +64,14 @@ public static partial class RecipeCommands
         _ => [Scalar(value)],
     };
 
-    private static Recipe Load(string path)
+    private static bool IsStep(string text) => Regex.IsMatch(text, @"^(tint|replace|copy|delete)(\s|$)");
+
+    private static Recipe Load(string path, HashSet<string>? loading = null)
     {
+        path = Path.GetFullPath(path);
+        loading ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!loading.Add(path)) throw new InvalidDataException($"{Path.GetFileName(path)} includes itself (directly or through another recipe)");
+
         object? root;
         try
         {
@@ -68,25 +82,39 @@ public static partial class RecipeCommands
             throw new InvalidDataException($"{Path.GetFileName(path)}, line {error.Start.Line}: {error.InnerException?.Message ?? error.Message}");
         }
 
-        if (root is not Dictionary<object, object> top) throw new InvalidDataException("A recipe is a map of variables and files");
+        if (root is not Dictionary<object, object> top) throw new InvalidDataException($"{Path.GetFileName(path)}: a recipe is a map of variables and files");
 
-        Dictionary<string, string> variables = new(StringComparer.Ordinal);
+        Dictionary<string, string> included = new(StringComparer.Ordinal), own = new(StringComparer.Ordinal);
         List<Edit> edits = [];
         foreach (var (key, value) in top)
         {
             string name = Scalar(key);
-            if (value is Dictionary<object, object> entries)
+            if (name == "include")
+            {
+                foreach (string other in StepList(value))
+                {
+                    string target = Path.Combine(Path.GetDirectoryName(path)!, other);
+                    if (!File.Exists(target)) throw new FileNotFoundException($"{Path.GetFileName(path)} includes {other}, which does not exist");
+                    Recipe sub = Load(target, loading);
+                    foreach (var (variable, fallback) in sub.Variables) included[variable] = fallback;
+                    edits.AddRange(sub.Edits);
+                }
+            }
+            else if (value is Dictionary<object, object> entries)
                 foreach (var (pattern, steps) in entries) edits.Add(new Edit(name, Scalar(pattern), StepList(steps)));
             else if (value is List<object>)
                 edits.Add(new Edit(name, null, StepList(value)));
-            else if (Scalar(value).StartsWith("tint ") || Scalar(value).StartsWith("replace "))
+            else if (IsStep(Scalar(value)))
                 edits.Add(new Edit(name, null, [Scalar(value)]));
             else
-                variables[name] = Scalar(value);
+                own[name] = Scalar(value);
         }
 
-        if (edits.Count == 0) throw new InvalidDataException("The recipe has no files to change");
-        return new Recipe(variables, edits);
+        loading.Remove(path);
+        // A variable this recipe sets wins over the same one in an included recipe, so one line drives every part.
+        foreach (var (variable, fallback) in own) included[variable] = fallback;
+        if (edits.Count == 0) throw new InvalidDataException($"{Path.GetFileName(path)}: the recipe has no files to change");
+        return new Recipe(included, edits);
     }
 
     private static Dictionary<string, string> WithOverrides(Recipe recipe, IEnumerable<string> overrides)
@@ -119,7 +147,8 @@ public static partial class RecipeCommands
         => Placeholder().Replace(text, match =>
         {
             string name = match.Groups[1].Success ? match.Groups[1].Value.Trim() : match.Groups[2].Value;
-            if (name.All(char.IsAsciiDigit)) return match.Value; // $1 in a replace is the regex's own group
+            // A digit-only name is a regex group ($1), not a variable.
+            if (name.All(char.IsDigit)) return match.Value;
             return variables.TryGetValue(name, out string? value) ? value : throw new ArgumentException($"The recipe uses ${name} but has no such variable");
         });
 
@@ -137,89 +166,271 @@ public static partial class RecipeCommands
         return new Regex(regex.Append('$').ToString(), RegexOptions.CultureInvariant);
     }
 
-    private static JsonNode Apply(CommandContext c)
+    // ---- running ----
+
+    private static JsonNode Run(CommandContext c, bool preview)
     {
         string recipePath = Path.GetFullPath(c.Arg(0));
         Recipe recipe = Load(recipePath);
         Dictionary<string, string> variables = WithOverrides(recipe, c.Args.Skip(1));
         if (c.Romfs.Length == 0) throw new InvalidOperationException("Set the game's RomFS folder first: recipes read the game's own files from it.");
 
-        string outputRoot = Path.Combine(Path.GetDirectoryName(recipePath)!, OutputFolder);
+        // A preview is a real run into a folder that is thrown away, so what it reports is exactly what a run would do.
+        string outputRoot = preview
+            ? Path.Combine(Path.GetTempPath(), "tkvsc-recipe-" + Guid.NewGuid().ToString("N")[..8])
+            : Path.Combine(Path.GetDirectoryName(recipePath)!, OutputFolder);
+        try
+        {
+            return Execute(c, recipe, variables, outputRoot, preview);
+        }
+        finally
+        {
+            if (preview && Directory.Exists(outputRoot)) Directory.Delete(outputRoot, recursive: true);
+        }
+    }
+
+    private static JsonNode Execute(CommandContext c, Recipe recipe, Dictionary<string, string> variables, string outputRoot, bool preview)
+    {
         FileKinds kinds = new(c.Env, c.Containers, c.Plugin);
         FormatHandlers handlers = new(c.Env, c.Containers, kinds, c.Plugin);
         Archives archives = new(c.Containers);
 
         // Every step is read and its variables filled in before any file is touched, so a mistake stops the run early.
-        List<(Edit Edit, List<Func<string, string>> Steps)> plan = [];
-        foreach (Edit edit in recipe.Edits) plan.Add((edit, [.. edit.Steps.Select(step => Step(step, variables))]));
+        List<(Edit Edit, List<Op> Ops)> plan = [];
+        foreach (Edit edit in recipe.Edits)
+        {
+            List<Op> ops = [.. edit.Steps.Select(step => Step(step, variables))];
+            Validate(edit, ops);
+            plan.Add((edit, ops));
+        }
 
         HashSet<string> copied = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, int> changedByFile = new(StringComparer.OrdinalIgnoreCase);
-        JsonArray warnings = [];
+        JsonArray warnings = [], edited = [];
+        Dictionary<string, JsonArray> entriesByFile = new(StringComparer.OrdinalIgnoreCase);
         using IDisposable fit = Vfx3Text.FitToStorage();
-        foreach (var (edit, steps) in plan)
+        foreach (var (edit, planned) in plan)
         {
+            List<Op> ops = planned;
             string relative = edit.File.Replace('\\', '/').TrimStart('/');
-            string source = Path.Combine(c.Romfs, relative), output = Path.Combine(outputRoot, relative);
-            if (!File.Exists(source)) throw new FileNotFoundException($"{relative} is not in the RomFS ({c.Romfs})");
-            if (copied.Add(output))
+            string output = Path.Combine(outputRoot, relative);
+            JsonArray details = entriesByFile.TryGetValue(relative, out JsonArray? known) ? known : entriesByFile[relative] = [];
+
+            if (edit.Pattern is null && ops[0] is DeleteOp)
             {
+                bool had = File.Exists(output) || File.Exists(Path.Combine(c.Romfs, relative));
+                if (File.Exists(output)) File.Delete(output);
+                copied.Remove(output);
+                if (!had) warnings.Add($"{relative}: there is no such file to delete");
+                changedByFile[relative] = changedByFile.GetValueOrDefault(relative);
+                edited.Add(Summary(relative, null, had ? 1 : 0, had ? 1 : 0));
+                continue;
+            }
+
+            if (ops[0] is CopyOp copy)
+            {
+                string from = copy.From.Replace('\\', '/').TrimStart('/');
+                string made = Path.Combine(outputRoot, from), game = Path.Combine(c.Romfs, from);
+                string source = File.Exists(made) ? made : game;
+                if (!File.Exists(source)) throw new FileNotFoundException($"{from} (copied to {relative}) is not in the RomFS ({c.Romfs})");
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
                 File.Copy(source, output, overwrite: true);
+                copied.Add(output);
+                changedByFile[relative] = changedByFile.GetValueOrDefault(relative) + 1;
+                edited.Add(Summary(relative, null, 1, 1));
+                details.Add(new JsonObject { ["name"] = "(whole file)", ["lines"] = new JsonArray(new JsonObject { ["from"] = "", ["to"] = $"a copy of {from}" }) });
+                ops = [.. ops.Skip(1)];
+                if (ops.Count == 0) continue;
+            }
+            else
+            {
+                string source = Path.Combine(c.Romfs, relative);
+                if (!File.Exists(source) && !File.Exists(output))
+                {
+                    // A preview reports a missing file and goes on, so every mistake shows at once.
+                    if (!preview) throw new FileNotFoundException($"{relative} is not in the RomFS ({c.Romfs})");
+                    warnings.Add($"{relative}: is not in the RomFS");
+                    edited.Add(Summary(relative, edit.Pattern, 0, 0));
+                    continue;
+                }
+
+                if (copied.Add(output))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+                    File.Copy(source, output, overwrite: true);
+                }
             }
 
             string Transform(string text)
             {
-                foreach (var step in steps) text = step(text);
+                foreach (var op in ops) if (op is TextOp t) text = t.Text(text);
                 return text;
             }
 
-            int changed;
+            int changed, matchedCount = 0;
             if (edit.Pattern is { } pattern)
             {
                 Regex glob = Glob(pattern);
-                int matched = 0;
-                changed = archives.EditEntries(output, (name, data) =>
+                if (ops[0] is DeleteOp)
                 {
-                    if (!glob.IsMatch(name)) return null;
-                    matched++;
-                    string? kind = kinds.KindOf(name, data);
-                    if (kind is null)
+                    List<string> names = [.. archives.ListArchiveFiles(output, "").Where(n => glob.IsMatch(n))];
+                    matchedCount = names.Count;
+                    foreach (string name in names)
                     {
-                        warnings.Add($"{relative}: {name} is not a type that can be edited");
-                        return null;
+                        archives.DeleteArchiveEntry(output, name);
+                        details.Add(new JsonObject { ["name"] = name, ["lines"] = new JsonArray(new JsonObject { ["from"] = "(entry)", ["to"] = "deleted" }) });
                     }
 
-                    string text = handlers.ReadContent(data, name);
-                    string edited = Transform(text);
-                    return edited == text ? null : handlers.WriteContent(kind, data, edited, name);
-                });
-                if (matched == 0) warnings.Add($"{relative}: nothing inside it matched {pattern}");
+                    changed = names.Count;
+                }
+                else if (archives.ResolveBntx(output, "") is { } bntx)
+                    changed = EditTextures(c, output, bntx.Data, glob, ops, details, ref matchedCount);
+                else
+                {
+                    int matched = 0;
+                    changed = archives.EditEntries(output, (name, data) =>
+                    {
+                        if (!glob.IsMatch(name)) return null;
+                        matched++;
+                        string? kind = kinds.KindOf(name, data);
+                        if (kind is null)
+                        {
+                            warnings.Add($"{relative}: {name} is not a type that can be edited");
+                            return null;
+                        }
+
+                        string text = handlers.ReadContent(data, name);
+                        string after = Transform(text);
+                        if (after == text) return null;
+                        details.Add(new JsonObject { ["name"] = name, ["lines"] = LineChanges(text, after) });
+                        return handlers.WriteContent(kind, data, after, name);
+                    });
+                    matchedCount = matched;
+                }
+
+                if (matchedCount == 0) warnings.Add($"{relative}: nothing inside it matched {pattern}");
             }
             else
             {
+                matchedCount = 1;
                 byte[] data = File.ReadAllBytes(output);
                 string kind = kinds.KindOf(output, data) ?? throw new InvalidOperationException($"{relative} is not a type that can be edited");
                 string text = handlers.ReadContent(data, output);
-                string edited = Transform(text);
-                changed = edited == text ? 0 : 1;
-                if (changed > 0) File.WriteAllBytes(output, handlers.WriteContent(kind, data, edited, output));
+                string after = Transform(text);
+                changed = after == text ? 0 : 1;
+                if (changed > 0)
+                {
+                    File.WriteAllBytes(output, handlers.WriteContent(kind, data, after, output));
+                    details.Add(new JsonObject { ["name"] = "(whole file)", ["lines"] = LineChanges(text, after) });
+                }
             }
 
             changedByFile[relative] = changedByFile.GetValueOrDefault(relative) + changed;
+            edited.Add(Summary(relative, edit.Pattern, matchedCount, changed));
         }
 
-        return new JsonObject
+        JsonObject result = new()
         {
             ["output"] = outputRoot,
             ["files"] = new JsonArray([.. changedByFile.Select(file => (JsonNode)new JsonObject { ["file"] = file.Key, ["changed"] = file.Value })]),
+            ["edits"] = edited,
             ["warnings"] = warnings,
         };
+        if (preview)
+        {
+            result["preview"] = true;
+            result["details"] = new JsonObject(entriesByFile.Select(file => KeyValuePair.Create<string, JsonNode?>(file.Key, file.Value)));
+        }
+
+        return result;
+    }
+
+    private static JsonObject Summary(string file, string? pattern, int matched, int changed)
+        => new() { ["file"] = file, ["pattern"] = pattern, ["matched"] = matched, ["changed"] = changed };
+
+    // The lines that differ between two texts, as far as it is clear which line became which.
+    private static JsonArray LineChanges(string before, string after)
+    {
+        const int Limit = 8;
+        string[] a = before.Split('\n'), b = after.Split('\n');
+        JsonArray lines = [];
+        if (a.Length == b.Length)
+        {
+            for (int i = 0; i < a.Length && lines.Count < Limit; i++)
+                if (a[i] != b[i]) lines.Add(new JsonObject { ["from"] = a[i].Trim(), ["to"] = b[i].Trim() });
+        }
+        else lines.Add(new JsonObject { ["from"] = $"{a.Length} lines", ["to"] = $"{b.Length} lines" });
+
+        return lines;
+    }
+
+    private static int EditTextures(CommandContext c, string output, byte[] bntx, Regex glob, List<Op> ops, JsonArray details, ref int matched)
+    {
+        if (ops.OfType<TextOp>().FirstOrDefault(op => op.Pixels is null) is { } unsupported)
+            throw new InvalidDataException($"'{unsupported.Name}' cannot change a texture ({Path.GetFileName(output)}); textures can be tinted");
+
+        int changed = 0;
+        foreach (string name in BntxNames.List(bntx).Where(n => glob.IsMatch(n)))
+        {
+            matched++;
+            string? before = null, afterColour = null;
+            byte[]? updated = Textures.EditBntxPixels(bntx, name, rgba =>
+            {
+                before = MeanColour(rgba);
+                foreach (var op in ops) if (op is TextOp { Pixels: { } pixels }) rgba = pixels(rgba);
+                afterColour = MeanColour(rgba);
+                return rgba;
+            });
+            if (updated is null) continue;
+            bntx = updated;
+            changed++;
+            details.Add(new JsonObject { ["name"] = name, ["lines"] = new JsonArray(new JsonObject { ["from"] = $"average colour {before}", ["to"] = $"average colour {afterColour}" }) });
+        }
+
+        if (changed > 0)
+        {
+            if (c.Env.IsCompressedName(output)) bntx = c.Containers.Compress(bntx, output, wasZstd: true, wasYaz0: false);
+            File.WriteAllBytes(output, bntx);
+        }
+
+        return changed;
+    }
+
+    private static string MeanColour(byte[] rgba)
+    {
+        long r = 0, g = 0, b = 0, n = 0;
+        for (int i = 0; i + 3 < rgba.Length; i += 4)
+        {
+            if (rgba[i + 3] == 0) continue;
+            r += rgba[i]; g += rgba[i + 1]; b += rgba[i + 2]; n++;
+        }
+
+        return n == 0 ? "#000000" : $"#{r / n:X2}{g / n:X2}{b / n:X2}";
     }
 
     // ---- the steps ----
 
-    private static Func<string, string> Step(string step, Dictionary<string, string> variables)
+    private abstract record Op;
+
+    /// <summary>A change to a file's text, and to the pixels of a texture when the step can do that too.</summary>
+    private sealed record TextOp(Func<string, string> Text, Func<byte[], byte[]>? Pixels, string Name) : Op;
+
+    private sealed record CopyOp(string From) : Op;
+
+    private sealed record DeleteOp : Op;
+
+    private static void Validate(Edit edit, List<Op> ops)
+    {
+        for (int i = 0; i < ops.Count; i++)
+        {
+            if (ops[i] is CopyOp && (edit.Pattern is not null || i > 0))
+                throw new InvalidDataException($"{edit.File}: 'copy' is a step for a whole file and has to come first");
+            if (ops[i] is DeleteOp && ops.Count > 1)
+                throw new InvalidDataException($"{edit.File}: 'delete' cannot be combined with other steps");
+        }
+    }
+
+    private static Op Step(string step, Dictionary<string, string> variables)
     {
         step = step.Trim();
         int space = step.IndexOf(' ');
@@ -230,7 +441,7 @@ public static partial class RecipeCommands
             {
                 int only = rest.IndexOf(" only ", StringComparison.Ordinal);
                 string color = Substitute(only < 0 ? rest : rest[..only], variables).Trim();
-                return Tint.Make(color, only < 0 ? null : Substitute(rest[(only + 6)..], variables).Trim());
+                return new TextOp(Tint.Make(color, only < 0 ? null : Substitute(rest[(only + 6)..], variables).Trim()), Tint.Pixels(color), "tint");
             }
             case "replace":
             {
@@ -238,14 +449,20 @@ public static partial class RecipeCommands
                 if (arrow < 0) throw new InvalidDataException($"\"{step}\" needs ' -> ': replace FIND -> WITH");
                 Regex find = new(Substitute(rest[..arrow], variables), RegexOptions.Multiline | RegexOptions.CultureInvariant);
                 string with = Substitute(rest[(arrow + 4)..], variables).Replace("\\n", "\n");
-                return text => find.Replace(text, with);
+                return new TextOp(text => find.Replace(text, with), null, "replace");
             }
+            case "copy":
+                if (rest.Length == 0) throw new InvalidDataException("\"copy\" needs a file: copy Some/File.ext");
+                return new CopyOp(Substitute(rest, variables).Trim());
+            case "delete":
+                if (rest.Length > 0) throw new InvalidDataException($"\"{step}\": delete takes no arguments");
+                return new DeleteOp();
             default:
-                throw new InvalidDataException($"Unknown step \"{step}\"; the steps are 'tint COLOR [only REGEX]' and 'replace FIND -> WITH'");
+                throw new InvalidDataException($"Unknown step \"{step}\"; the steps are 'tint COLOR [only REGEX]', 'replace FIND -> WITH', 'copy FILE' and 'delete'");
         }
     }
 
-    /// <summary>Recolours the colours in an emitter's or a material's YAML, keeping each one's brightness.</summary>
+    /// <summary>Recolours the colours in an emitter's or a material's YAML, or the pixels of a texture, keeping each one's brightness.</summary>
     internal static partial class Tint
     {
         [GeneratedRegex(@"\[\s*(-?[\d.eE+-]+)\s*,\s*(-?[\d.eE+-]+)\s*,\s*(-?[\d.eE+-]+)\s*(?:,\s*(-?[\d.eE+-]+)\s*)?\]")]
@@ -260,11 +477,32 @@ public static partial class RecipeCommands
         [GeneratedRegex(@"^\s*[\w/]+/\w+:|^\s*\w+:\s*$")]
         private static partial Regex OtherKey();
 
+        private static double[] Target(string color)
+        {
+            string digits = color.Trim().Trim('"', '\'').TrimStart('#');
+            if (digits.Length is not (6 or 8) || !digits.All(Uri.IsHexDigit)) throw new ArgumentException($"Colour \"{color}\" is not #RRGGBB");
+            return [.. Enumerable.Range(0, 3).Select(i => Convert.ToInt32(digits.Substring(i * 2, 2), 16) / 255.0)];
+        }
+
+        /// <summary>The same recolour for the pixels of a texture (RGBA8): each pixel becomes the colour at its own brightness; alpha stays.</summary>
+        public static Func<byte[], byte[]> Pixels(string color)
+        {
+            double[] target = Target(color);
+            return rgba =>
+            {
+                for (int i = 0; i + 3 < rgba.Length; i += 4)
+                {
+                    double brightness = Math.Max(rgba[i], Math.Max(rgba[i + 1], rgba[i + 2])) / 255.0;
+                    for (int k = 0; k < 3; k++) rgba[i + k] = (byte)Math.Clamp((int)Math.Round(target[k] * brightness * 255.0), 0, 255);
+                }
+
+                return rgba;
+            };
+        }
+
         public static Func<string, string> Make(string color, string? only)
         {
-            string digits = color.TrimStart('#');
-            if (digits.Length is not (6 or 8) || !digits.All(Uri.IsHexDigit)) throw new ArgumentException($"Colour \"{color}\" is not #RRGGBB");
-            double[] target = [.. Enumerable.Range(0, 3).Select(i => Convert.ToInt32(digits.Substring(i * 2, 2), 16) / 255.0)];
+            double[] target = Target(color);
             Regex? restriction = only is null ? null : new Regex(only, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
             string Number(double value) => Math.Round(value, 6).ToString("R", CultureInfo.InvariantCulture);

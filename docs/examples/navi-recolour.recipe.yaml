@@ -29,3 +29,9 @@ Model/Npc_Navi.anim.bfres.zs:
     - 'replace ^textures:$ -> textures:\n- Npc_Navi_Body_Alb.01'
     - 'replace \z -> - material: Mt_Body\n  patterns:\n  - {name: _a0, texture: Npc_Navi_Body_Alb.01}\n- material: Mt_Body_AlphaMask\n  patterns:\n  - {name: _a0, texture: Npc_Navi_Body_Alb.01}\n'
     - 'replace bindIndices: .* -> bindIndices: [65535, 65535, 65535]'
+
+Tex/Npc_Navi_Body_Alb.00.bntx.zs:
+  '*': tint $color
+
+Tex/Npc_Navi_Body_Alb.01.bntx.zs:
+  '*': tint $color

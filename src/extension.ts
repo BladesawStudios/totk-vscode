@@ -2399,10 +2399,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     context.subscriptions.push(openArchive);
 
     // A recipe makes a mod's files from the game's own, from a few variables (see RecipeCommands in the host).
-    const runRecipe = vscode.commands.registerCommand('totk-editor.runRecipe', async (resource?: vscode.Uri) => {
+    interface RecipeResult {
+        output: string;
+        files: { file: string; changed: number }[];
+        warnings: string[];
+        preview?: boolean;
+        details?: Record<string, { name: string; lines: { from: string; to: string }[] }[]>;
+    }
+
+    // Picks the recipe and asks for each of its variables; undefined if the user backs out.
+    const askRecipe = async (resource?: vscode.Uri): Promise<{ hostExe: string; uri: vscode.Uri; name: string; given: string[] } | undefined> => {
         const hostExe = getHost();
         if (!hostExe) {
-            return;
+            return undefined;
         }
         let recipeUri = resource ?? vscode.window.activeTextEditor?.document.uri;
         if (!recipeUri || !/\.recipe\.ya?ml$/i.test(recipeUri.fsPath)) {
@@ -2413,34 +2422,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             }))?.[0];
         }
         if (!recipeUri) {
-            return;
+            return undefined;
         }
-
-        try {
-            const info = await runBridgeJsonAsync<{ name: string; variables: Record<string, string> }>(
-                hostExe, ['recipe-info', recipeUri.fsPath], undefined, getBridgeEnv());
-            const given: string[] = [];
-            for (const [name, fallback] of Object.entries(info.variables)) {
-                const value = await vscode.window.showInputBox({
-                    title: `${info.name}: ${name}`,
-                    value: fallback,
-                    ignoreFocusOut: true,
-                });
-                if (value === undefined) {
-                    return;
-                }
-                given.push(`${name}=${value}`);
+        const info = await runBridgeJsonAsync<{ name: string; variables: Record<string, string> }>(
+            hostExe, ['recipe-info', recipeUri.fsPath], undefined, getBridgeEnv());
+        const given: string[] = [];
+        for (const [name, fallback] of Object.entries(info.variables)) {
+            const value = await vscode.window.showInputBox({
+                title: `${info.name}: ${name}`,
+                value: fallback,
+                ignoreFocusOut: true,
+            });
+            if (value === undefined) {
+                return undefined;
             }
+            given.push(`${name}=${value}`);
+        }
+        return { hostExe, uri: recipeUri, name: info.name, given };
+    };
 
+    const runRecipe = vscode.commands.registerCommand('totk-editor.runRecipe', async (resource?: vscode.Uri) => {
+        try {
+            const chosen = await askRecipe(resource);
+            if (!chosen) {
+                return;
+            }
             const result = await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: `Running ${info.name}...` },
-                () => runBridgeJsonAsync<{ output: string; files: { file: string; changed: number }[]; warnings: string[] }>(
-                    hostExe, ['apply-recipe', recipeUri!.fsPath, ...given], undefined, getBridgeEnv()),
+                { location: vscode.ProgressLocation.Notification, title: `Running ${chosen.name}...` },
+                () => runBridgeJsonAsync<RecipeResult>(
+                    chosen.hostExe, ['apply-recipe', chosen.uri.fsPath, ...chosen.given], undefined, getBridgeEnv()),
             );
             const changed = result.files.reduce((sum, file) => sum + file.changed, 0);
             const note = result.warnings.length > 0 ? ` ${result.warnings.length} warning(s): ${result.warnings[0]}` : '';
             const choice = await vscode.window.showInformationMessage(
-                `${info.name}: changed ${changed} item(s) in ${result.files.length} file(s), written to ${result.output}.${note}`,
+                `${chosen.name}: changed ${changed} item(s) in ${result.files.length} file(s), written to ${result.output}.${note}`,
                 'Show Folder',
             );
             if (choice === 'Show Folder') {
@@ -2451,7 +2466,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         }
     });
 
-    context.subscriptions.push(runRecipe);
+    // A preview runs the recipe into a folder that is thrown away and lists what it would change, so a pattern that
+    // matches nothing or a file that is missing shows before a mod is made.
+    const previewRecipe = vscode.commands.registerCommand('totk-editor.previewRecipe', async (resource?: vscode.Uri) => {
+        try {
+            const chosen = await askRecipe(resource);
+            if (!chosen) {
+                return;
+            }
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Previewing ${chosen.name}...` },
+                () => runBridgeJsonAsync<RecipeResult>(
+                    chosen.hostExe, ['preview-recipe', chosen.uri.fsPath, ...chosen.given], undefined, getBridgeEnv()),
+            );
+            const lines: string[] = [`# Preview: ${chosen.name}`, '', chosen.given.length > 0 ? `Variables: ${chosen.given.join(', ')}` : 'No variables.', ''];
+            if (result.warnings.length > 0) {
+                lines.push('## Warnings', '', ...result.warnings.map(w => `- ${w}`), '');
+            }
+            for (const [file, entries] of Object.entries(result.details ?? {})) {
+                lines.push(`## ${file}`, '', entries.length === 0 ? '_nothing changes_' : `${entries.length} item(s) change`, '');
+                for (const entry of entries) {
+                    lines.push(`- \`${entry.name}\``);
+                    for (const line of entry.lines) {
+                        lines.push(`  - \`${line.from}\` → \`${line.to}\``);
+                    }
+                }
+                lines.push('');
+            }
+            const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: lines.join('\n') });
+            await vscode.window.showTextDocument(doc, { preview: true });
+        } catch (err) {
+            void vscode.window.showErrorMessage(`Recipe preview failed: ${(err as Error).message}`);
+        }
+    });
+
+    context.subscriptions.push(runRecipe, previewRecipe);
 
     refreshAddonManifests(context);
 

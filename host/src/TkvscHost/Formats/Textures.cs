@@ -229,6 +229,28 @@ public static class Textures
         return (file.Save(), info);
     }
 
+    /// <summary>
+    /// Changes the pixels of the named texture: <paramref name="edit"/> gets the top mip as RGBA8 (the channels as stored)
+    /// and returns the new pixels, which are encoded back to the texture's own format with its mips made again. Returns
+    /// null if the edit left the pixels as they were.
+    /// </summary>
+    public static byte[]? EditBntxPixels(byte[] bntx, string name, Func<byte[], byte[]> edit)
+    {
+        BntxFile file = BntxFile.Load(bntx);
+        BntxTexture texture = Find(file, name) ?? throw new InvalidOperationException($"Texture not found in BNTX: '{name}'");
+        if (!texture.TryGetTextureFormat(out TextureFormat format, out bool srgb, out bool snorm))
+            throw new NotSupportedException($"Texture '{name}' has a format that cannot be edited ({BntxFormatName((uint)texture.Format)}).");
+
+        byte[] before = texture.ToRgba8(0);
+        byte[] after = edit((byte[])before.Clone());
+        if (after.AsSpan().SequenceEqual(before)) return null;
+
+        DdsImage source = new(texture.Width, texture.Height, TextureFormat.Rgba8, [after]);
+        List<byte[]> mips = TextureConverter.Convert(source, format, texture.Width, texture.Height, texture.MipCount, srgb, snorm);
+        texture.ReplaceFromDds(new DdsImage(texture.Width, texture.Height, format, mips, srgb, snorm));
+        return file.Save();
+    }
+
     /// <summary>The first mip of a texture as a DDS, which is what the viewer's "export" gives.</summary>
     public static byte[]? BntxDds(byte[] bntx, string name, int layer = 0)
     {
