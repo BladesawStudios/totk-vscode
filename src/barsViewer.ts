@@ -3,7 +3,6 @@ import { BarsEntry, BarsAudioResult } from './bridge';
 
 const panels = new Map<string, vscode.WebviewPanel>();
 let extensionUri: vscode.Uri | undefined;
-let renderCount = 0;
 
 export function initBarsViewer(extUri: vscode.Uri): void {
     extensionUri = extUri;
@@ -15,6 +14,8 @@ export function openBarsViewer(
     entries: BarsEntry[],
     fetchAudio: (index: number, usePrefetch: boolean) => Promise<BarsAudioResult>,
     replaceAudio?: (index: number) => Promise<BarsEntry[] | undefined>,
+    editLoop?: (index: number) => Promise<BarsEntry[] | undefined>,
+    replaceGroup?: (indices: number[]) => Promise<BarsEntry[] | undefined>,
 ): void {
     const existing = panels.get(key);
 
@@ -41,19 +42,48 @@ export function openBarsViewer(
 
     panel.webview.html = buildHtml(barsName, entries, !!replaceAudio);
 
+    const postReplaced = (entries: BarsEntry[], index: number) => {
+        panel.webview.postMessage({
+            type: 'entry-replaced',
+            index,
+            html: renderEntry(entries[index]!, index, true),
+            playable: isPlayable(entries[index]!),
+            assetOffsets: entries.map(assetOffsetText),
+        });
+    };
+
     panel.webview.onDidReceiveMessage(async (message) => {
-        if (message.type === 'replace-audio' && replaceAudio) {
+        if (message.type === 'replace-group' && replaceGroup) {
             try {
-                const newEntries = await replaceAudio(message.index);
+                const newEntries = await replaceGroup(message.indices);
                 if (newEntries) {
-                    // Rebuild the whole view so metadata and playback reflect the new audio.
-                    panel.webview.html = buildHtml(barsName, newEntries, true);
+                    for (const index of message.indices) {
+                        if (newEntries[index]) {
+                            postReplaced(newEntries, index);
+                        }
+                    }
+                }
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                void vscode.window.showErrorMessage(`Editing the BARS failed: ${msg}`);
+            }
+            panel.webview.postMessage({ type: 'group-done' });
+            return;
+        }
+        const edit =message.type === 'replace-audio' ? replaceAudio : message.type === 'edit-loop' ? editLoop : undefined;
+        if (edit) {
+            try {
+                const newEntries = await edit(message.index);
+                if (newEntries?.[message.index]) {
+                    // Only this entry's card and player change. Its size may have moved the blocks after it, so
+                    // the others just get their new offsets and keep their loaded audio.
+                    postReplaced(newEntries, message.index);
                 } else {
                     panel.webview.postMessage({ type: 'replace-done', index: message.index });
                 }
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
-                void vscode.window.showErrorMessage(`Audio replacement failed: ${msg}`);
+                void vscode.window.showErrorMessage(`Editing the BARS failed: ${msg}`);
                 panel.webview.postMessage({ type: 'replace-done', index: message.index });
             }
             return;
@@ -63,16 +93,16 @@ export function openBarsViewer(
                 const res = await fetchAudio(message.index, !!message.usePrefetch);
                 if (res.wavPath) {
                     const uri = panel.webview.asWebviewUri(vscode.Uri.file(res.wavPath));
-                    panel.webview.postMessage({ type: 'audio-loaded', index: message.index, url: uri.toString(), result: res });
+                    panel.webview.postMessage({ type: 'audio-loaded', index: message.index, gen: message.gen, url: uri.toString(), result: res });
                 } else {
                     void vscode.window.showErrorMessage('Failed to decode BARS audio entry: ' + (res.error || 'Unknown error'));
                     // Reset UI loading state
-                    panel.webview.postMessage({ type: 'audio-error', index: message.index });
+                    panel.webview.postMessage({ type: 'audio-error', index: message.index, gen: message.gen });
                 }
             } catch (e) {
                 const msg = e instanceof Error ? e.message : String(e);
                 void vscode.window.showErrorMessage(`Error fetching audio: ${msg}`);
-                panel.webview.postMessage({ type: 'audio-error', index: message.index });
+                panel.webview.postMessage({ type: 'audio-error', index: message.index, gen: message.gen });
             }
         }
     });
@@ -83,53 +113,62 @@ export function openBarsViewer(
     });
 }
 
+function isPlayable(e: BarsEntry): boolean {
+    return e.has_prefetch || e.has_romfs_bwav;
+}
+
+function assetOffsetText(e: BarsEntry): string {
+    return e.bwav_offset !== -1 ? e.bwav_offset.toString(16).toUpperCase() : 'N/A';
+}
+
 function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean): string {
-    const playableIndices: number[] = [];
+    const playableIndices = entries.flatMap((e, idx) => (isPlayable(e) ? [idx] : []));
+    const entriesHtml = entries.map((e, idx) => renderEntry(e, idx, canReplace)).join('');
 
-    const entriesHtml = entries.map((e, idx) => {
-        const canPlay = e.has_prefetch || e.has_romfs_bwav;
-        if (canPlay) {
-            playableIndices.push(idx);
-        }
+    return renderPage(barsName, entriesHtml, playableIndices, canReplace);
+}
 
-        let metaHtml = '';
-        if (e.metadata) {
-            const m = e.metadata;
-            const markers = m.markers && m.markers.length > 0
-                ? `<div class="meta-row">Markers: <strong>${m.markers.length}</strong></div>` : '';
-            
-            // Format name hash and offsets to hex as BarsReaderGUI does
-            const nameHashHex = e.name_hash ? e.name_hash.toString(16).toUpperCase() : 'N/A';
-            const metaOffsetHex = e.amta_offset ? e.amta_offset.toString(16).toUpperCase() : 'N/A';
-            const bwavOffsetHex = e.bwav_offset !== -1 ? e.bwav_offset.toString(16).toUpperCase() : 'N/A';
+function renderEntry(e: BarsEntry, idx: number, canReplace: boolean): string {
+    const canPlay = isPlayable(e);
 
-            metaHtml = `
-                <div class="metadata-block">
-                    <div class="meta-row">Name Hash: <strong>${nameHashHex}</strong></div>
-                    <div class="meta-row">Meta Offset: <strong>${metaOffsetHex}</strong></div>
-                    <div class="meta-row">Asset Offset: <strong>${bwavOffsetHex}</strong></div>
-                    <div class="meta-row">Type: <strong>${escapeHtml(m.audio_type)}</strong></div>
-                    <div class="meta-row">Channels: <strong>${m.channel_count}</strong></div>
-                    <div class="meta-row">Volume: <strong>${m.volume_db.toFixed(1)} dB</strong></div>
-                    ${markers}
-                    <div class="meta-row" id="loop-label-${idx}" style="display: none;">Loop: <strong id="loop-label-text-${idx}"></strong></div>
-                </div>
-            `;
-        } else {
-            metaHtml = `
-                <div class="metadata-block">
-                    <div class="meta-row" id="loop-label-${idx}" style="display: none;">Loop: <strong id="loop-label-text-${idx}"></strong></div>
-                </div>
-            `;
-        }
+    let metaHtml = '';
+    if (e.metadata) {
+        const m = e.metadata;
+        const markers = m.markers && m.markers.length > 0
+            ? `<div class="meta-row">Markers: <strong>${m.markers.length}</strong></div>` : '';
 
-        return `
+        // Format name hash and offsets to hex as BarsReaderGUI does
+        const nameHashHex = e.name_hash ? e.name_hash.toString(16).toUpperCase() : 'N/A';
+        const metaOffsetHex = e.amta_offset ? e.amta_offset.toString(16).toUpperCase() : 'N/A';
+
+        metaHtml = `
+            <div class="metadata-block">
+                <div class="meta-row">Name Hash: <strong>${nameHashHex}</strong></div>
+                <div class="meta-row">Meta Offset: <strong>${metaOffsetHex}</strong></div>
+                <div class="meta-row">Asset Offset: <strong id="asset-offset-${idx}">${assetOffsetText(e)}</strong></div>
+                <div class="meta-row">Type: <strong>${escapeHtml(m.audio_type)}</strong></div>
+                <div class="meta-row">Channels: <strong>${m.channel_count}</strong></div>
+                <div class="meta-row">Volume: <strong>${m.volume_db.toFixed(1)} dB</strong></div>
+                ${markers}
+                <div class="meta-row" id="loop-label-${idx}" style="display: none;">Loop: <strong id="loop-label-text-${idx}"></strong></div>
+            </div>
+        `;
+    } else {
+        metaHtml = `
+            <div class="metadata-block">
+                <div class="meta-row" id="loop-label-${idx}" style="display: none;">Loop: <strong id="loop-label-text-${idx}"></strong></div>
+            </div>
+        `;
+    }
+
+    return `
         <div class="entry" data-index="${idx}" data-name="${escapeHtml(e.name)}">
             <div class="entry-header">
-                <div class="entry-name">${escapeHtml(e.name)}</div>
+                <div class="entry-name">${canReplace ? `<input type="checkbox" class="select-entry" id="select-${idx}" data-index="${idx}" title="Select for replacing as a group"> ` : ''}${escapeHtml(e.name)}</div>
                 <div class="entry-meta">
                     ${e.has_prefetch ? `<button class="tag prefetch" id="tag-prefetch-${idx}" data-index="${idx}">Prefetch</button>` : ''}
                     ${e.has_romfs_bwav ? `<button class="tag romfs" id="tag-romfs-${idx}" data-index="${idx}">Full</button>` : ''}
+                    ${canReplace && canPlay ? `<button class="tag loop" id="loop-btn-${idx}" data-index="${idx}" title="Edit this entry's loop points without changing its audio">Loop</button>` : ''}
                     ${canReplace ? `<button class="tag replace" id="replace-btn-${idx}" data-index="${idx}" title="Replace this entry's audio with a WAV or BWAV file">Replace</button>` : ''}
                 </div>
             </div>
@@ -155,17 +194,13 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
             ${metaHtml}
         </div>
         `;
-    }).join('');
+}
 
-    // Unique per render: VS Code ignores assigning identical webview HTML, so a
-    // replace that leaves the entry list unchanged would never reload the page.
-    renderCount++;
-
+function renderPage(barsName: string, entriesHtml: string, playableIndices: number[], canReplace: boolean): string {
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="render-id" content="${renderCount}">
 <style>
     :root {
         --player-bg: var(--vscode-editorWidget-background, #252526);
@@ -278,6 +313,23 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
     .tag.replace { background: #f59e0b40; color: #fbbf24; opacity: 0.8; }
     .tag.replace:hover { opacity: 1; }
     .tag.replace:disabled { opacity: 0.4; cursor: wait; }
+    .tag.loop { background: #a855f740; color: #c084fc; opacity: 0.8; }
+    .tag.loop:hover { opacity: 1; }
+    .tag.loop:disabled { opacity: 0.4; cursor: wait; }
+    .select-entry { vertical-align: -1px; margin-right: 4px; cursor: pointer; }
+    .toolbar-btn {
+        font: inherit;
+        font-size: 12px;
+        font-weight: normal;
+        color: var(--vscode-button-secondaryForeground, #fff);
+        background: var(--vscode-button-secondaryBackground, #3a3d41);
+        border: none;
+        border-radius: 4px;
+        padding: 4px 10px;
+        cursor: pointer;
+    }
+    .toolbar-btn.primary:not(:disabled) { color: var(--vscode-button-foreground, #fff); background: var(--vscode-button-background, #0e639c); }
+    .toolbar-btn:disabled { opacity: 0.5; cursor: default; }
     
     .custom-player {
         display: flex;
@@ -417,6 +469,8 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
     <div class="header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
         <span>BARS: ${escapeHtml(barsName)}</span>
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            ${canReplace ? `<button id="select-shown" class="toolbar-btn" title="Select every entry the search is showing, or clear them if they all are">Select shown</button>
+            <button id="replace-group" class="toolbar-btn primary" disabled title="Cut one audio file across the selected entries">Select tracks to replace together</button>` : ''}
             <span id="search-count"></span>
             <input id="search-input" type="search" placeholder="Search entries…" spellcheck="false" autocomplete="off" />
             <label for="sort-select" style="font-size: 13px; color: var(--vscode-descriptionForeground);">Sort by:</label>
@@ -458,7 +512,6 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
         }
         sortSelect.addEventListener('change', () => {
             applySort(sortSelect.value);
-            // Webview state survives the HTML rebuild after an audio replace.
             vscode.setState({ ...(vscode.getState() || {}), sortMode: sortSelect.value });
         });
 
@@ -505,7 +558,10 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
         const MAX_CONCURRENT = 5;
         
         const prefetchStates = {};
-        
+        // Bumped when an entry is replaced, so audio still loading for the old version is dropped.
+        const loadGens = {};
+        const genOf = (idx) => loadGens[idx] || 0;
+
         // Web Audio API
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const players = {}; 
@@ -629,22 +685,68 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
             while (fetchQueue.length > 0 && activeFetches < MAX_CONCURRENT) {
                 activeFetches++;
                 const index = fetchQueue.shift();
-                vscode.postMessage({ type: 'fetch-audio', index, usePrefetch: prefetchStates[index] });
+                vscode.postMessage({ type: 'fetch-audio', index, gen: genOf(index), usePrefetch: prefetchStates[index] });
             }
         }
 
-        // Replace buttons (every entry, playable or not)
-        document.querySelectorAll('.tag.replace').forEach(el => {
-            el.addEventListener('click', () => {
-                const idx = parseInt(el.dataset.index);
-                el.disabled = true;
-                el.textContent = 'Replacing…';
-                vscode.postMessage({ type: 'replace-audio', index: idx });
-            });
+        // Replace and Loop buttons. Delegated, since an edit swaps the entry's card.
+        document.querySelector('.entry-list').addEventListener('click', ev => {
+            const el = ev.target.closest('.tag.replace, .tag.loop');
+            if (!el) return;
+            const idx = parseInt(el.dataset.index);
+            const isLoop = el.classList.contains('loop');
+            // One edit per entry at a time: both would write the same files.
+            for (const id of ['replace-btn-', 'loop-btn-']) {
+                const button = document.getElementById(id + idx);
+                if (button) button.disabled = true;
+            }
+            el.textContent = isLoop ? 'Editing…' : 'Replacing…';
+            vscode.postMessage({ type: isLoop ? 'edit-loop' : 'replace-audio', index: idx });
         });
 
-        // Initialize players
-        playableIndices.forEach(idx => {
+        // Choosing a group of entries to cut one audio file across.
+        const selected = new Set();
+        const groupButton = document.getElementById('replace-group');
+        const selectShown = document.getElementById('select-shown');
+        let groupBusy = false;
+
+        function refreshGroup() {
+            if (!groupButton) return;
+            groupButton.disabled = groupBusy || selected.size < 2;
+            groupButton.textContent = groupBusy
+                ? 'Replacing…'
+                : selected.size < 2 ? 'Select tracks to replace together' : 'Replace ' + selected.size + ' tracks from one file…';
+        }
+
+        document.querySelector('.entry-list').addEventListener('change', ev => {
+            if (!ev.target.classList.contains('select-entry')) return;
+            const idx = parseInt(ev.target.dataset.index);
+            if (ev.target.checked) selected.add(idx);
+            else selected.delete(idx);
+            refreshGroup();
+        });
+        if (selectShown) {
+            selectShown.addEventListener('click', () => {
+                const boxes = Array.from(document.querySelectorAll('.entry:not(.hidden) .select-entry'));
+                const check = !boxes.every(box => box.checked);
+                for (const box of boxes) {
+                    box.checked = check;
+                    const idx = parseInt(box.dataset.index);
+                    if (check) selected.add(idx);
+                    else selected.delete(idx);
+                }
+                refreshGroup();
+            });
+        }
+        if (groupButton) {
+            groupButton.addEventListener('click', () => {
+                groupBusy = true;
+                refreshGroup();
+                vscode.postMessage({ type: 'replace-group', indices: Array.from(selected) });
+            });
+        }
+
+        function initPlayer(idx) {
             const btnRomfs = document.getElementById('tag-romfs-' + idx);
             const btnPrefetch = document.getElementById('tag-prefetch-' + idx);
             
@@ -748,12 +850,13 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
                     seekAudio(idx, parseFloat(progress.value));
                 }
             });
-        });
+        }
+        playableIndices.forEach(initPlayer);
 
         window.addEventListener('message', event => {
             const message = event.data;
             if (message.type === 'audio-loaded') {
-                const { index, url, result } = message;
+                const { index, url, result, gen } = message;
                 const btn = document.getElementById('play-btn-' + index);
                 const progress = document.getElementById('progress-' + index);
                 const timeTotal = document.getElementById('time-total-' + index);
@@ -762,6 +865,11 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
                     .then(response => response.arrayBuffer())
                     .then(arrayBuffer => audioCtx.decodeAudioData(arrayBuffer))
                     .then(audioBuffer => {
+                        if (gen !== genOf(index)) {
+                            activeFetches--;
+                            fetchNext();
+                            return;
+                        }
                         players[index] = {
                             buffer: audioBuffer,
                             source: null,
@@ -815,22 +923,55 @@ function buildHtml(barsName: string, entries: BarsEntry[], canReplace: boolean):
                     })
                     .catch(e => {
                         console.error('Error decoding audio', e);
-                        if (btn) {
+                        if (btn && gen === genOf(index)) {
                             btn.title = "Error decoding";
                             btn.querySelector('.play-icon').textContent = '✕';
                         }
                         activeFetches--;
                         fetchNext();
                     });
+            } else if (message.type === 'entry-replaced') {
+                const { index, html, playable, assetOffsets } = message;
+                // The new card's checkbox starts clear, so the selection has to match it.
+                selected.delete(index);
+                refreshGroup();
+                if (players[index]) {
+                    pauseAudio(index);
+                    delete players[index];
+                }
+                loadGens[index] = genOf(index) + 1;
+                fetchQueue = fetchQueue.filter(i => i !== index);
+
+                const card = document.querySelector('.entry[data-index="' + index + '"]');
+                if (card) card.outerHTML = html;
+                assetOffsets.forEach((text, i) => {
+                    const offset = document.getElementById('asset-offset-' + i);
+                    if (offset) offset.textContent = text;
+                });
+                applySearch(searchInput.value);
+
+                if (playable) {
+                    initPlayer(index);
+                    fetchQueue.push(index);
+                    fetchNext();
+                }
+            } else if (message.type === 'group-done') {
+                groupBusy = false;
+                refreshGroup();
             } else if (message.type === 'replace-done') {
                 const rbtn = document.getElementById('replace-btn-' + message.index);
                 if (rbtn) {
                     rbtn.disabled = false;
                     rbtn.textContent = 'Replace';
                 }
+                const lbtn = document.getElementById('loop-btn-' + message.index);
+                if (lbtn) {
+                    lbtn.disabled = false;
+                    lbtn.textContent = 'Loop';
+                }
             } else if (message.type === 'audio-error') {
                 const btn = document.getElementById('play-btn-' + message.index);
-                if (btn) {
+                if (btn && message.gen === genOf(message.index)) {
                     btn.title = "Error loading";
                     btn.querySelector('.play-icon').textContent = '✕';
                 }

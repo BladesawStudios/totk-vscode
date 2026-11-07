@@ -3,10 +3,12 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import {
     findRomfsFolderUnder,
+    isWithinRoot,
     normalizePath,
     resolveAddToCopyPaths,
     resolveProjectDestination,
 } from './projectPaths';
+import { getActiveProjectOption } from './projectAdapters/registry';
 import { resolveRomfsPath } from './romfs';
 
 export interface ProjectRoot {
@@ -89,6 +91,46 @@ export async function addDumpEntryToProject(
         void vscode.window.showErrorMessage(`Add to project failed: ${message}`);
         return false;
     }
+}
+
+/**
+ * The copy of a file that edits should go to. A file in the game dump is pulled into the active
+ * project (and its active option) first, or the project's existing copy is used; files already in
+ * a project, or outside both, stay where they are. Undefined when the user picked no project.
+ */
+export async function resolveEditableCopy(
+    diskPath: string,
+    context: vscode.ExtensionContext,
+    projects: ProjectRoot[],
+    activeProject: string | undefined,
+): Promise<{ path: string; projectRoot?: string; pulled: boolean } | undefined> {
+    const containing = projects.find((project) => isWithinRoot(project.fsPath, diskPath));
+    if (containing) {
+        return { path: diskPath, projectRoot: containing.fsPath, pulled: false };
+    }
+
+    const dumpRoot = resolveRomfsPath();
+    if (!dumpRoot || !isWithinRoot(dumpRoot, diskPath)) {
+        return { path: diskPath, pulled: false };
+    }
+
+    const projectRoot = activeProject ?? (await pickProjectRoot(projects));
+    if (!projectRoot) {
+        return undefined;
+    }
+    const option = getActiveProjectOption(context, projectRoot);
+    const destination = resolveProjectDestination(diskPath, projectRoot, dumpRoot, option);
+    if (fs.existsSync(destination)) {
+        return { path: destination, projectRoot, pulled: false };
+    }
+    const copied = await addDumpEntryToProject(
+        diskPath,
+        projectRoot,
+        dumpRoot,
+        { suppressSuccessMessage: true },
+        option,
+    );
+    return copied ? { path: destination, projectRoot, pulled: true } : undefined;
 }
 
 export async function pickProjectRoot(projects: ProjectRoot[]): Promise<string | undefined> {
