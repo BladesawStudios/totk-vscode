@@ -328,6 +328,28 @@ public sealed class Archives(Containers containers)
         }
     }
 
+    /// <summary>
+    /// Changes the entries of an archive on disk in one pass: <paramref name="edit"/> gets each entry's name and bytes and
+    /// returns its new bytes, or null to leave it. The archive is saved once, and only if something changed; the count of
+    /// changed entries is returned.
+    /// </summary>
+    public int EditEntries(string diskArchivePath, Func<string, byte[], byte[]?> edit)
+    {
+        RejectBntxMutation(diskArchivePath, "write");
+        (OpenArchive archive, Unwrapped wrapping) = LoadArchive(diskArchivePath);
+        int changed = 0;
+        for (int i = 0; i < archive.Entries.Count; i++)
+        {
+            SarcEntry entry = archive.Entries[i];
+            if (edit(entry.Name, entry.Data) is not { } data || data.AsSpan().SequenceEqual(entry.Data)) continue;
+            archive.Entries[i] = entry with { Data = data };
+            changed++;
+        }
+
+        if (changed > 0) Save(diskArchivePath, archive, wrapping);
+        return changed;
+    }
+
     public void WriteArchiveFileBytes(string diskArchivePath, string filePath, byte[] data)
     {
         filePath = Normalize(filePath);

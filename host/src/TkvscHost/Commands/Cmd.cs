@@ -31,6 +31,7 @@ public static partial class Cmd
         FontCommands.Register(commands);
         AudioCommands.Register(commands);
         HexpatCommands.Register(commands);
+        RecipeCommands.Register(commands);
     }
 
     private static readonly JsonNode Success = new JsonObject { ["success"] = true };

@@ -2398,6 +2398,61 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
     context.subscriptions.push(openArchive);
 
+    // A recipe makes a mod's files from the game's own, from a few variables (see RecipeCommands in the host).
+    const runRecipe = vscode.commands.registerCommand('totk-editor.runRecipe', async (resource?: vscode.Uri) => {
+        const hostExe = getHost();
+        if (!hostExe) {
+            return;
+        }
+        let recipeUri = resource ?? vscode.window.activeTextEditor?.document.uri;
+        if (!recipeUri || !/\.recipe\.ya?ml$/i.test(recipeUri.fsPath)) {
+            recipeUri = (await vscode.window.showOpenDialog({
+                canSelectMany: false,
+                filters: { 'TKVSC recipes': ['yaml', 'yml'] },
+                title: 'Choose a recipe (.recipe.yaml)',
+            }))?.[0];
+        }
+        if (!recipeUri) {
+            return;
+        }
+
+        try {
+            const info = await runBridgeJsonAsync<{ name: string; variables: Record<string, string> }>(
+                hostExe, ['recipe-info', recipeUri.fsPath], undefined, getBridgeEnv());
+            const given: string[] = [];
+            for (const [name, fallback] of Object.entries(info.variables)) {
+                const value = await vscode.window.showInputBox({
+                    title: `${info.name}: ${name}`,
+                    value: fallback,
+                    ignoreFocusOut: true,
+                });
+                if (value === undefined) {
+                    return;
+                }
+                given.push(`${name}=${value}`);
+            }
+
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Running ${info.name}...` },
+                () => runBridgeJsonAsync<{ output: string; files: { file: string; changed: number }[]; warnings: string[] }>(
+                    hostExe, ['apply-recipe', recipeUri!.fsPath, ...given], undefined, getBridgeEnv()),
+            );
+            const changed = result.files.reduce((sum, file) => sum + file.changed, 0);
+            const note = result.warnings.length > 0 ? ` ${result.warnings.length} warning(s): ${result.warnings[0]}` : '';
+            const choice = await vscode.window.showInformationMessage(
+                `${info.name}: changed ${changed} item(s) in ${result.files.length} file(s), written to ${result.output}.${note}`,
+                'Show Folder',
+            );
+            if (choice === 'Show Folder') {
+                await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(result.output));
+            }
+        } catch (err) {
+            void vscode.window.showErrorMessage(`Recipe failed: ${(err as Error).message}`);
+        }
+    });
+
+    context.subscriptions.push(runRecipe);
+
     refreshAddonManifests(context);
 
     return tkvscApi;

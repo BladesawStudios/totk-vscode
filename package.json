@@ -399,6 +399,11 @@
         "icon": "$(chevron-down)"
       },
       {
+        "command": "totk-editor.runRecipe",
+        "title": "TKVSC: Run Recipe (.recipe.yaml)",
+        "icon": "$(play)"
+      },
+      {
         "command": "totk-editor.openPack",
         "title": "TKVSC: Open Archive (.pack, .sarc, .genvb, .blarc, .bfarc, .bkres, .bntx, .bfres)",
         "icon": "$(package)"
@@ -883,6 +888,11 @@
         }
       ],
       "explorer/context": [
+        {
+          "command": "totk-editor.runRecipe",
+          "when": "resourceFilename =~ /\\.recipe\\.ya?ml$/",
+          "group": "navigation@91"
+        },
         {
           "command": "totk-editor.openHexEditor",
           "when": "!explorerResourceIsFolder",

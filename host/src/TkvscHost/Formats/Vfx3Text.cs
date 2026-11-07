@@ -398,6 +398,27 @@ public static class Vfx3Text
         return data;
     }
 
+    [ThreadStatic]
+    private static bool _fitting;
+
+    private static bool Fitting => _fitting;
+
+    /// <summary>
+    /// While the returned scope is open, a colour a channel cannot hold exactly (one number shared by all three) is
+    /// stored as the nearest colour it can, instead of being refused. Used by recipes, which colour whole files at once.
+    /// </summary>
+    public static IDisposable FitToStorage()
+    {
+        bool before = _fitting;
+        _fitting = true;
+        return new Scope(() => _fitting = before);
+    }
+
+    private sealed class Scope(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
+
     private static bool SameBits(float a, float b) => BitConverter.SingleToUInt32Bits(a) == BitConverter.SingleToUInt32Bits(b);
 
     private static void PutThreeOfOne(byte[] d, Channel c, double[] values, string what)
@@ -407,8 +428,16 @@ public static class Vfx3Text
 
         // The record holds one number, so every channel that isn't 0 has to share it.
         float[] used = [.. values.Select(v => (float)v).Where(v => v != 0).Distinct()];
+        if (used.Length > 1 && Fitting)
+        {
+            // Nearest colour the record can hold: the brightest channel's number on every channel that is at least half as bright, 0 on the others.
+            double top = values.Max();
+            values = [.. values.Select(v => v >= top / 2 ? top : 0)];
+            used = [(float)top];
+        }
+
         if (used.Length > 1)
-            throw new InvalidDataException($"{what} holds one number across its channels, so the ones that aren't 0 must match. The file has no room for three different numbers here.");
+            throw new InvalidDataException($"{what} holds one number across its channels, so the ones that aren't 0 must match, for example [1, 0, 0] for red. The file has no room for three different numbers here.");
 
         // All 0 fits any pattern, so it keeps the one it had.
         int pattern = used.Length == 0
