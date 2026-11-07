@@ -51,6 +51,8 @@ import {
     getGameProfileRegistry,
     isRomfsPathValid,
     getCompressedSuffixes,
+    isCompressedName,
+    stripCompressedSuffix,
 } from './gameProfile';
 import {
     getGameIndexPaths,
@@ -1908,9 +1910,58 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             return;
         }
 
+        // Compressed files (e.g. `.zs`) can be exported as stored or decompressed.
+        const compressedCount = fileUris.filter((uri) => isCompressedName(path.basename(uri.fsPath))).length;
+        let decompress = false;
+        if (compressedCount > 0) {
+            const choice = await vscode.window.showQuickPick(
+                [
+                    { label: 'Decompressed', description: 'Export the raw, decompressed data', value: true },
+                    { label: 'Compressed (as stored)', description: 'Keep the original compression', value: false },
+                ],
+                {
+                    title: fileUris.length === 1
+                        ? 'Export compressed file as...'
+                        : `Export ${compressedCount} compressed file(s) as...`,
+                    placeHolder: 'Choose whether to decompress',
+                },
+            );
+            if (!choice) {
+                return;
+            }
+            decompress = choice.value;
+        }
+
+        const decompressBytes = async (hostExe: string, data: Buffer, logicalName: string): Promise<Buffer> => {
+            const tempIn = path.join(os.tmpdir(), `totk-export-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`);
+            let outPath: string | undefined;
+            try {
+                await fs.promises.writeFile(tempIn, data);
+                const result = await runBridgeJsonAsync<{ path: string; error?: string }>(
+                    hostExe,
+                    ['decompress-file', tempIn, logicalName],
+                    undefined,
+                    getBridgeEnv(),
+                );
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+                outPath = result.path;
+                return await fs.promises.readFile(outPath);
+            } finally {
+                await fs.promises.unlink(tempIn).catch(() => undefined);
+                if (outPath) {
+                    await fs.promises.unlink(outPath).catch(() => undefined);
+                }
+            }
+        };
+
         if (fileUris.length === 1) {
             const singleUri = fileUris[0];
-            const originalName = path.basename(singleUri.fsPath);
+            const singleIsCompressed = decompress && isCompressedName(path.basename(singleUri.fsPath));
+            const originalName = singleIsCompressed
+                ? stripCompressedSuffix(path.basename(singleUri.fsPath))
+                : path.basename(singleUri.fsPath);
             const extMatch = originalName.match(/(\.[a-zA-Z0-9]+)$/);
             let ext = extMatch ? extMatch[1] : '';
 
@@ -1919,7 +1970,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 ext = '.bftex';
             }
 
-            const filters = getFiltersForExtension(ext);
+            const filters = singleIsCompressed
+                ? { 'Decompressed': [ext.replace('.', '') || '*'] }
+                : getFiltersForExtension(ext);
 
             const destUri = await vscode.window.showSaveDialog({
                 title: 'Export As...',
@@ -1944,9 +1997,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 // Get the target format extension
                 const targetExt = path.extname(destUri.fsPath).toLowerCase();
 
+                // Decompressing exports the stored bytes as-is, so skip format conversion.
                 const bridgeResult = await runBridgeJsonAsync<{ path: string; error?: string }>(
                     hostExe,
-                    ['export-converted', diskArchive, locator, targetExt, ...(layer > 0 ? [String(layer)] : [])],
+                    singleIsCompressed
+                        ? ['export-temp', diskArchive, locator]
+                        : ['export-converted', diskArchive, locator, targetExt, ...(layer > 0 ? [String(layer)] : [])],
                     undefined,
                     getBridgeEnv(),
                 );
@@ -1956,11 +2012,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 }
 
                 const exportedPath = bridgeResult.path;
-                const data = await fs.promises.readFile(exportedPath);
+                let data: Buffer = await fs.promises.readFile(exportedPath);
                 try {
                     await fs.promises.unlink(exportedPath);
                 } catch {
                     // best effort
+                }
+                if (singleIsCompressed) {
+                    data = await decompressBytes(hostExe, data, path.basename(singleUri.fsPath));
                 }
 
                 await vscode.workspace.fs.writeFile(destUri, data);
@@ -2002,13 +2061,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         throw new Error(bridgeResult.error);
                     }
                     const exportedPath = bridgeResult.path;
-                    const data = await fs.promises.readFile(exportedPath);
+                    let data: Buffer = await fs.promises.readFile(exportedPath);
                     try {
                         await fs.promises.unlink(exportedPath);
                     } catch {
                         // best effort
                     }
-                    return { uri, locator, data };
+                    let outName = path.basename(locator) || path.basename(uri.fsPath);
+                    if (decompress && isCompressedName(outName)) {
+                        data = await decompressBytes(hostExe, data, outName);
+                        outName = stripCompressedSuffix(outName);
+                    }
+                    return { uri, locator, data, outName };
                 } catch (error) {
                     const message = error instanceof Error ? error.message : String(error);
                     void vscode.window.showErrorMessage(`Export failed for ${uri.fsPath}: ${message}`);
@@ -2024,7 +2088,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     continue;
                 }
                 try {
-                    const desiredName = path.basename(item.locator) || path.basename(item.uri.fsPath);
+                    const desiredName = item.outName;
                     const finalName = pickExportDestinationName(destinationFolder, desiredName);
                     await fs.promises.writeFile(path.join(destinationFolder, finalName), item.data);
                     exported++;
