@@ -179,6 +179,12 @@ public static partial class RecipeCommands
         string outputRoot = preview
             ? Path.Combine(Path.GetTempPath(), "tkvsc-recipe-" + Guid.NewGuid().ToString("N")[..8])
             : Path.Combine(Path.GetDirectoryName(recipePath)!, OutputFolder);
+
+        // The game's files are only ever read: a recipe writes to its own output folder, and that folder can never be
+        // the game's RomFS or inside it (or hold it).
+        if (Overlaps(c.Romfs, outputRoot))
+            throw new InvalidOperationException($"The recipe's output folder ({outputRoot}) is the game's RomFS or inside it (or holds it). Move the recipe somewhere else; recipes never write to the game's files.");
+
         try
         {
             return Execute(c, recipe, variables, outputRoot, preview);
@@ -187,6 +193,25 @@ public static partial class RecipeCommands
         {
             if (preview && Directory.Exists(outputRoot)) Directory.Delete(outputRoot, recursive: true);
         }
+    }
+
+    private static string Full(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+
+    private static bool Overlaps(string a, string b)
+    {
+        string x = Full(a), y = Full(b);
+        return x.StartsWith(y + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || y.StartsWith(x + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(x, y, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A path from a recipe under a root folder; one that would leave it (<c>..</c>, a drive, a rooted path) is refused.</summary>
+    private static string Inside(string root, string relative)
+    {
+        string rootFull = Full(root), full = Path.GetFullPath(Path.Combine(rootFull, relative));
+        if (Path.IsPathRooted(relative) || !full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"\"{relative}\" is not a path inside the RomFS; recipes cannot use .. or a full path");
+        return full;
     }
 
     private static JsonNode Execute(CommandContext c, Recipe recipe, Dictionary<string, string> variables, string outputRoot, bool preview)
@@ -213,12 +238,12 @@ public static partial class RecipeCommands
         {
             List<Op> ops = planned;
             string relative = edit.File.Replace('\\', '/').TrimStart('/');
-            string output = Path.Combine(outputRoot, relative);
+            string output = Inside(outputRoot, relative);
             JsonArray details = entriesByFile.TryGetValue(relative, out JsonArray? known) ? known : entriesByFile[relative] = [];
 
             if (edit.Pattern is null && ops[0] is DeleteOp)
             {
-                bool had = File.Exists(output) || File.Exists(Path.Combine(c.Romfs, relative));
+                bool had = File.Exists(output) || File.Exists(Inside(c.Romfs, relative));
                 if (File.Exists(output)) File.Delete(output);
                 copied.Remove(output);
                 if (!had) warnings.Add($"{relative}: there is no such file to delete");
@@ -230,7 +255,7 @@ public static partial class RecipeCommands
             if (ops[0] is CopyOp copy)
             {
                 string from = copy.From.Replace('\\', '/').TrimStart('/');
-                string made = Path.Combine(outputRoot, from), game = Path.Combine(c.Romfs, from);
+                string made = Inside(outputRoot, from), game = Inside(c.Romfs, from);
                 string source = File.Exists(made) ? made : game;
                 if (!File.Exists(source)) throw new FileNotFoundException($"{from} (copied to {relative}) is not in the RomFS ({c.Romfs})");
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
@@ -244,7 +269,7 @@ public static partial class RecipeCommands
             }
             else
             {
-                string source = Path.Combine(c.Romfs, relative);
+                string source = Inside(c.Romfs, relative);
                 if (!File.Exists(source) && !File.Exists(output))
                 {
                     // A preview reports a missing file and goes on, so every mistake shows at once.
@@ -453,7 +478,7 @@ public static partial class RecipeCommands
             }
             case "copy":
                 if (rest.Length == 0) throw new InvalidDataException("\"copy\" needs a file: copy Some/File.ext");
-                return new CopyOp(Substitute(rest, variables).Trim());
+                return new CopyOp(Substitute(rest, variables).Trim().Trim('"', '\''));
             case "delete":
                 if (rest.Length > 0) throw new InvalidDataException($"\"{step}\": delete takes no arguments");
                 return new DeleteOp();

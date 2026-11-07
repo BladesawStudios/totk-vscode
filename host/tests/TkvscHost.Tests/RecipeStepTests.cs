@@ -226,4 +226,43 @@ public class RecipeStepTests
         Assert.Contains("nothing inside it matched Models/m/Shapes/Nope*.fshp", warnings);
         Assert.Contains("Tex/missing.bntx: is not in the RomFS", warnings);
     }
+
+    [Theory]
+    [InlineData("../outside.bntx")]
+    [InlineData("Tex/../../outside.bntx")]
+    [InlineData("C:/outside.bntx")]
+    public void APathThatLeavesTheRomFsIsRefusedAndNothingIsWrittenOutsideTheOutputFolder(string target)
+    {
+        using Workspace w = new();
+        var (env, mod, game) = Setup(w, ("t.recipe.yaml", $"\"{target}\": copy Tex/b.bntx\n"), ("u.recipe.yaml", $"Tex/c.bntx: copy \"{target}\"\n"));
+
+        Assert.Contains("not a path inside", Assert.Throws<InvalidDataException>(() => Run(w, env, "apply-recipe", Path.Combine(mod, "t.recipe.yaml"))).Message);
+        Assert.Contains("not a path inside", Assert.Throws<InvalidDataException>(() => Run(w, env, "apply-recipe", Path.Combine(mod, "u.recipe.yaml"))).Message);
+        Assert.False(File.Exists(Path.Combine(w.Path("mod"), "outside.bntx")));
+        Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(game)!, "outside.bntx")));
+    }
+
+    [Fact]
+    public void ARecipeNeverWritesIntoTheGameFolder()
+    {
+        using Workspace w = new();
+        var (_, _, game) = Setup(w);
+        // A recipe sitting where its romfs output would be the game's own folder.
+        string recipe = Path.Combine(Path.GetDirectoryName(game)!, "x.recipe.yaml");
+        string gameNamedRomfs = Path.Combine(Path.GetDirectoryName(game)!, "romfs");
+        Directory.CreateDirectory(Path.Combine(gameNamedRomfs, "Tex"));
+        File.WriteAllBytes(Path.Combine(gameNamedRomfs, "Tex", "a.bntx"), Bntx(200, 100, 50));
+        File.WriteAllText(recipe, "Tex/a.bntx:\n  '*': tint \"#00FF00\"\n");
+        Env same = Env.From(name => name switch
+        {
+            "TKVSC_COMPRESSION_BACKEND" => "plain-zstd-yaz0",
+            "TKVSC_HANDLER_MANIFEST" => w.Manifest(),
+            "TKVSC_ROMFS" => gameNamedRomfs,
+            _ => null,
+        });
+        byte[] before = File.ReadAllBytes(Path.Combine(gameNamedRomfs, "Tex", "a.bntx"));
+
+        Assert.Contains("never write to the game", Assert.Throws<InvalidOperationException>(() => Run(w, same, "apply-recipe", recipe)).Message);
+        Assert.Equal(before, File.ReadAllBytes(Path.Combine(gameNamedRomfs, "Tex", "a.bntx")));
+    }
 }

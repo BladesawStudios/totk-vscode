@@ -58,6 +58,10 @@ Included recipes (paths are relative to this one) run first and share their vari
 
 **TKVSC: Preview Recipe Changes** runs the recipe into a temporary folder and shows every file and entry it would change, with the lines or average colours before and after. Nothing is kept. It also reports what a real run would hide: patterns that match nothing, entries that are not an editable type, and files missing from the RomFS. The host command is `preview-recipe` (same arguments as `apply-recipe`).
 
+## The game's files are read-only
+
+A recipe only ever reads the game's RomFS and writes to its own `romfs` output folder. File paths in a recipe (including `copy` sources) must stay inside the RomFS: `..` and full paths like `C:/...` are refused. A recipe is also refused if its output folder would be the game's RomFS or inside it (or hold it), for example a recipe placed next to a game dump that is itself named `romfs`.
+
 ## Limits
 
 - Only files TKVSC can show as text, and colour textures, are editable. Other binary files can be copied or deleted but not changed.
