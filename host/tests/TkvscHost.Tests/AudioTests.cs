@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using BfAudioSharp;
+using BymlSharp;
 
 namespace TkvscHost.Tests;
 
@@ -172,6 +173,409 @@ public class AudioTests
         Assert.Equal(24000, now.SampleRate);
         Assert.Equal(4000, now.SampleCount);
         File.Delete(result["fullBwavTempPath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ReplacingAnEntryWithAWholeBwavSaysWhereThatBwavLives()
+    {
+        using Workspace w = new();
+        string folder = Directory.CreateDirectory(Path.Combine(w.Root, "Voice", "Resource", "Stream")).FullName;
+        string file = Path.Combine(w.Root, "Voice", "Resource", "Line.bars");
+        File.WriteAllBytes(file, Bars("Line", Bwav.Build([Tone(500)], 32000)));
+        File.WriteAllBytes(Path.Combine(folder, "Line.bwav"), Bwav.Build([Tone(3000)], 32000));
+        byte[] replacement = Wav.Write(new PcmAudio { SampleRate = 24000, Channels = [Tone(1000)] });
+
+        var result = w.Run("replace-bars-audio", [file, "", "0", "none", "none", "new.wav"], Convert.ToBase64String(replacement));
+
+        // Embedded whole, but the Full tab plays the BWAV on disk, so that has to change as well.
+        Assert.Equal("full", result["embedded"]!.GetValue<string>());
+        Assert.True(result["needsStreamFile"]!.GetValue<bool>());
+        Assert.Equal("Voice/Resource/Stream/Line.bwav", result["streamRelativePath"]!.GetValue<string>());
+        File.Delete(result["fullBwavTempPath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ASourceFileIsDecodedForTheLoopEditor()
+    {
+        using Workspace w = new();
+        string file = w.Path("Source.bwav");
+        File.WriteAllBytes(file, Bwav.Build([Tone(2000), Tone(2000)], 24000, 100, 1500));
+
+        var result = w.Run("decode-audio-file", [file]);
+
+        string wavPath = result["wavPath"]!.GetValue<string>();
+        try
+        {
+            Assert.Equal(24000, result["sampleRate"]!.GetValue<int>());
+            Assert.Equal(2, result["channels"]!.GetValue<int>());
+            Assert.Equal(2000, result["samples"]!.GetValue<int>());
+            Assert.Equal(100, result["loopStart"]!.GetValue<int>());
+            Assert.Equal(1500, result["loopEnd"]!.GetValue<int>());
+            Assert.Equal(2000, Wav.Parse(File.ReadAllBytes(wavPath)).SampleCount);
+        }
+        finally { File.Delete(wavPath); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TheAudioAfterALoopEndIsCutWhenAsked(bool sourceIsBwav)
+    {
+        using Workspace w = new();
+        string file = w.Path("Sound.bars");
+        File.WriteAllBytes(file, Bars("Long", null));
+        byte[] replacement = sourceIsBwav
+            ? Bwav.Build([Tone(5000)], 24000)
+            : Wav.Write(new PcmAudio { SampleRate = 24000, Channels = [Tone(5000)] });
+        string encoded = Convert.ToBase64String(replacement);
+
+        var kept = w.Run("replace-bars-audio", [file, "", "0", "1000", "3000", "new.wav"], encoded);
+        var cut = w.Run("replace-bars-audio", [file, "", "0", "1000", "3000", "new.wav", "true"], encoded);
+
+        Assert.Equal(5000, kept["numSamples"]!.GetValue<int>());
+        Assert.Equal(3000, cut["numSamples"]!.GetValue<int>());
+        Assert.Equal(1000, cut["loopStart"]!.GetValue<int>());
+        Assert.Equal(3000, cut["loopEnd"]!.GetValue<int>());
+        foreach (var result in new[] { kept, cut }) File.Delete(result["fullBwavTempPath"]!.GetValue<string>());
+    }
+
+    private static (int? Start, int? End) LoopIn(ReadOnlySpan<byte> bwav)
+    {
+        int end = BinaryPrimitives.ReadInt32LittleEndian(bwav[(0x10 + 0x3C)..]), start = BinaryPrimitives.ReadInt32LittleEndian(bwav[(0x10 + 0x40)..]);
+        return end == -1 ? (null, null) : (start, end);
+    }
+
+    // A BARS with a prefetch clip in it and the whole BWAV in the Stream folder beside it.
+    private static (string Bars, byte[] Whole) StreamedEntry(Workspace w, string name)
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(w.Root, "Sound", "Resource", "Stream")).FullName;
+        string file = Path.Combine(w.Root, "Sound", "Resource", "Sound.bars");
+        byte[] whole = Bwav.Build([Tone(30000)], 32000, 100, 30000);
+        File.WriteAllBytes(file, Bars(name, Bwav.MakePrefetch(whole)));
+        File.WriteAllBytes(Path.Combine(folder, name + ".bwav"), whole);
+        return (file, whole);
+    }
+
+    [Fact]
+    public void SettingALoopChangesOnlyTheLoopFieldsOfAnEmbeddedBwav()
+    {
+        using Workspace w = new();
+        string file = w.Path("Sound.bars");
+        byte[] bwav = Bwav.Build([Tone(5000)], 32000);
+        byte[] before = Bars("Hit", bwav);
+        File.WriteAllBytes(file, before);
+
+        var result = w.Run("set-bars-loop", [file, "", "0", "1000", "5000", "false"]);
+
+        byte[] after = File.ReadAllBytes(file);
+        int at = TotkBars.Parse(after).Entries[0].BwavOffset;
+        Assert.Equal((1000, 5000), LoopIn(after.AsSpan(at)));
+        Assert.Equal(1000, result["loopStart"]!.GetValue<int>());
+        Assert.False(result["needsStreamFile"]!.GetValue<bool>());
+        Assert.Null(result["fullBwavTempPath"]);
+
+        // Put the old loop fields back: nothing else may differ.
+        BinaryPrimitives.WriteInt32LittleEndian(after.AsSpan(at + 0x10 + 0x3C), -1);
+        BinaryPrimitives.WriteInt32LittleEndian(after.AsSpan(at + 0x10 + 0x40), 0);
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
+    public void SettingALoopOnAStreamedEntryKeepsItsAudioAndUpdatesBothHeaders()
+    {
+        using Workspace w = new();
+        var (file, whole) = StreamedEntry(w, "Hit");
+
+        var result = w.Run("set-bars-loop", [file, "", "0", "2000", "25000", "false"]);
+
+        string temp = result["fullBwavTempPath"]!.GetValue<string>();
+        byte[] written = File.ReadAllBytes(temp);
+        File.Delete(temp);
+        Assert.Equal("prefetch", result["embedded"]!.GetValue<string>());
+        Assert.True(result["needsStreamFile"]!.GetValue<bool>());
+        Assert.Equal("Sound/Resource/Stream/Hit.bwav", result["streamRelativePath"]!.GetValue<string>());
+        Assert.Equal((2000, 25000), LoopIn(written));
+        Assert.Equal(Bwav.Decode(whole).Channels[0], Bwav.Decode(written).Channels[0]);
+
+        // The clip stops long before the loop does, but carries the whole sound's loop like the game's do.
+        byte[] bars = File.ReadAllBytes(file);
+        Assert.Equal((2000, 25000), LoopIn(bars.AsSpan(TotkBars.Parse(bars).Entries[0].BwavOffset)));
+    }
+
+    [Fact]
+    public void ALoopCanBeClearedFromAnEntry()
+    {
+        using Workspace w = new();
+        var (file, _) = StreamedEntry(w, "Hit");
+
+        var result = w.Run("set-bars-loop", [file, "", "0", "none", "none", "false"]);
+
+        string temp = result["fullBwavTempPath"]!.GetValue<string>();
+        byte[] written = File.ReadAllBytes(temp);
+        File.Delete(temp);
+        Assert.Null(result["loopStart"]);
+        Assert.Equal((null, null), LoopIn(written));
+    }
+
+    [Fact]
+    public void SettingALoopAndCuttingTheTailShortensTheWholeSound()
+    {
+        using Workspace w = new();
+        var (file, _) = StreamedEntry(w, "Hit");
+
+        var result = w.Run("set-bars-loop", [file, "", "0", "2000", "25000", "true"]);
+
+        string temp = result["fullBwavTempPath"]!.GetValue<string>();
+        byte[] written = File.ReadAllBytes(temp);
+        File.Delete(temp);
+        Assert.Equal(25000, result["numSamples"]!.GetValue<int>());
+        Assert.Equal(25000, Bwav.SampleCount(written));
+        Assert.Equal((2000, 25000), LoopIn(written));
+    }
+
+    [Fact]
+    public void AnEntrysWholeSoundIsDecodedForTheLoopEditor()
+    {
+        using Workspace w = new();
+        var (file, _) = StreamedEntry(w, "Hit");
+
+        var result = w.Run("decode-bars-entry", [file, "", "0"]);
+
+        File.Delete(result["wavPath"]!.GetValue<string>());
+        Assert.Equal(30000, result["samples"]!.GetValue<int>());
+        Assert.Equal(100, result["loopStart"]!.GetValue<int>());
+        Assert.Equal(30000, result["loopEnd"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void AnEntryWithOnlyAPrefetchClipRefusesLoopEdits()
+    {
+        using Workspace w = new();
+        string file = w.Path("Sound.bars");
+        byte[] before = Bars("Hit", Bwav.MakePrefetch(Bwav.Build([Tone(30000)], 32000)));
+        File.WriteAllBytes(file, before);
+
+        Assert.Contains("prefetch clip", Assert.Throws<InvalidDataException>(() => w.Run("decode-bars-entry", [file, "", "0"])).Message);
+        Assert.Contains("prefetch clip", Assert.Throws<InvalidDataException>(() => w.Run("set-bars-loop", [file, "", "0", "0", "100", "false"])).Message);
+        Assert.Equal(before, File.ReadAllBytes(file));
+    }
+
+    // Several entries, each with a BWAV embedded, laid out like the game's: AMTAs, then BWAVs on 0x40 boundaries.
+    private static byte[] ManyBars(params (string Name, byte[] Bwav)[] entries)
+    {
+        int count = entries.Length, amtaBase = 0x10 + 4 * count + 8 * count;
+        int bwavAt = (amtaBase + 0x100 * count + 0x3F) & ~0x3F;
+        int size = bwavAt;
+        foreach (var (_, bwav) in entries) size = ((size + 0x3F) & ~0x3F) + bwav.Length;
+
+        byte[] file = new byte[size];
+        "BARS"u8.CopyTo(file);
+        BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(4), (uint)size);
+        BinaryPrimitives.WriteUInt16LittleEndian(file.AsSpan(8), 0xFEFF);
+        BinaryPrimitives.WriteUInt16LittleEndian(file.AsSpan(10), 0x0102);
+        BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(12), (uint)count);
+
+        int position = bwavAt;
+        for (int i = 0; i < count; i++)
+        {
+            int amtaAt = amtaBase + i * 0x100;
+            BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(0x10 + i * 4), (uint)(1000 + i));
+            BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(0x10 + 4 * count + i * 8), (uint)amtaAt);
+            position = (position + 0x3F) & ~0x3F;
+            BinaryPrimitives.WriteInt32LittleEndian(file.AsSpan(0x10 + 4 * count + i * 8 + 4), position);
+
+            Span<byte> amta = file.AsSpan(amtaAt, 0x100);
+            "AMTA"u8.CopyTo(amta);
+            BinaryPrimitives.WriteUInt16LittleEndian(amta[4..], 0xFEFF);
+            BinaryPrimitives.WriteUInt16LittleEndian(amta[6..], 0x0500);
+            BinaryPrimitives.WriteUInt32LittleEndian(amta[0x10..], 0x80);
+            BinaryPrimitives.WriteUInt32LittleEndian(amta[0x14..], 0xA0);
+            BinaryPrimitives.WriteUInt32LittleEndian(amta[0x24..], 0x40);
+            amta[0x31] = 1;
+            Encoding.UTF8.GetBytes(entries[i].Name).CopyTo(amta[(0x24 + 0x40)..]);
+
+            entries[i].Bwav.CopyTo(file, position);
+            position += entries[i].Bwav.Length;
+        }
+        return file;
+    }
+
+    private static Byml AssetNode(string name, string key, string next, double? fixedSeconds = null)
+    {
+        Dictionary<string, Byml> node = new(StringComparer.Ordinal)
+        {
+            ["Name"] = name,
+            ["Type"] = "Asset",
+            ["Key"] = key,
+            ["IsDurationAuto"] = fixedSeconds is null,
+            ["FadeOutTime"] = Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["Type"] = "Second", ["Value"] = fixedSeconds is null ? 0f : -1.5f }),
+            ["Transition"] = Byml.Array(
+            [
+                // An interruption comes first in the game's tables, and mustn't count as the normal path.
+                Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["ConditionBin"] = Byml.From(new byte[] { 1 }), ["DestinationNode"] = "elsewhere" }),
+                Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["DestinationNode"] = next, ["Type"] = "End" }),
+            ]),
+        };
+        if (fixedSeconds is { } seconds)
+        {
+            node["Duration"] = Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["Type"] = "Second", ["Value"] = (float)seconds });
+            node["StartOffset"] = Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["Type"] = "Second", ["Value"] = 0f });
+        }
+        return Byml.Map(node);
+    }
+
+    // BARS entries Song_01, Song_Intro and Song_02 (not in playing order), and a table playing Intro -> 01 -> switch -> 02 -> 01, with 02 fixed.
+    private static string SongGroup(Workspace w)
+    {
+        Directory.CreateDirectory(Path.Combine(w.Root, "Sound", "Resource"));
+        Directory.CreateDirectory(Path.Combine(w.Root, "Sound", "Bgm"));
+        string bars = Path.Combine(w.Root, "Sound", "Resource", "Song.bars");
+        File.WriteAllBytes(bars, ManyBars(
+            ("Song_01", Bwav.Build([Tone(3200)], 32000)),
+            ("Song_Intro", Bwav.Build([Tone(1600)], 32000)),
+            ("Song_02", Bwav.Build([Tone(4800)], 32000))));
+
+        Byml graph = Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal)
+        {
+            ["Node"] = Byml.Array(
+            [
+                Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal)
+                {
+                    ["Name"] = "start",
+                    ["Type"] = "Start",
+                    ["Transition"] = Byml.Array([Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["ConditionBin"] = Byml.From(new byte[] { 1 }), ["DestinationNode"] = "intro" })]),
+                }),
+                AssetNode("one", "Song_01", "switch"),
+                AssetNode("intro", "Song_Intro", "one"),
+                AssetNode("two", "Song_02", "one", 0.1),
+                Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal)
+                {
+                    ["Name"] = "switch",
+                    ["Type"] = "Switch",
+                    ["Transition"] = Byml.Array(
+                    [
+                        Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["ConditionBin"] = Byml.From(new byte[] { 1 }), ["DestinationNode"] = "elsewhere" }),
+                        Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["DestinationNode"] = "two" }),
+                    ]),
+                }),
+            ]),
+        });
+        Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["BGM"] = Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["Song"] = graph }), ["Version"] = 3 })
+            .ToFile(Path.Combine(w.Root, "Sound", "Bgm", "bgm.Product.100.byml"));
+        return bars;
+    }
+
+    [Fact]
+    public void SectionInfoFollowsTheTablesPlayingOrder()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+
+        var result = w.Run("bars-section-info", [bars, "", "0,1,2"]);
+
+        var sections = result["sections"]!.AsArray();
+        Assert.True(result["hasTable"]!.GetValue<bool>());
+        Assert.Equal(["Song_Intro", "Song_01", "Song_02"], sections.Select(s => s!["name"]!.GetValue<string>()));
+        Assert.Equal([1, 0, 2], sections.Select(s => s!["index"]!.GetValue<int>()));
+        Assert.Equal(0.05, sections[0]!["seconds"]!.GetValue<double>(), 6);
+        Assert.Null(sections[0]!["fixedSeconds"]);
+        Assert.Equal(0.1, sections[2]!["fixedSeconds"]!.GetValue<double>(), 5);
+        Assert.Equal(1.5, sections[2]!["tailSeconds"]!.GetValue<double>(), 5);
+        Assert.Equal("Song_01", sections[0]!["next"]!.GetValue<string>());
+        Assert.Equal("Song_02", sections[1]!["next"]!.GetValue<string>());
+        Assert.Equal("Song_01", sections[2]!["next"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void WithoutATableSectionsGoIntroFirstThenByName()
+    {
+        using Workspace w = new();
+        string bars = w.Path("Song.bars");
+        File.WriteAllBytes(bars, ManyBars(("B", Bwav.Build([Tone(100)], 32000)), ("Song_Intro", Bwav.Build([Tone(100)], 32000)), ("A", Bwav.Build([Tone(100)], 32000))));
+
+        var result = w.Run("bars-section-info", [bars, "", "0,1,2"]);
+
+        Assert.False(result["hasTable"]!.GetValue<bool>());
+        Assert.Equal(["Song_Intro", "A", "B"], result["sections"]!.AsArray().Select(s => s!["name"]!.GetValue<string>()));
+    }
+
+    private static string SectionSpec(string source, bool updateTable, params (int Index, int Start, int End)[] sections)
+        => new System.Text.Json.Nodes.JsonObject
+        {
+            ["source"] = source,
+            ["updateTable"] = updateTable,
+            ["sections"] = new System.Text.Json.Nodes.JsonArray([.. sections.Select(s => (System.Text.Json.Nodes.JsonNode)new System.Text.Json.Nodes.JsonObject { ["index"] = s.Index, ["start"] = s.Start, ["end"] = s.End })]),
+        }.ToJsonString();
+
+    [Fact]
+    public void OneSourceIsCutAcrossAGroupAndTheFixedLengthIsFreed()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        string source = w.Path("master.wav");
+        short[] tone = [.. Enumerable.Range(0, 9000).Select(i => (short)(i % 2000))];
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 24000, Channels = [tone] }));
+
+        var result = w.Run("replace-bars-sections", [bars, ""], SectionSpec(source, true, (1, 0, 2000), (0, 2000, 5000), (2, 5000, 9000)));
+
+        byte[] written = File.ReadAllBytes(bars);
+        TotkBars parsed = TotkBars.Parse(written);
+        Assert.Equal(2000, Bwav.Decode(written.AsSpan(parsed.Entries[1].BwavOffset)).SampleCount);
+        Assert.Equal(3000, Bwav.Decode(written.AsSpan(parsed.Entries[0].BwavOffset)).SampleCount);
+        Assert.Equal(4000, Bwav.Decode(written.AsSpan(parsed.Entries[2].BwavOffset)).SampleCount);
+        Assert.Equal(24000, Bwav.Decode(written.AsSpan(parsed.Entries[0].BwavOffset)).SampleRate);
+
+        // The cut really is that part of the source (allowing for DSP-ADPCM's small error).
+        short[] middle = Bwav.Decode(written.AsSpan(parsed.Entries[0].BwavOffset)).Channels[0];
+        Assert.InRange(Math.Abs(middle[1500] - tone[3500]), 0, 200);
+
+        var sections = result["sections"]!.AsArray();
+        Assert.Equal(3, sections.Count);
+        foreach (var section in sections) File.Delete(section!["fullBwavTempPath"]!.GetValue<string>());
+        Assert.Equal(1, result["tableNodesChanged"]!.GetValue<int>());
+
+        Byml nodes = Byml.FromFile(Path.Combine(w.Root, "Sound", "Bgm", "bgm.Product.100.byml"))["BGM"]!["Song"]!["Node"]!;
+        Byml two = nodes.AsArray.First(n => n["Key"]?.AsString() == "Song_02");
+        Assert.True(two["IsDurationAuto"]!.Bool);
+        Assert.Null(two["Duration"]);
+        Assert.Null(two["StartOffset"]);
+        Assert.Equal(0f, two["FadeOutTime"]!["Value"]!.Float);
+    }
+
+    [Fact]
+    public void AGroupThatFailsPartWayLeavesTheBarsAsItWas()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        byte[] before = File.ReadAllBytes(bars);
+        string source = w.Path("master.wav");
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 24000, Channels = [Tone(9000)] }));
+
+        Assert.Throws<IndexOutOfRangeException>(() => w.Run("replace-bars-sections", [bars, ""], SectionSpec(source, true, (1, 0, 2000), (7, 2000, 5000))));
+        Assert.Equal(before, File.ReadAllBytes(bars));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => w.Run("replace-bars-sections", [bars, ""], SectionSpec(source, true, (1, 0, 99999))));
+        Assert.Equal(before, File.ReadAllBytes(bars));
+
+        Assert.Throws<InvalidDataException>(() => w.Run("replace-bars-sections", [bars, ""], SectionSpec(source, true, (1, 0, 100), (1, 100, 200))));
+        Assert.Equal(before, File.ReadAllBytes(bars));
+    }
+
+    [Fact]
+    public void LeavingTheTableAloneIsAnOption()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        string table = Path.Combine(w.Root, "Sound", "Bgm", "bgm.Product.100.byml");
+        byte[] before = File.ReadAllBytes(table);
+        string source = w.Path("master.wav");
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 24000, Channels = [Tone(9000)] }));
+
+        var result = w.Run("replace-bars-sections", [bars, ""], SectionSpec(source, false, (2, 0, 4000)));
+
+        foreach (var section in result["sections"]!.AsArray()) File.Delete(section!["fullBwavTempPath"]!.GetValue<string>());
+        Assert.Null(result["tableUpdatedAt"]);
+        Assert.Equal(before, File.ReadAllBytes(table));
     }
 
     [Fact]

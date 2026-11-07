@@ -207,6 +207,8 @@ export interface BarsReplaceResult extends BridgeResult {
     embedded?: 'prefetch' | 'full' | null;
     /** True when the entry streams from romfs and the full BWAV must also be placed there. */
     needsStreamFile?: boolean;
+    /** Romfs-relative path of the entry's existing full BWAV (mod or game), when it has one. */
+    streamRelativePath?: string | null;
     fullBwavTempPath?: string;
     numSamples?: number;
     channels?: number;
@@ -218,6 +220,32 @@ export interface BarsReplaceResult extends BridgeResult {
     loudnessUpdated?: boolean;
     /** Integrated loudness of the new audio in LUFS, when measured. */
     integratedLoudness?: number | null;
+    /** One result per entry, for an edit that replaced a group of them. */
+    sections?: BarsReplaceResult[];
+    /** Where the music table was saved, when the edit changed it. */
+    tableUpdatedAt?: string | null;
+    tableNodesChanged?: number;
+}
+
+/** What the section editor knows about one entry of a group. */
+export interface BarsSectionInfo {
+    index: number;
+    name: string;
+    /** The length of its current audio file. */
+    seconds: number;
+    looped: boolean;
+    /** Whether the music table plays this entry. */
+    inTable: boolean;
+    /** The play length the table sets, for an entry that doesn't follow its file's length. */
+    fixedSeconds?: number | null;
+    tailSeconds?: number | null;
+    /** The entry the table normally plays after this one. */
+    next?: string | null;
+}
+
+export interface BarsSectionInfoResult extends BridgeResult {
+    sections?: BarsSectionInfo[];
+    hasTable?: boolean;
 }
 
 export interface BntxTextureResult {
@@ -428,6 +456,7 @@ export async function runBridgeReplaceBarsAudioAsync(
     loopEnd: BarsLoopSpec = 'auto',
     sourceName = 'audio.bin',
     env?: NodeJS.ProcessEnv,
+    trimAfterLoop = false,
 ): Promise<BarsReplaceResult> {
     return runBridgeJsonAsync<BarsReplaceResult>(
         hostExe,
@@ -439,8 +468,106 @@ export async function runBridgeReplaceBarsAudioAsync(
             loopStart.toString(),
             loopEnd.toString(),
             sourceName,
+            trimAfterLoop ? 'true' : 'false',
         ],
         audioPayload.toString('base64'),
+        env,
+    );
+}
+
+/** A source audio file decoded to a temporary 16-bit WAV for previewing. The caller deletes `wavPath`. */
+export interface DecodedAudioFile extends BridgeResult {
+    wavPath?: string;
+    sampleRate?: number;
+    channels?: number;
+    samples?: number;
+    loopStart?: number | null;
+    loopEnd?: number | null;
+}
+
+export async function runBridgeDecodeAudioFileAsync(
+    hostExe: string,
+    filePath: string,
+    env?: NodeJS.ProcessEnv,
+): Promise<DecodedAudioFile> {
+    return runBridgeJsonAsync<DecodedAudioFile>(hostExe, ['decode-audio-file', filePath], undefined, env);
+}
+
+/** A BARS entry's whole sound, decoded for the loop editor. The caller deletes `wavPath`. */
+export async function runBridgeDecodeBarsEntryAsync(
+    hostExe: string,
+    archivePath: string,
+    internalPath: string,
+    entryIndex: number,
+    env?: NodeJS.ProcessEnv,
+): Promise<DecodedAudioFile> {
+    return runBridgeJsonAsync<DecodedAudioFile>(
+        hostExe,
+        ['decode-bars-entry', archivePath, internalPath, entryIndex.toString()],
+        undefined,
+        env,
+    );
+}
+
+/** A group of BARS entries in playing order, with what the music table says about each. */
+export async function runBridgeBarsSectionInfoAsync(
+    hostExe: string,
+    archivePath: string,
+    internalPath: string,
+    entryIndices: number[],
+    env?: NodeJS.ProcessEnv,
+): Promise<BarsSectionInfoResult> {
+    return runBridgeJsonAsync<BarsSectionInfoResult>(
+        hostExe,
+        ['bars-section-info', archivePath, internalPath, entryIndices.join(',')],
+        undefined,
+        env,
+    );
+}
+
+/** Cuts one source file across a group of BARS entries, all or nothing. */
+export async function runBridgeReplaceBarsSectionsAsync(
+    hostExe: string,
+    archivePath: string,
+    internalPath: string,
+    spec: {
+        source: string;
+        updateTable: boolean;
+        sections: { index: number; start: number; end: number; loop: boolean }[];
+    },
+    env?: NodeJS.ProcessEnv,
+): Promise<BarsReplaceResult> {
+    return runBridgeJsonAsync<BarsReplaceResult>(
+        hostExe,
+        ['replace-bars-sections', archivePath, internalPath],
+        JSON.stringify(spec),
+        env,
+    );
+}
+
+/** Sets a BARS entry's loop without re-encoding, unless `trimAfterLoop` has to cut audio. */
+export async function runBridgeSetBarsLoopAsync(
+    hostExe: string,
+    archivePath: string,
+    internalPath: string,
+    entryIndex: number,
+    loopStart: number | 'none',
+    loopEnd: number | 'none',
+    trimAfterLoop = false,
+    env?: NodeJS.ProcessEnv,
+): Promise<BarsReplaceResult> {
+    return runBridgeJsonAsync<BarsReplaceResult>(
+        hostExe,
+        [
+            'set-bars-loop',
+            archivePath,
+            internalPath,
+            entryIndex.toString(),
+            loopStart.toString(),
+            loopEnd.toString(),
+            trimAfterLoop ? 'true' : 'false',
+        ],
+        undefined,
         env,
     );
 }

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using BfAudioSharp;
+using BymlSharp;
 
 namespace TkvscHost;
 
@@ -16,6 +17,11 @@ public static class AudioCommands
         commands["list-bars"] = ListBars;
         commands["read-bars-audio"] = ReadBarsAudio;
         commands["replace-bars-audio"] = ReplaceBarsAudio;
+        commands["decode-audio-file"] = DecodeAudioFile;
+        commands["decode-bars-entry"] = DecodeBarsEntry;
+        commands["set-bars-loop"] = SetBarsLoop;
+        commands["bars-section-info"] = BarsSectionInfo;
+        commands["replace-bars-sections"] = ReplaceBarsSections;
     }
 
     // ---- shared ----
@@ -111,16 +117,17 @@ public static class AudioCommands
         return "";
     }
 
-    // An entry's whole BWAV: the mod's own folder is searched before the game's, so a replaced stream wins.
-    private static byte[]? FindFullBwav(string name, string romfs, string modRoot)
+    // Where an entry's whole BWAV is: the mod's own folder is searched before the game's, so a replaced stream wins.
+    private static (string Path, string RomfsRelative)? LocateFullBwav(string name, string romfs, string modRoot)
     {
         foreach (string root in new[] { modRoot, romfs })
         {
             if (root.Length == 0) continue;
             foreach (string pattern in new[] { "Sound/Resource/Stream/{0}.bwav", "Sound/Resource/{0}.bwav", "Voice/Resource/Stream/{0}.bwav" })
             {
-                string candidate = Path.Combine(root, string.Format(pattern, name));
-                if (File.Exists(candidate)) return File.ReadAllBytes(candidate);
+                string relative = string.Format(pattern, name);
+                string candidate = Path.Combine(root, relative);
+                if (File.Exists(candidate)) return (candidate, relative);
             }
         }
         return null;
@@ -150,7 +157,7 @@ public static class AudioCommands
                 ["amta_offset"] = entry.AmtaOffset,
                 ["bwav_offset"] = entry.BwavOffset,
                 ["has_prefetch"] = entry.BwavOffset != -1,
-                ["has_romfs_bwav"] = FindFullBwav(entry.Name, c.Romfs, modRoot) is not null,
+                ["has_romfs_bwav"] = LocateFullBwav(entry.Name, c.Romfs, modRoot) is not null,
                 ["metadata"] = new JsonObject
                 {
                     ["audio_type"] = m.AudioType,
@@ -191,8 +198,8 @@ public static class AudioCommands
             throw new IndexOutOfRangeException($"Entry index {index} out of range (BARS has {bars.Entries.Count} entries)");
         TotkBarsEntry entry = bars.Entries[index];
 
-        if (!forcePrefetch && FindFullBwav(entry.Name, c.Romfs, ModRomfsRoot(archive)) is { } full)
-            return DecodedToWav(full, entry.Name, false);
+        if (!forcePrefetch && LocateFullBwav(entry.Name, c.Romfs, ModRomfsRoot(archive)) is { } full)
+            return DecodedToWav(File.ReadAllBytes(full.Path), entry.Name, false);
 
         if (entry.BwavOffset == -1)
         {
@@ -270,6 +277,313 @@ public static class AudioCommands
         }
     }
 
+    // A source file decoded the way replacing reads it, so sample positions picked in the loop editor hold for the encode.
+    private static JsonNode DecodeAudioFile(CommandContext c) => DecodedPreview(ReadSourceAudio(c.Arg(0)));
+
+    private static PcmAudio ReadSourceAudio(string file)
+    {
+        byte[] payload = File.ReadAllBytes(file);
+        if (Bwav.IsBwav(payload))
+        {
+            if (Bwav.IsDummy(payload)) throw new InvalidDataException("This BWAV is a dummy clip (0 samples) and contains no audio data.");
+            return Decode(payload);
+        }
+        if (!Wav.IsWav(payload)) payload = DecodeWithFfmpeg(payload, Path.GetFileName(file));
+        return Wav.Parse(payload);
+    }
+
+    // ---- groups of entries, as sections of one piece of music ----
+
+    // The game's music table: the mod's copy if it has one, else the game's. Sound/Bgm/bgm.Product.<version>.byml.zs in OoT and Tears.
+    private static string? FindBgmTable(string root)
+    {
+        string folder = Path.Combine(root, "Sound", "Bgm");
+        if (root.Length == 0 || !Directory.Exists(folder)) return null;
+        return Directory.GetFiles(folder, "bgm.Product.*.byml*").OrderBy(f => f, StringComparer.Ordinal).LastOrDefault();
+    }
+
+    private static (string Path, BymlFile Table, Unwrapped Unwrapped)? LoadBgmTable(CommandContext c, string modRoot)
+    {
+        if ((FindBgmTable(modRoot) ?? FindBgmTable(c.Romfs)) is not { } path) return null;
+        Unwrapped unwrapped = c.Containers.Decompress(File.ReadAllBytes(path), path);
+        return (path, BymlFile.FromBinary(unwrapped.Data), unwrapped);
+    }
+
+    private static IEnumerable<Byml> BgmGraphs(BymlFile table)
+        => table.Root["BGM"] is { IsMap: true } graphs ? graphs.AsMap.Values : [];
+
+    private static IEnumerable<Byml> GraphNodes(Byml graph)
+        => graph["Node"] is { IsArray: true } nodes ? nodes.AsArray : [];
+
+    private static bool IsAsset(Byml node) => node["Type"]?.AsString() == "Asset";
+
+    // Nodes with a set play length rather than their file's. Such a node also runs a negative fade-out as long as the file
+    // is past that length, which looks like a tail overlapping the next node.
+    private static bool IsFixedLength(Byml node) => node["IsDurationAuto"] is { Type: BymlType.Bool, Bool: false } && node["Duration"] is not null;
+
+    private static double SecondsOf(Byml? time) => time?["Value"]?.AsNumber() ?? 0;
+
+    // Where a node goes when nothing interrupts it: its unconditional transitions, or all of them if every one has a condition.
+    private static IEnumerable<string> PlainNextNodes(Byml node)
+    {
+        if (node["Transition"] is not { IsArray: true } transitions) return [];
+        List<Byml> all = [.. transitions.AsArray];
+        List<Byml> plain = [.. all.Where(t => t["ConditionBin"] is null)];
+        return (plain.Count > 0 ? plain : all).Select(t => t["DestinationNode"]?.AsString()).OfType<string>();
+    }
+
+    // The graph's assets in playing order, walking from Start along the uninterrupted path.
+    private static List<string> PlayingOrder(Byml graph)
+    {
+        Dictionary<string, Byml> byName = [];
+        foreach (Byml node in GraphNodes(graph))
+            if (node["Name"]?.AsString() is { } name) byName[name] = node;
+
+        List<string> order = [];
+        HashSet<string> seen = [];
+        void Walk(Byml node)
+        {
+            if (node["Name"]?.AsString() is not { } name || !seen.Add(name)) return;
+            if (IsAsset(node) && node["Key"]?.AsString() is { } key && !order.Contains(key)) order.Add(key);
+            foreach (string next in PlainNextNodes(node))
+                if (byName.TryGetValue(next, out Byml? nextNode)) Walk(nextNode);
+        }
+        foreach (Byml node in GraphNodes(graph))
+            if (node["Type"]?.AsString() == "Start") Walk(node);
+        return order;
+    }
+
+    // The asset a graph's asset normally runs into, through any switches and the like.
+    private static string? NextAsset(Byml graph, Byml asset)
+    {
+        Dictionary<string, Byml> byName = [];
+        foreach (Byml node in GraphNodes(graph))
+            if (node["Name"]?.AsString() is { } name) byName[name] = node;
+
+        HashSet<string> seen = [];
+        Queue<string> queue = new(PlainNextNodes(asset));
+        while (queue.TryDequeue(out string? name))
+        {
+            if (!seen.Add(name) || !byName.TryGetValue(name, out Byml? node)) continue;
+            if (IsAsset(node)) return node["Key"]?.AsString();
+            foreach (string next in PlainNextNodes(node)) queue.Enqueue(next);
+        }
+        return null;
+    }
+
+    // What the section editor needs for the entries it was given: the file lengths, what the table sets, and the playing order.
+    private static JsonNode BarsSectionInfo(CommandContext c)
+    {
+        string archive = c.Arg(0), internalPath = c.ArgOr(1, "");
+        int[] indices = [.. c.Arg(2).Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse)];
+        var (data, bars) = LoadBars(c, archive, internalPath);
+        string modRoot = ModRomfsRoot(archive);
+        BymlFile? table = LoadBgmTable(c, modRoot)?.Table;
+        Dictionary<int, string> names = indices.ToDictionary(i => i, i => EntryAt(bars, i).Name);
+
+        // The graph holding the most of these entries gives the order; the rest follow by name.
+        Byml? graph = table is null ? null : BgmGraphs(table)
+            .Select(g => (Graph: g, Count: GraphNodes(g).Count(n => IsAsset(n) && n["Key"]?.AsString() is { } key && names.ContainsValue(key))))
+            .Where(g => g.Count > 0).OrderByDescending(g => g.Count).Select(g => g.Graph).FirstOrDefault();
+        List<string> order = graph is null ? [] : PlayingOrder(graph);
+
+        JsonArray sections = [];
+        foreach (int index in indices
+            .OrderBy(i => order.IndexOf(names[i]) is var at && at >= 0 ? at : int.MaxValue)
+            .ThenBy(i => names[i].Contains("intro", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(i => names[i], StringComparer.OrdinalIgnoreCase))
+        {
+            TotkBarsEntry entry = bars.Entries[index];
+            byte[]? whole = LocateFullBwav(entry.Name, c.Romfs, modRoot) is { } full ? File.ReadAllBytes(full.Path)
+                : entry.BwavOffset != -1 ? data[entry.BwavOffset..]
+                : null;
+
+            Byml? node = table is null ? null : (graph is null ? [] : GraphNodes(graph)).Concat(BgmGraphs(table).SelectMany(GraphNodes))
+                .FirstOrDefault(n => IsAsset(n) && n["Key"]?.AsString() == entry.Name);
+            bool isFixed = node is not null && IsFixedLength(node);
+            string? next = node is not null && graph is not null && GraphNodes(graph).Contains(node) ? NextAsset(graph, node) : null;
+
+            sections.Add(new JsonObject
+            {
+                ["index"] = index,
+                ["name"] = entry.Name,
+                ["seconds"] = whole is null ? 0 : BinaryPrimitives.ReadUInt32LittleEndian(whole.AsSpan(0x18)) / (double)Math.Max(1u, BinaryPrimitives.ReadUInt32LittleEndian(whole.AsSpan(0x14))),
+                ["looped"] = whole is not null && BinaryPrimitives.ReadInt32LittleEndian(whole.AsSpan(0x4C)) != -1,
+                ["inTable"] = node is not null,
+                ["fixedSeconds"] = isFixed ? SecondsOf(node!["Duration"]) : null,
+                ["tailSeconds"] = isFixed ? Math.Max(0, -SecondsOf(node!["FadeOutTime"])) : null,
+                ["next"] = next,
+            });
+        }
+        return new JsonObject { ["sections"] = sections, ["hasTable"] = table is not null };
+    }
+
+    // Cuts one source into several entries. The spec on stdin: { source, updateTable, sections: [{ index, start, end, loop }] }.
+    // The BARS goes back to how it was if any of it fails, so a group is never left half replaced.
+    private static JsonNode ReplaceBarsSections(CommandContext c)
+    {
+        string archive = c.Arg(0), internalPath = c.ArgOr(1, "");
+        JsonNode spec = JsonNode.Parse(c.StdinText) ?? throw new InvalidDataException("Empty section list.");
+        PcmAudio source = ReadSourceAudio(spec["source"]!.GetValue<string>());
+        bool updateTable = spec["updateTable"]?.GetValue<bool>() ?? false;
+        List<(int Index, int Start, int End, bool Loop)> sections = [.. spec["sections"]!.AsArray().Select(s =>
+            (s!["index"]!.GetValue<int>(), s["start"]!.GetValue<int>(), s["end"]!.GetValue<int>(), s["loop"]?.GetValue<bool>() ?? false))];
+
+        foreach (var (index, start, end, _) in sections)
+            if (start < 0 || end <= start || end > source.SampleCount)
+                throw new ArgumentOutOfRangeException(nameof(spec), $"Section {start}-{end} for entry {index} doesn't fit the {source.SampleCount} samples of the source.");
+        if (sections.Select(s => s.Index).Distinct().Count() != sections.Count) throw new InvalidDataException("An entry appears twice in the section list.");
+
+        Archives archives = new(c.Containers);
+        byte[] original = File.ReadAllBytes(archive);
+        JsonArray results = [];
+        try
+        {
+            List<string> names = [];
+            foreach (var (index, start, end, loop) in sections)
+            {
+                var (file, logical) = Source(archives, archive, internalPath);
+                Unwrapped unwrapped = c.Containers.Decompress(file, logical);
+                names.Add(EntryAt(TotkBars.Parse(unwrapped.Data), index).Name);
+
+                PcmAudio cut = new() { SampleRate = source.SampleRate, Channels = [.. source.Channels.Select(channel => channel[start..end])] };
+                var loopStart = loop ? (false, false, 0) : (false, true, 0);
+                var loopEnd = loop ? (false, false, end - start) : (false, true, 0);
+                results.Add(ReplaceEntryAudio(c, archives, archive, logical, unwrapped, index, loopStart, loopEnd, names[^1], false, Wav.Write(cut)));
+            }
+
+            var (tablePath, changed) = updateTable ? FreeFixedLengths(c, ModRomfsRoot(archive), names) : (null, 0);
+            return new JsonObject
+            {
+                ["success"] = true,
+                ["sections"] = results,
+                ["tableUpdatedAt"] = tablePath,
+                ["tableNodesChanged"] = changed,
+            };
+        }
+        catch
+        {
+            File.WriteAllBytes(archive, original);
+            foreach (JsonNode? result in results)
+                if (result?["fullBwavTempPath"]?.GetValue<string>() is { } temp) File.Delete(temp);
+            throw;
+        }
+    }
+
+    // Makes these entries' table nodes play their whole file, in the exact shape of the table's other nodes that do.
+    private static (string? Path, int Changed) FreeFixedLengths(CommandContext c, string modRoot, List<string> names)
+    {
+        if (modRoot.Length == 0 || LoadBgmTable(c, modRoot) is not { } loaded) return (null, 0);
+
+        int changed = 0;
+        foreach (Byml node in BgmGraphs(loaded.Table).SelectMany(GraphNodes))
+        {
+            if (!IsAsset(node) || node["Key"]?.AsString() is not { } key || !names.Contains(key) || !IsFixedLength(node)) continue;
+            IDictionary<string, Byml> map = node.AsMap;
+            map.Remove("Duration");
+            map.Remove("StartOffset");
+            map["IsDurationAuto"] = true;
+            // A new map, because the file may share this one between nodes.
+            map["FadeOutTime"] = Byml.Map(new Dictionary<string, Byml>(StringComparer.Ordinal) { ["Type"] = "Second", ["Value"] = 0f });
+            changed++;
+        }
+        if (changed == 0) return (null, 0);
+
+        string target = Path.Combine(modRoot, "Sound", "Bgm", Path.GetFileName(loaded.Path));
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllBytes(target, c.Containers.Compress(loaded.Table.Write(), target, loaded.Unwrapped.WasZstd, loaded.Unwrapped.WasYaz0));
+        return (target, changed);
+    }
+
+    private static JsonObject DecodedPreview(PcmAudio audio) => new()
+    {
+        ["wavPath"] = TempFile("totk-audio-preview-", ".wav", Wav.Write(audio)),
+        ["sampleRate"] = audio.SampleRate,
+        ["channels"] = audio.Channels.Length,
+        ["samples"] = audio.SampleCount,
+        ["loopStart"] = audio.LoopStart,
+        ["loopEnd"] = audio.LoopEnd,
+    };
+
+    private static TotkBarsEntry EntryAt(TotkBars bars, int index) => index >= 0 && index < bars.Entries.Count
+        ? bars.Entries[index]
+        : throw new IndexOutOfRangeException($"Entry index {index} out of range (BARS has {bars.Entries.Count} entries)");
+
+    // A prefetch clip is only the start of the sound, so its loop can't be judged or cut without the whole BWAV.
+    private static InvalidDataException OnlyAPrefetchClip(string name)
+        => new($"Only the prefetch clip of '{name}' is available, so its loop can't be edited. Set the game dump path so its full BWAV can be found.");
+
+    private static bool IsEmbeddedPrefetch(byte[] data, int offset) => BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset + 0xC)) != 0;
+
+    // An entry's whole sound for the loop editor: the BWAV on disk, or the BARS's own copy when that's all there is.
+    private static JsonNode DecodeBarsEntry(CommandContext c)
+    {
+        string archive = c.Arg(0), internalPath = c.ArgOr(1, "");
+        var (data, bars) = LoadBars(c, archive, internalPath);
+        TotkBarsEntry entry = EntryAt(bars, int.Parse(c.ArgOr(2, "0")));
+
+        if (LocateFullBwav(entry.Name, c.Romfs, ModRomfsRoot(archive)) is { } full) return DecodedPreview(Decode(File.ReadAllBytes(full.Path)));
+        if (entry.BwavOffset == -1) throw new FileNotFoundException($"No audio available for '{entry.Name}'.");
+        if (IsEmbeddedPrefetch(data, entry.BwavOffset)) throw OnlyAPrefetchClip(entry.Name);
+        return DecodedPreview(Decode(data[entry.BwavOffset..]));
+    }
+
+    // Sets an entry's loop without touching its audio. Loops live only in BWAV headers (real v5 AMTAs hold none), so that's
+    // the BWAV on disk plus the BARS's embedded block, which carries the whole sound's loop even when it's a prefetch clip.
+    private static JsonNode SetBarsLoop(CommandContext c)
+    {
+        string archive = c.Arg(0), internalPath = c.ArgOr(1, "");
+        int entryIndex = int.Parse(c.ArgOr(2, "0"));
+        var startArg = ParseLoop(c.ArgOr(3, "none"));
+        var endArg = ParseLoop(c.ArgOr(4, "none"));
+        bool trim = c.ArgOr(5, "false") == "true";
+        if (startArg.Auto || endArg.Auto) throw new ArgumentException("set-bars-loop needs explicit loop points or 'none'.");
+
+        Archives archives = new(c.Containers);
+        var (file, logical) = Source(archives, archive, internalPath);
+        Unwrapped unwrapped = c.Containers.Decompress(file, logical);
+        byte[] data = unwrapped.Data;
+        TotkBarsEntry entry = EntryAt(TotkBars.Parse(data), entryIndex);
+
+        var located = LocateFullBwav(entry.Name, c.Romfs, ModRomfsRoot(archive));
+        byte[]? full = located is { } onDisk ? File.ReadAllBytes(onDisk.Path) : null;
+        bool embedded = entry.BwavOffset != -1;
+        if (full is null && !embedded) throw new FileNotFoundException($"No audio available for '{entry.Name}'.");
+        bool prefetch = embedded && IsEmbeddedPrefetch(data, entry.BwavOffset);
+        if (full is null && prefetch) throw OnlyAPrefetchClip(entry.Name);
+
+        int? loopStart = startArg.None || endArg.None ? null : startArg.Value;
+        int? loopEnd = startArg.None || endArg.None ? null : endArg.Value;
+
+        // Cutting changes the audio, so it goes the way a replacement does: re-encoded, with the clip and loudness redone.
+        byte[] whole = full ?? data[entry.BwavOffset..];
+        if (trim && loopEnd is { } cutAt && cutAt < Bwav.SampleCount(whole))
+            return ReplaceEntryAudio(c, archives, archive, logical, unwrapped, entryIndex, startArg, endArg, entry.Name, true, whole);
+
+        if (embedded)
+        {
+            Bwav.SetLoop(data.AsSpan(entry.BwavOffset), loopStart, loopEnd).CopyTo(data, entry.BwavOffset);
+            Save(c, archives, archive, logical, data, unwrapped.WasZstd);
+        }
+
+        byte[] written = full is null ? data[entry.BwavOffset..] : Bwav.SetLoop(full, loopStart, loopEnd);
+        int endOut = BinaryPrimitives.ReadInt32LittleEndian(written.AsSpan(0x10 + 0x3C)), startOut = BinaryPrimitives.ReadInt32LittleEndian(written.AsSpan(0x10 + 0x40));
+        return new JsonObject
+        {
+            ["success"] = true,
+            ["name"] = entry.Name,
+            ["embedded"] = embedded ? (prefetch ? "prefetch" : "full") : null,
+            ["needsStreamFile"] = full is not null,
+            ["streamRelativePath"] = located?.RomfsRelative,
+            ["fullBwavTempPath"] = full is null ? null : TempFile("totk-bwav-full-", ".bwav", written),
+            ["numSamples"] = Bwav.SampleCount(written),
+            ["channels"] = Bwav.ChannelCount(written),
+            ["loopStart"] = endOut != -1 ? startOut : null,
+            ["loopEnd"] = endOut != -1 ? endOut : null,
+            ["loudnessUpdated"] = false,
+        };
+    }
+
     private static JsonNode ReplaceBarsAudio(CommandContext c)
     {
         string archive = c.Arg(0), internalPath = c.ArgOr(1, "");
@@ -277,6 +591,7 @@ public static class AudioCommands
         var loopStartArg = ParseLoop(c.ArgOr(3, "auto"));
         var loopEndArg = ParseLoop(c.ArgOr(4, "auto"));
         string nameHint = c.ArgOr(5, "audio.bin");
+        bool trim = c.ArgOr(6, "false") == "true";
 
         string encoded = c.StdinText.Trim();
         byte[] payload = encoded.Length == 0 ? [] : Convert.FromBase64String(encoded);
@@ -284,11 +599,20 @@ public static class AudioCommands
         Archives archives = new(c.Containers);
         var (file, logical) = Source(archives, archive, internalPath);
         Unwrapped unwrapped = c.Containers.Decompress(file, logical);
+        return ReplaceEntryAudio(c, archives, archive, logical, unwrapped, entryIndex, loopStartArg, loopEndArg, nameHint, trim, payload);
+    }
+
+    private static JsonNode ReplaceEntryAudio(
+        CommandContext c, Archives archives, string archive, string logical, Unwrapped unwrapped, int entryIndex,
+        (bool Auto, bool None, int Value) loopStartArg, (bool Auto, bool None, int Value) loopEndArg,
+        string nameHint, bool trim, byte[] payload)
+    {
+        // Every looping BWAV in the game ends on its loop end, so an earlier end can cut the audio there. Needs explicit loop points.
+        bool explicitLoop = loopStartArg is { Auto: false, None: false } && loopEndArg is { Auto: false, None: false };
+        bool trimAfterLoop = trim && explicitLoop;
+
         byte[] data = unwrapped.Data;
-        TotkBars bars = TotkBars.Parse(data);
-        if (entryIndex < 0 || entryIndex >= bars.Entries.Count)
-            throw new IndexOutOfRangeException($"Entry index {entryIndex} out of range (BARS has {bars.Entries.Count} entries)");
-        TotkBarsEntry entry = bars.Entries[entryIndex];
+        TotkBarsEntry entry = EntryAt(TotkBars.Parse(data), entryIndex);
 
         // The AMTA channel count must match the audio (a v5 AMTA stores no length or loop, but does store channels), so remix to it.
         int targetChannels = entry.Metadata.ChannelCount;
@@ -296,9 +620,10 @@ public static class AudioCommands
         (int? Start, int? End)? bwavAutoLoop = null;
         PcmAudio? pcm = null;
 
-        if (Bwav.IsBwav(payload) && targetChannels > 0 && Bwav.ChannelCount(payload) != targetChannels)
+        if (Bwav.IsBwav(payload) && ((targetChannels > 0 && Bwav.ChannelCount(payload) != targetChannels)
+            || (trimAfterLoop && loopEndArg.Value < Bwav.SampleCount(payload))))
         {
-            // Decode it so it can be remixed, keeping its own loop for "auto".
+            // Decode it so it can be remixed or cut, keeping its own loop for "auto".
             int srcEnd = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(0x10 + 0x3C)), srcStart = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(0x10 + 0x40));
             bwavAutoLoop = srcEnd != -1 ? (srcStart, srcEnd) : (null, null);
             PcmAudio decoded = Decode(payload);
@@ -328,6 +653,11 @@ public static class AudioCommands
             {
                 sourceChannels = channels.Length;
                 channels = Bwav.MatchChannelCount(channels, targetChannels);
+            }
+            if (trimAfterLoop && loopStart < loopEnd && loopEnd < channels[0].Length)
+            {
+                int kept = loopEnd.Value;
+                channels = [.. channels.Select(channel => channel[..kept])];
             }
             fullBwav = Bwav.Build(channels, wav.SampleRate, loopStart, loopEnd);
             pcm = new PcmAudio { SampleRate = wav.SampleRate, Channels = channels };
@@ -377,13 +707,17 @@ public static class AudioCommands
             Save(c, archives, archive, logical, rebuilt, unwrapped.WasZstd);
         }
 
+        // An existing whole BWAV is what the entry plays from, so it has to be replaced too, whatever the BARS embeds.
+        var existing = LocateFullBwav(entry.Name, c.Romfs, ModRomfsRoot(archive));
+
         string fullPath = TempFile("totk-bwav-full-", ".bwav", fullBwav);
         return new JsonObject
         {
             ["success"] = true,
             ["name"] = entry.Name,
             ["embedded"] = embedded,
-            ["needsStreamFile"] = needsStreamFile,
+            ["needsStreamFile"] = needsStreamFile || existing is not null,
+            ["streamRelativePath"] = existing?.RomfsRelative,
             ["fullBwavTempPath"] = fullPath,
             ["numSamples"] = Bwav.SampleCount(fullBwav),
             ["channels"] = Bwav.ChannelCount(fullBwav),

@@ -15,13 +15,23 @@ import {
     runBridgeReplaceBntxPayloadAsync,
     runBridgeReplaceTxtgPayloadAsync,
     runBridgeReplaceBarsAudioAsync,
+    runBridgeDecodeAudioFileAsync,
+    runBridgeDecodeBarsEntryAsync,
+    runBridgeSetBarsLoopAsync,
+    runBridgeBarsSectionInfoAsync,
+    runBridgeReplaceBarsSectionsAsync,
+    type BarsEntry,
     type BarsLoopSpec,
+    type BarsReplaceResult,
+    type DecodedAudioFile,
 } from './bridge';
 import { warnAboutLegacyExtensions } from './legacyExtension';
 import { resolveNativeHost } from './nativeHost';
 import { openTextureViewer, initTextureViewer } from './textureViewer';
 import { openAudioViewer, initAudioViewer } from './audioViewer';
 import { openBarsViewer, initBarsViewer } from './barsViewer';
+import { openLoopEditor } from './loopEditor';
+import { openSectionEditor, type SectionEditorResult } from './sectionEditor';
 import { isEditableFile, toTotkDiskUri } from './editableFiles';
 import { TotkDiskFileSystemProvider } from './totkDiskFs';
 import {
@@ -90,6 +100,7 @@ import { TkvscEditorProvider } from './tkvscEditor';
 import { FontViewerProvider } from './fontViewer';
 import { FONT_IMPORT_FILTERS, isFontFilePath } from './fontReplace';
 import { InfoJsonEditorProvider } from './infoJsonEditor';
+import { resolveEditableCopy } from './addToProject';
 import { BwavEditorProvider } from './bwavEditor';
 import { openHexEditor } from './editors/hexEditor';
 import { setExtensionPath } from './romfsIndex';
@@ -1552,9 +1563,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
 
 
-    async function promptForBarsLoopPoints(): Promise<{ start: BarsLoopSpec; end: BarsLoopSpec } | undefined> {
+    type BarsLoopChoice = { start: BarsLoopSpec; end: BarsLoopSpec; trimAfterLoop?: boolean };
+
+    async function editBarsLoopPoints(
+        decode: () => Promise<DecodedAudioFile>,
+        sourceName: string,
+        existingTrack = false,
+    ): Promise<BarsLoopChoice | undefined> {
+        const decoded = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'Decoding audio for the loop editor…' },
+            decode,
+        );
+        if (decoded.error || !decoded.wavPath || !decoded.samples || !decoded.sampleRate) {
+            void vscode.window.showErrorMessage('Could not decode the audio: ' + (decoded.error || 'it has no samples'));
+            return undefined;
+        }
+        try {
+            const result = await openLoopEditor({
+                name: sourceName,
+                wavPath: decoded.wavPath,
+                sampleRate: decoded.sampleRate,
+                channels: decoded.channels ?? 1,
+                samples: decoded.samples,
+                loopStart: decoded.loopStart,
+                loopEnd: decoded.loopEnd,
+                existingTrack,
+            });
+            if (result === 'none') {
+                return { start: 'none', end: 'none' };
+            }
+            return result;
+        } finally {
+            fs.promises.unlink(decoded.wavPath).catch(() => { /* best effort */ });
+        }
+    }
+
+    async function promptForBarsLoopPoints(hostExe: string, sourcePath: string, sourceName: string): Promise<BarsLoopChoice | undefined> {
         const choice = await vscode.window.showQuickPick(
             [
+                {
+                    label: 'Open loop editor…',
+                    description: 'See the waveform, drag the loop points and listen to the seam',
+                    value: 'editor' as const,
+                },
                 {
                     label: 'Use loop from file',
                     description: 'Honor loop metadata in the source (WAV smpl chunk / BWAV header), if any',
@@ -1562,12 +1613,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 },
                 { label: 'No loop', description: 'Play once, no looping', value: 'none' as const },
                 { label: 'Loop entire clip', description: 'Loop from the first to the last sample', value: 'whole' as const },
-                { label: 'Custom loop points…', description: 'Enter loop start/end sample positions', value: 'custom' as const },
             ],
             { title: 'Loop points for the replacement audio', placeHolder: 'How should this sound loop?' },
         );
         if (!choice) {
             return undefined;
+        }
+        if (choice.value === 'editor') {
+            return editBarsLoopPoints(() => runBridgeDecodeAudioFileAsync(hostExe, sourcePath, getBridgeEnv()), sourceName);
         }
         if (choice.value === 'auto') {
             return { start: 'auto', end: 'auto' };
@@ -1575,33 +1628,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         if (choice.value === 'none') {
             return { start: 'none', end: 'none' };
         }
-        if (choice.value === 'whole') {
-            return { start: 0, end: 2147483647 };
-        }
-
-        const validateSample = (v: string): string | undefined =>
-            /^\d+$/.test(v.trim()) ? undefined : 'Enter a sample number (a non-negative integer)';
-        const startStr = await vscode.window.showInputBox({
-            title: 'Loop start (samples)',
-            prompt: 'Sample position where the loop begins (e.g. 48000 = 1 second at 48 kHz)',
-            value: '0',
-            validateInput: validateSample,
-        });
-        if (startStr === undefined) {
-            return undefined;
-        }
-        const endStr = await vscode.window.showInputBox({
-            title: 'Loop end (samples)',
-            prompt: 'Sample position where the loop ends — leave empty for the end of the clip',
-            validateInput: (v) => (v.trim() === '' ? undefined : validateSample(v)),
-        });
-        if (endStr === undefined) {
-            return undefined;
-        }
-        return {
-            start: parseInt(startStr.trim(), 10),
-            end: endStr.trim() === '' ? 2147483647 : parseInt(endStr.trim(), 10),
-        };
+        return { start: 0, end: 2147483647 };
     }
 
     context.subscriptions.push(
@@ -1622,10 +1649,121 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
                 if (raw && (raw as any).entries) {
                     const barsName = path.basename(uri.fsPath) || 'audio.bars';
-                    openBarsViewer(barsName, uri.toString(), (raw as any).entries, async (index: number, usePrefetch: boolean) => {
+                    const entries: BarsEntry[] = (raw as any).entries;
+                    // Moves to the project's copy once an edit has pulled a dump BARS in.
+                    let barsPath = diskArchive;
+
+                    // Runs a host edit on the project's copy of the BARS and saves what it produces there too.
+                    const applyBarsEdit = async (
+                        progressTitle: string,
+                        runHost: (barsFile: string) => Promise<BarsReplaceResult>,
+                        describe: (result: BarsReplaceResult) => string,
+                    ): Promise<BarsEntry[] | undefined> => {
+                        // Never edit the game dump: work on the project's copy of the BARS.
+                        const copy = await resolveEditableCopy(
+                            barsPath,
+                            context,
+                            archiveTree?.getProjectRoots() ?? [],
+                            archiveTree?.getActiveProject(),
+                        );
+                        if (!copy) {
+                            return undefined;
+                        }
+                        const discardPull = async () => {
+                            if (copy.pulled) {
+                                await fs.promises.unlink(copy.path).catch(() => { /* best effort */ });
+                            }
+                        };
+
+                        let result: BarsReplaceResult;
+                        try {
+                            result = await vscode.window.withProgress(
+                                { location: vscode.ProgressLocation.Notification, title: progressTitle },
+                                () => runHost(copy.path),
+                            );
+                        } catch (e) {
+                            await discardPull();
+                            throw e;
+                        }
+                        if (result.error || !result.success) {
+                            await discardPull();
+                            void vscode.window.showErrorMessage(
+                                'Failed to edit the BARS: ' + (result.error || 'Unknown error'),
+                            );
+                            return undefined;
+                        }
+                        barsPath = copy.path;
+
+                        const entryResults = result.sections ?? [result];
+                        const streamsSaved: string[] = [];
+                        for (const entryResult of entryResults) {
+                            if (entryResult.needsStreamFile && entryResult.fullBwavTempPath) {
+                                // The entry plays from a full BWAV, so the new one goes in the mod at the path
+                                // the game's has, or Stream/ beside the BARS in Sound/Resource or Voice/Resource.
+                                const archiveDir = path.dirname(copy.path);
+                                const modRomfs = /^(.*)[\\/](?:sound|voice)[\\/]resource$/i.exec(archiveDir)?.[1];
+                                let target: string | undefined;
+                                if (modRomfs !== undefined) {
+                                    target = entryResult.streamRelativePath
+                                        ? path.join(modRomfs, entryResult.streamRelativePath)
+                                        : path.join(archiveDir, 'Stream', `${entryResult.name}.bwav`);
+                                } else {
+                                    // BARS isn't under a romfs Sound/Resource folder; ask where the stream goes.
+                                    const picked = await vscode.window.showSaveDialog({
+                                        title: `"${entryResult.name}" is streamed: save the full BWAV (Sound/Resource/Stream/ in your mod)`,
+                                        defaultUri: vscode.Uri.file(path.join(archiveDir, `${entryResult.name}.bwav`)),
+                                        filters: { 'BWAV audio': ['bwav'] },
+                                    });
+                                    target = picked?.fsPath;
+                                }
+                                if (target) {
+                                    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+                                    await fs.promises.copyFile(entryResult.fullBwavTempPath, target);
+                                    streamsSaved.push(target);
+                                } else {
+                                    void vscode.window.showWarningMessage(
+                                        `"${entryResult.name}" is streamed, but the full BWAV wasn't saved. ` +
+                                        'Only the prefetch clip in the BARS was changed.',
+                                    );
+                                }
+                            }
+                            if (entryResult.fullBwavTempPath) {
+                                fs.promises.unlink(entryResult.fullBwavTempPath).catch(() => { /* best effort */ });
+                            }
+                        }
+
+                        const remixFrom = entryResults.find((r) => r.channelsConvertedFrom);
+                        const remixNote = remixFrom
+                            ? ` Converted ${remixFrom.channelsConvertedFrom}ch → ${remixFrom.channels}ch to match the ${entryResults.length > 1 ? 'entries' : 'entry'}.`
+                            : '';
+                        const loudnessNote = !result.sections && result.loudnessUpdated && typeof result.integratedLoudness === 'number'
+                            ? ` Loudness ${result.integratedLoudness.toFixed(1)} LUFS.`
+                            : '';
+                        const pullNote = copy.pulled ? ` Added ${path.basename(copy.path)} to the project.` : '';
+                        const savedNote = streamsSaved.length === 1
+                            ? ` (BARS updated, full BWAV at ${vscode.workspace.asRelativePath(streamsSaved[0]!)}).`
+                            : streamsSaved.length > 1
+                                ? ` (BARS updated, ${streamsSaved.length} full BWAVs in ${vscode.workspace.asRelativePath(path.dirname(streamsSaved[0]!))}).`
+                                : '.';
+                        void vscode.window.showInformationMessage(describe(result) + savedNote + pullNote + remixNote + loudnessNote);
+                        if (copy.pulled || streamsSaved.length > 0 || result.tableUpdatedAt) {
+                            void archiveTree?.refresh();
+                            if (copy.projectRoot) {
+                                void importKnownProjectCanonicalPaths({ projectRoots: [copy.projectRoot] });
+                            }
+                        }
+                        const refreshed = await runBridgeReadAsync(
+                            hostExe,
+                            ['list-bars', barsPath, filePath],
+                            getBridgeEnv(),
+                        );
+                        return (refreshed as any).entries;
+                    };
+
+                    openBarsViewer(barsName, uri.toString(), entries, async (index: number, usePrefetch: boolean) => {
                         const audioRaw = await runBridgeReadAsync(
                             hostExe,
-                            ['read-bars-audio', diskArchive, filePath, index.toString(), usePrefetch ? 'true' : 'false'],
+                            ['read-bars-audio', barsPath, filePath, index.toString(), usePrefetch ? 'true' : 'false'],
                             getBridgeEnv(),
                         );
                         return audioRaw as any;
@@ -1644,77 +1782,112 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         const payload = await fs.promises.readFile(picked[0].fsPath);
                         const sourceName = path.basename(picked[0].fsPath);
 
-                        const loops = await promptForBarsLoopPoints();
+                        const loops = await promptForBarsLoopPoints(hostExe, picked[0].fsPath, sourceName);
                         if (!loops) {
                             return undefined;
                         }
-
-                        const result = await vscode.window.withProgress(
-                            {
-                                location: vscode.ProgressLocation.Notification,
-                                title: 'Encoding and replacing BARS audio…',
-                            },
-                            () => runBridgeReplaceBarsAudioAsync(
-                                hostExe, diskArchive, filePath, index, payload,
-                                loops.start, loops.end, sourceName, getBridgeEnv(),
+                        return applyBarsEdit(
+                            'Encoding and replacing BARS audio…',
+                            (barsFile) => runBridgeReplaceBarsAudioAsync(
+                                hostExe, barsFile, filePath, index, payload,
+                                loops.start, loops.end, sourceName, getBridgeEnv(), loops.trimAfterLoop,
                             ),
+                            (result) => `Replaced audio for "${result.name}"`,
                         );
-                        if (result.error || !result.success) {
-                            void vscode.window.showErrorMessage(
-                                'Failed to replace BARS audio: ' + (result.error || 'Unknown error'),
-                            );
+                    }, async (index: number) => {
+                        const choice = await editBarsLoopPoints(
+                            () => runBridgeDecodeBarsEntryAsync(hostExe, barsPath, filePath, index, getBridgeEnv()),
+                            entries[index]?.name ?? barsName,
+                            true,
+                        );
+                        if (!choice) {
+                            return undefined;
+                        }
+                        const { start, end, trimAfterLoop } = choice;
+                        if (typeof start !== 'number' && start !== 'none' || typeof end !== 'number' && end !== 'none') {
+                            return undefined;
+                        }
+                        return applyBarsEdit(
+                            trimAfterLoop ? 'Cutting and re-encoding the track…' : 'Saving loop points…',
+                            (barsFile) => runBridgeSetBarsLoopAsync(hostExe, barsFile, filePath, index, start, end, trimAfterLoop, getBridgeEnv()),
+                            (result) => (start === 'none' ? `Removed the loop from "${result.name}"` : `Updated the loop of "${result.name}"`),
+                        );
+                    }, async (indices: number[]) => {
+                        const picked = await vscode.window.showOpenDialog({
+                            canSelectMany: false,
+                            title: `Select the audio to cut across ${indices.length} tracks`,
+                            filters: {
+                                'Audio': ['wav', 'bwav', 'mp3', 'ogg', 'oga', 'flac', 'm4a', 'aac', 'opus', 'wma', 'aiff', 'aif'],
+                                'All files': ['*'],
+                            },
+                        });
+                        if (!picked || picked.length === 0) {
+                            return undefined;
+                        }
+                        const sourcePath = picked[0].fsPath;
+                        const sourceName = path.basename(sourcePath);
+
+                        const [info, decoded] = await vscode.window.withProgress(
+                            { location: vscode.ProgressLocation.Notification, title: 'Decoding audio for the section editor…' },
+                            () => Promise.all([
+                                runBridgeBarsSectionInfoAsync(hostExe, barsPath, filePath, indices, getBridgeEnv()),
+                                runBridgeDecodeAudioFileAsync(hostExe, sourcePath, getBridgeEnv()),
+                            ]),
+                        );
+                        const deleteDecoded = () => {
+                            if (decoded.wavPath) {
+                                fs.promises.unlink(decoded.wavPath).catch(() => { /* best effort */ });
+                            }
+                        };
+                        if (info.error || !info.sections) {
+                            deleteDecoded();
+                            void vscode.window.showErrorMessage('Could not read those tracks: ' + (info.error || 'Unknown error'));
+                            return undefined;
+                        }
+                        if (decoded.error || !decoded.wavPath || !decoded.samples || !decoded.sampleRate) {
+                            deleteDecoded();
+                            void vscode.window.showErrorMessage('Could not decode the audio: ' + (decoded.error || 'it has no samples'));
                             return undefined;
                         }
 
-                        let streamSavedTo: string | undefined;
-                        if (result.needsStreamFile && result.fullBwavTempPath) {
-                            // Streamed sounds: the BARS only holds a prefetch clip, so the full
-                            // BWAV goes to Stream/ beside the BARS in Sound/Resource or Voice/Resource.
-                            const archiveDir = path.dirname(diskArchive);
-                            let target: string | undefined;
-                            if (/[\\/](?:sound|voice)[\\/]resource$/i.test(archiveDir)) {
-                                target = path.join(archiveDir, 'Stream', `${result.name}.bwav`);
-                            } else {
-                                // BARS isn't under a romfs Sound/Resource folder; ask where the stream goes.
-                                const picked = await vscode.window.showSaveDialog({
-                                    title: `"${result.name}" is streamed: save the full BWAV (Sound/Resource/Stream/ in your mod)`,
-                                    defaultUri: vscode.Uri.file(path.join(archiveDir, `${result.name}.bwav`)),
-                                    filters: { 'BWAV audio': ['bwav'] },
-                                });
-                                target = picked?.fsPath;
-                            }
-                            if (target) {
-                                await fs.promises.mkdir(path.dirname(target), { recursive: true });
-                                await fs.promises.copyFile(result.fullBwavTempPath, target);
-                                streamSavedTo = target;
-                            } else {
-                                void vscode.window.showWarningMessage(
-                                    `"${result.name}" is streamed, but the full BWAV wasn't saved. ` +
-                                    'Only the prefetch clip in the BARS was replaced.',
-                                );
-                            }
+                        let cuts: SectionEditorResult | undefined;
+                        try {
+                            cuts = await openSectionEditor({
+                                name: sourceName,
+                                wavPath: decoded.wavPath,
+                                sampleRate: decoded.sampleRate,
+                                channels: decoded.channels ?? 1,
+                                samples: decoded.samples,
+                                sections: info.sections,
+                                hasTable: !!info.hasTable,
+                            });
+                        } finally {
+                            deleteDecoded();
                         }
-                        if (result.fullBwavTempPath) {
-                            fs.promises.unlink(result.fullBwavTempPath).catch(() => { /* best effort */ });
+                        if (!cuts) {
+                            return undefined;
                         }
-
-                        const remixNote = result.channelsConvertedFrom
-                            ? ` Converted ${result.channelsConvertedFrom}ch → ${result.channels}ch to match the entry.`
-                            : '';
-                        const loudnessNote = result.loudnessUpdated && typeof result.integratedLoudness === 'number'
-                            ? ` Loudness ${result.integratedLoudness.toFixed(1)} LUFS.`
-                            : '';
-                        void vscode.window.showInformationMessage(
-                            (streamSavedTo
-                                ? `Replaced audio for "${result.name}" (prefetch in BARS, full stream at ${vscode.workspace.asRelativePath(streamSavedTo)}).`
-                                : `Replaced audio for "${result.name}".`) + remixNote + loudnessNote,
+                        const chosen = cuts;
+                        return applyBarsEdit(
+                            `Encoding ${chosen.sections.length} tracks…`,
+                            (barsFile) => runBridgeReplaceBarsSectionsAsync(
+                                hostExe, barsFile, filePath,
+                                { source: sourcePath, updateTable: chosen.updateTable, sections: chosen.sections },
+                                getBridgeEnv(),
+                            ),
+                            (result) => {
+                                if (chosen.updateTable && !result.tableUpdatedAt) {
+                                    void vscode.window.showWarningMessage(
+                                        'The music table was not updated, so fixed-length sections still move on at their old times. ' +
+                                        'Your BARS needs to be under a Sound/Resource folder for the tool to find where the table goes.',
+                                    );
+                                }
+                                const tableNote = result.tableUpdatedAt
+                                    ? ` Music table updated for ${result.tableNodesChanged} fixed-length ${result.tableNodesChanged === 1 ? 'section' : 'sections'}.`
+                                    : '';
+                                return `Replaced ${chosen.sections.length} tracks from "${sourceName}"${tableNote ? `.${tableNote} Saved` : ''}`;
+                            },
                         );
-                        const refreshed = await runBridgeReadAsync(
-                            hostExe,
-                            ['list-bars', diskArchive, filePath],
-                            getBridgeEnv(),
-                        );
-                        return (refreshed as any).entries;
                     });
                 } else {
                     const err = raw && (raw as any).error ? (raw as any).error : 'Unknown error';
