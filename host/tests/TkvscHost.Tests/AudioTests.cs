@@ -141,6 +141,45 @@ public class AudioTests
     }
 
     [Fact]
+    public void ManyEntriesAreDecodedIntoTheCacheAndFoundThereAgain()
+    {
+        using Workspace w = new();
+        string folder = Directory.CreateDirectory(Path.Combine(w.Root, "Sound", "Resource", "Stream")).FullName;
+        string file = Path.Combine(w.Root, "Sound", "Resource", "Sound.bars");
+        File.WriteAllBytes(file, Bars("Hit", Bwav.Build([Tone(500)], 32000)));
+        string stream = Path.Combine(folder, "Hit.bwav");
+        File.WriteAllBytes(stream, Bwav.Build([Tone(3000)], 32000, 100, 2900));
+        string cache = w.Path("cache");
+
+        var first = w.Run("read-bars-audio-many", [file, "", cache, "0:0,0:1,5:0"])["results"]!;
+        var full = first[0]!;
+        var clip = first[1]!;
+
+        Assert.Equal(0, full["index"]!.GetValue<int>());
+        Assert.False(full["usePrefetch"]!.GetValue<bool>());
+        Assert.False(full["isPrefetch"]!.GetValue<bool>());
+        Assert.True(clip["isPrefetch"]!.GetValue<bool>());
+        Assert.Equal(100 / 32000.0, full["loopStart"]!.GetValue<double>(), 9);
+        Assert.StartsWith(cache, full["wavPath"]!.GetValue<string>());
+        Assert.NotEqual(full["wavPath"]!.GetValue<string>(), clip["wavPath"]!.GetValue<string>());
+        Assert.Equal(3000, Wav.Parse(File.ReadAllBytes(full["wavPath"]!.GetValue<string>())).SampleCount);
+        // One bad entry doesn't fail the others.
+        Assert.Contains("out of range", first[2]!["error"]!.GetValue<string>());
+
+        // Opened again: the same file, with the loop read back from the cache.
+        var again = w.Run("read-bars-audio-many", [file, "", cache, "0:0"])["results"]![0]!;
+        Assert.Equal(full["wavPath"]!.GetValue<string>(), again["wavPath"]!.GetValue<string>());
+        Assert.Equal(2900 / 32000.0, again["loopEnd"]!.GetValue<double>(), 9);
+
+        // A replaced stream is new audio, not the cached WAV.
+        File.WriteAllBytes(stream, Bwav.Build([Tone(1200)], 32000));
+        var replaced = w.Run("read-bars-audio-many", [file, "", cache, "0:0"])["results"]![0]!;
+        Assert.NotEqual(full["wavPath"]!.GetValue<string>(), replaced["wavPath"]!.GetValue<string>());
+        Assert.Equal(1200, Wav.Parse(File.ReadAllBytes(replaced["wavPath"]!.GetValue<string>())).SampleCount);
+        Assert.Null(replaced["loopStart"]);
+    }
+
+    [Fact]
     public void ABarsEntryWithoutAnyAudioSaysSo()
     {
         using Workspace w = new();

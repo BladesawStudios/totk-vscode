@@ -394,6 +394,10 @@
     ],
     "commands": [
       {
+        "command": "totk-editor.clearBarsAudioCache",
+        "title": "TKVSC: Clear BARS Audio Cache"
+      },
+      {
         "command": "totk-editor.selectActiveGame",
         "title": "TKVSC: Select Active Game",
         "icon": "$(chevron-down)"
@@ -998,6 +1002,12 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Enable pop-up toast notifications in VS Code for Warnings and Errors."
+        },
+        "TKVSC.barsAudioCacheSizeMB": {
+          "type": "number",
+          "default": 2048,
+          "minimum": 0,
+          "markdownDescription": "How much disk space (MB) decoded BARS audio may use, so a BARS opens without decoding its sounds again. The least recently played sounds are dropped first. `0` turns the cache off. **TKVSC: Clear BARS Audio Cache** empties it."
         },
         "TKVSC.projectsPath": {
           "type": "string",

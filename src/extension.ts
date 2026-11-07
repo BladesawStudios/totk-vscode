@@ -20,6 +20,7 @@ import {
     runBridgeSetBarsLoopAsync,
     runBridgeBarsSectionInfoAsync,
     runBridgeReplaceBarsSectionsAsync,
+    runBridgeReadBarsAudioManyAsync,
     type BarsEntry,
     type BarsLoopSpec,
     type BarsReplaceResult,
@@ -30,6 +31,7 @@ import { resolveNativeHost } from './nativeHost';
 import { openTextureViewer, initTextureViewer } from './textureViewer';
 import { openAudioViewer, initAudioViewer } from './audioViewer';
 import { openBarsViewer, initBarsViewer } from './barsViewer';
+import { initBarsAudioCache, barsAudioCacheDir } from './barsAudioCache';
 import { openLoopEditor } from './loopEditor';
 import { openSectionEditor, type SectionEditorResult } from './sectionEditor';
 import { isEditableFile, toTotkDiskUri } from './editableFiles';
@@ -872,6 +874,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     initTextureViewer(context.extensionUri);
     initAudioViewer(context.extensionUri);
     initBarsViewer(context.extensionUri);
+    initBarsAudioCache(context);
     setExtensionPath(context.extensionPath);
     setCanonicalIndexExtensionPath(context.extensionPath);
     setProjectCanonicalOverlayExtensionPath(context.extensionPath);
@@ -1762,14 +1765,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                         return (refreshed as any).entries;
                     };
 
-                    openBarsViewer(barsName, uri.toString(), entries, async (index: number, usePrefetch: boolean) => {
-                        const audioRaw = await runBridgeReadAsync(
-                            hostExe,
-                            ['read-bars-audio', barsPath, filePath, index.toString(), usePrefetch ? 'true' : 'false'],
-                            getBridgeEnv(),
-                        );
-                        return audioRaw as any;
-                    }, async (index: number) => {
+                    openBarsViewer(barsName, uri.toString(), entries, (requests) => runBridgeReadBarsAudioManyAsync(
+                        hostExe, barsPath, filePath, barsAudioCacheDir(), requests, getBridgeEnv(),
+                    ), async (index: number) => {
                         const picked = await vscode.window.showOpenDialog({
                             canSelectMany: false,
                             title: 'Select replacement audio',

@@ -16,6 +16,7 @@ public static class AudioCommands
         commands["read-bwav-audio"] = ReadBwavAudio;
         commands["list-bars"] = ListBars;
         commands["read-bars-audio"] = ReadBarsAudio;
+        commands["read-bars-audio-many"] = ReadBarsAudioMany;
         commands["replace-bars-audio"] = ReplaceBarsAudio;
         commands["decode-audio-file"] = DecodeAudioFile;
         commands["decode-bars-entry"] = DecodeBarsEntry;
@@ -194,12 +195,20 @@ public static class AudioCommands
         bool forcePrefetch = c.ArgOr(3, "false") == "true";
         var (data, bars) = LoadBars(c, archive, internalPath);
 
+        var (bwav, name, isPrefetch) = EntryBwav(c, archive, data, bars, index, forcePrefetch);
+        return DecodedToWav(bwav, name, isPrefetch);
+    }
+
+    // The BWAV an entry plays: its full stream from the mod or romfs, or the clip embedded in the BARS.
+    private static (byte[] Bwav, string Name, bool IsPrefetch) EntryBwav(
+        CommandContext c, string archive, byte[] data, TotkBars bars, int index, bool forcePrefetch)
+    {
         if (index < 0 || index >= bars.Entries.Count)
             throw new IndexOutOfRangeException($"Entry index {index} out of range (BARS has {bars.Entries.Count} entries)");
         TotkBarsEntry entry = bars.Entries[index];
 
         if (!forcePrefetch && LocateFullBwav(entry.Name, c.Romfs, ModRomfsRoot(archive)) is { } full)
-            return DecodedToWav(File.ReadAllBytes(full.Path), entry.Name, false);
+            return (File.ReadAllBytes(full.Path), entry.Name, false);
 
         if (entry.BwavOffset == -1)
         {
@@ -208,7 +217,106 @@ public static class AudioCommands
                 : $"No audio available for '{entry.Name}': no prefetch clip and romfs is not configured.");
         }
 
-        return DecodedToWav(data[entry.BwavOffset..], entry.Name, true);
+        return (data[entry.BwavOffset..], entry.Name, true);
+    }
+
+    // Bump when the WAVs a BWAV decodes to change, so cached ones from an older decoder aren't used.
+    private const string AudioCacheVersion = "bars-wav-1";
+
+    // Several entries of one BARS, read once: "index:1" plays the embedded clip, "index:0" the full stream when there is one.
+    // With a cache folder, each WAV is kept there under a hash of its BWAV, so a BARS opened again (or another
+    // BARS with the same sounds) skips the decode; a changed BARS or replaced stream hashes differently.
+    private static JsonNode ReadBarsAudioMany(CommandContext c)
+    {
+        string archive = c.Arg(0), internalPath = c.Arg(1), cacheDir = c.Arg(2), specs = c.Arg(3);
+        var (data, bars) = LoadBars(c, archive, internalPath);
+        if (cacheDir.Length > 0) Directory.CreateDirectory(cacheDir);
+
+        JsonArray results = [];
+        foreach (string spec in specs.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] parts = spec.Split(':');
+            int index = int.Parse(parts[0]);
+            bool forcePrefetch = parts.Length > 1 && parts[1] == "1";
+            JsonObject result;
+            try
+            {
+                var (bwav, name, isPrefetch) = EntryBwav(c, archive, data, bars, index, forcePrefetch);
+                result = cacheDir.Length > 0 ? CachedWav(cacheDir, bwav, name, isPrefetch) : DecodedToWav(bwav, name, isPrefetch);
+            }
+            catch (Exception e)
+            {
+                result = new JsonObject { ["error"] = e.Message };
+            }
+            result["index"] = index;
+            result["usePrefetch"] = forcePrefetch;
+            results.Add(result);
+        }
+        return new JsonObject { ["results"] = results };
+    }
+
+    private static JsonObject CachedWav(string cacheDir, byte[] bwav, string name, bool isPrefetch)
+    {
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData(System.Text.Encoding.UTF8.GetBytes(AudioCacheVersion));
+        hash.AppendData(bwav);
+        string key = Convert.ToHexString(hash.GetHashAndReset(), 0, 20).ToLowerInvariant();
+        string wavPath = Path.Combine(cacheDir, key + ".wav"), infoPath = Path.Combine(cacheDir, key + ".json");
+
+        JsonObject? info = null;
+        if (File.Exists(wavPath) && File.Exists(infoPath))
+        {
+            try
+            {
+                info = JsonNode.Parse(File.ReadAllText(infoPath)) as JsonObject;
+                // The newest-used files are kept longest when the extension trims the cache.
+                DateTime now = DateTime.UtcNow;
+                File.SetLastWriteTimeUtc(wavPath, now);
+                File.SetLastWriteTimeUtc(infoPath, now);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            {
+                info = null;
+            }
+        }
+        if (info is null)
+        {
+            PcmAudio audio = Decode(bwav);
+            info = new JsonObject
+            {
+                ["loopStart"] = Seconds(audio.LoopStart, audio.SampleRate),
+                ["loopEnd"] = Seconds(audio.LoopEnd, audio.SampleRate),
+            };
+            // Written beside the final name and moved in, so a reader never sees half a file. The WAV goes
+            // first: the info file is what marks an entry complete.
+            WriteAtomically(wavPath, Wav.Write(audio));
+            WriteAtomically(infoPath, System.Text.Encoding.UTF8.GetBytes(info.ToJsonString()));
+        }
+
+        return new JsonObject
+        {
+            ["wavPath"] = wavPath,
+            ["name"] = name,
+            ["isPrefetch"] = isPrefetch,
+            ["loopStart"] = info["loopStart"]?.DeepClone(),
+            ["loopEnd"] = info["loopEnd"]?.DeepClone(),
+        };
+    }
+
+    private static void WriteAtomically(string path, byte[] bytes)
+    {
+        string temp = $"{path}.{Environment.ProcessId}.tmp";
+        File.WriteAllBytes(temp, bytes);
+        try
+        {
+            File.Move(temp, path, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Another batch wrote the same sound and the viewer has it open: the file there is the same.
+            File.Delete(temp);
+            if (!File.Exists(path)) throw;
+        }
     }
 
     // ---- replacing ----

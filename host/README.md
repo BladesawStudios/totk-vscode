@@ -22,7 +22,7 @@ The settings come in the environment (`TKVSC_ROMFS`, `TKVSC_GAME_ID`, `TKVSC_HAN
 | `export-temp`, `export-stored`, `export-converted`, `decompress-file`, `compress-file` | the above, plus PNG / JPEG / BMP / TGA / DDS of textures, YAML of BYML and AAMP |
 | `build-romfs-index`, `build-canonical-path-index` | the whole romfs; about 10 s |
 | `read-font-disk`, `prepare-font-replacement` | `.bfttf` / `.bfotf` fonts, through BFontSharp |
-| `read-bwav`, `read-bwav-audio`, `list-bars`, `read-bars-audio`, `replace-bars-audio`, `decode-audio-file`, `decode-bars-entry`, `set-bars-loop`, `bars-section-info`, `replace-bars-sections` | BWAV and BARS (DSP-ADPCM, PCM16 and Opus), through BfAudioSharp |
+| `read-bwav`, `read-bwav-audio`, `list-bars`, `read-bars-audio`, `read-bars-audio-many`, `replace-bars-audio`, `decode-audio-file`, `decode-bars-entry`, `set-bars-loop`, `bars-section-info`, `replace-bars-sections` | BWAV and BARS (DSP-ADPCM, PCM16 and Opus), through BfAudioSharp |
 | `evaluate-hexpat` | the hex editor's pattern view, through HexpatSharp (ImHex's pattern language) |
 | `read` (textures), `render-bntx-texture`, `render-txtg`, `update-bntx-metadata`, `update-txtg-metadata`, `replace-bntx-payload`, `replace-txtg-payload` | BNTX and TXTG |
 

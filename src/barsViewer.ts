@@ -1,5 +1,12 @@
 import * as vscode from 'vscode';
 import { BarsEntry, BarsAudioResult } from './bridge';
+import { barsAudioCacheRoot, pruneBarsAudioCache } from './barsAudioCache';
+
+/** One entry's audio to load: `usePrefetch` plays the clip embedded in the BARS rather than the full stream. */
+export interface BarsAudioRequest {
+    index: number;
+    usePrefetch: boolean;
+}
 
 const panels = new Map<string, vscode.WebviewPanel>();
 let extensionUri: vscode.Uri | undefined;
@@ -12,7 +19,8 @@ export function openBarsViewer(
     barsName: string,
     key: string,
     entries: BarsEntry[],
-    fetchAudio: (index: number, usePrefetch: boolean) => Promise<BarsAudioResult>,
+    /** Loads several entries in one host call. Each result carries the `index` and `usePrefetch` it answers. */
+    fetchAudio: (requests: BarsAudioRequest[]) => Promise<BarsAudioResult[]>,
     replaceAudio?: (index: number) => Promise<BarsEntry[] | undefined>,
     editLoop?: (index: number) => Promise<BarsEntry[] | undefined>,
     replaceGroup?: (indices: number[]) => Promise<BarsEntry[] | undefined>,
@@ -25,6 +33,7 @@ export function openBarsViewer(
     }
 
     const os = require('os');
+    const cacheRoot = barsAudioCacheRoot();
     const panel = vscode.window.createWebviewPanel(
         'totkBarsViewer',
         `BARS: ${barsName}`,
@@ -34,6 +43,7 @@ export function openBarsViewer(
             retainContextWhenHidden: true,
             localResourceRoots: [
                 vscode.Uri.file(os.tmpdir()),
+                ...(cacheRoot ? [vscode.Uri.file(cacheRoot)] : []),
                 ...(extensionUri ? [extensionUri] : []),
                 ...(vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders.map(f => f.uri) : [])
             ]
@@ -89,20 +99,29 @@ export function openBarsViewer(
             return;
         }
         if (message.type === 'fetch-audio') {
+            const requests: { index: number; gen: number; usePrefetch: boolean }[] = message.items;
+            let results: BarsAudioResult[] = [];
+            let failure: string | undefined;
             try {
-                const res = await fetchAudio(message.index, !!message.usePrefetch);
-                if (res.wavPath) {
-                    const uri = panel.webview.asWebviewUri(vscode.Uri.file(res.wavPath));
-                    panel.webview.postMessage({ type: 'audio-loaded', index: message.index, gen: message.gen, url: uri.toString(), result: res });
-                } else {
-                    void vscode.window.showErrorMessage('Failed to decode BARS audio entry: ' + (res.error || 'Unknown error'));
-                    // Reset UI loading state
-                    panel.webview.postMessage({ type: 'audio-error', index: message.index, gen: message.gen });
-                }
+                results = await fetchAudio(requests.map((r) => ({ index: r.index, usePrefetch: !!r.usePrefetch })));
             } catch (e) {
-                const msg = e instanceof Error ? e.message : String(e);
-                void vscode.window.showErrorMessage(`Error fetching audio: ${msg}`);
-                panel.webview.postMessage({ type: 'audio-error', index: message.index, gen: message.gen });
+                failure = e instanceof Error ? e.message : String(e);
+                void vscode.window.showErrorMessage(`Error fetching audio: ${failure}`);
+            }
+            for (const request of requests) {
+                const res = results.find((r) => r.index === request.index && !!r.usePrefetch === !!request.usePrefetch);
+                if (res?.wavPath) {
+                    const uri = panel.webview.asWebviewUri(vscode.Uri.file(res.wavPath));
+                    panel.webview.postMessage({ type: 'audio-loaded', index: request.index, gen: request.gen, url: uri.toString(), result: res });
+                } else {
+                    // Shown on the entry's button rather than as one pop-up per entry.
+                    panel.webview.postMessage({
+                        type: 'audio-error',
+                        index: request.index,
+                        gen: request.gen,
+                        error: res?.error ?? failure ?? 'No audio returned',
+                    });
+                }
             }
         }
     });
@@ -110,6 +129,7 @@ export function openBarsViewer(
     panels.set(key, panel);
     panel.onDidDispose(() => {
         panels.delete(key);
+        void pruneBarsAudioCache();
     });
 }
 
@@ -554,8 +574,10 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
 
         const playableIndices = ${JSON.stringify(playableIndices)};
         let fetchQueue = [...playableIndices];
+        // Entries go to the host in batches, each read from one load of the BARS.
         let activeFetches = 0;
-        const MAX_CONCURRENT = 5;
+        const BATCH_SIZE = 24;
+        const MAX_IN_FLIGHT = 72;
         
         const prefetchStates = {};
         // Bumped when an entry is replaced, so audio still loading for the old version is dropped.
@@ -682,10 +704,13 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
         requestAnimationFrame(renderLoop);
 
         function fetchNext() {
-            while (fetchQueue.length > 0 && activeFetches < MAX_CONCURRENT) {
-                activeFetches++;
-                const index = fetchQueue.shift();
-                vscode.postMessage({ type: 'fetch-audio', index, gen: genOf(index), usePrefetch: prefetchStates[index] });
+            while (fetchQueue.length > 0) {
+                const take = Math.min(BATCH_SIZE, fetchQueue.length);
+                if (MAX_IN_FLIGHT - activeFetches < take) return;
+                const items = fetchQueue.splice(0, take)
+                    .map(index => ({ index, gen: genOf(index), usePrefetch: !!prefetchStates[index] }));
+                activeFetches += items.length;
+                vscode.postMessage({ type: 'fetch-audio', items });
             }
         }
 
@@ -972,7 +997,7 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
             } else if (message.type === 'audio-error') {
                 const btn = document.getElementById('play-btn-' + message.index);
                 if (btn && message.gen === genOf(message.index)) {
-                    btn.title = "Error loading";
+                    btn.title = message.error ? 'Error loading: ' + message.error : 'Error loading';
                     btn.querySelector('.play-icon').textContent = '✕';
                 }
                 activeFetches--;
