@@ -45,6 +45,8 @@ Preview and edit subfiles of SARC and BNTX archives
 - AAMP
 - MSBT
 - XLINK
+- BFRES material animations (`.fmaa`), as YAML. Open a `.bfres` like an archive to see everything in it: material animations and embedded files can be edited, added and deleted, while each model is a folder with a YAML file per material (colours and numbers) that can be edited; shapes, bones, skeletal animations and textures are listed as read-only summaries
+- Particle files (`.vsetb.byml`) open like an archive: a folder per effect set and a file per emitter (`Esets/<set>/<emitter>.emitter`), each a short YAML of that emitter's colours. A big file like `static` no longer has to be edited as one document
 - PCHTXT
 - PTCL
 - TKMM Config Files
@@ -83,7 +85,7 @@ Preview and edit subfiles of SARC and BNTX archives
 - File templates: Rather than the typical method of copying, pasting, and wiping an existing file to make a new file of the same format, TKVSC can create empty files of formats supported by the editor.
 - Preview `.bntx` subfiles and `.txtg` files as PNGs
 - Visual editor for [TKMM](https://tkmm.org) `.tkproj` files
-- For files TKVSC does not support, such as `.bfres`, the user can choose external programs to open them in by default (separate from similar features in the OS).
+- For files TKVSC does not support, such as BFRES model meshes, the user can choose external programs to open them in by default (separate from similar features in the OS).
 
  <img src="https://github.com/BladesawStudios/totk-vscode/blob/main/graphics/Promo/tkproj_Edit.png?raw=true" width="800vh">
 

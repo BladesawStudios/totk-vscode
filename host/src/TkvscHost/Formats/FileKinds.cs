@@ -11,7 +11,7 @@ namespace TkvscHost.Formats;
 public sealed class FileKinds(Env env, Containers containers, GamePlugin? plugin = null)
 {
     /// <summary>Kinds the host reads and writes. Other kinds in the manifest are for add-ons' own editors, which read raw bytes.</summary>
-    public static readonly HashSet<string> Native = ["byml", "msbt", "aamp", "xlnk"];
+    public static readonly HashSet<string> Native = ["byml", "msbt", "aamp", "xlnk", "fmaa", "fmat", "emitter", "bfres-info"];
 
     private readonly Lazy<Manifest> _manifest = new(() => Manifest.Load(env.HandlerManifestPath));
 

@@ -6,8 +6,9 @@ namespace TkvscHost;
 /// <summary>The searchable indexes of the romfs (<c>romfs_index.py</c> and <c>canonical_path_index.py</c>).</summary>
 public static class IndexBuilders
 {
+    // A BFRES opens as an archive when asked to, but the indexes leave it out: it would open every model and fill the index with its parts.
     private static bool IsArchiveFile(Env env, string name)
-        => env.ArchiveExtensions.Any(ext => name.EndsWith(ext, StringComparison.OrdinalIgnoreCase) || env.StripCompressedSuffix(name).EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+        => !Archives.IsBfresName(env, name) && env.ArchiveExtensions.Any(ext => name.EndsWith(ext, StringComparison.OrdinalIgnoreCase) || env.StripCompressedSuffix(name).EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 
     private static string NormalizeRel(string path) => path.Replace('\\', '/').Trim('/');
 

@@ -13,6 +13,10 @@ public sealed class Archives(Containers containers)
 {
     private bool IsArchiveName(string name) => containers.Env.IsArchiveName(name);
 
+    /// <summary>A file that opens as an archive when asked to, but that listings and indexes leave unopened: it would open every part of a model or particle file.</summary>
+    public static bool IsBfresName(Env env, string name)
+        => env.StripCompressedSuffix(name) is var stripped && (stripped.EndsWith(".bfres", StringComparison.OrdinalIgnoreCase) || stripped.EndsWith(".vsetb.byml", StringComparison.OrdinalIgnoreCase));
+
     private bool IsBntxName(string name) => containers.Env.StripCompressedSuffix(name).EndsWith(".bntx", StringComparison.OrdinalIgnoreCase);
 
     // A plugin's format is told from the contents; everything else is SARC.
@@ -210,7 +214,7 @@ public sealed class Archives(Containers containers)
         {
             string path = prefix + entry.Name;
             names.Add(path);
-            if (!IsArchiveName(entry.Name)) continue;
+            if (!IsArchiveName(entry.Name) || IsBfresName(containers.Env, entry.Name)) continue;
 
             // A nested archive that doesn't open still lists as the file it is.
             try

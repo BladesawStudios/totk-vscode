@@ -29,6 +29,10 @@ const LANGUAGE_BY_HANDLER: Record<string, string> = {
     byml: 'byml',
     msbt: 'msbt',
     xlnk: 'totk-xlnk',
+    fmaa: 'yaml',
+    fmat: 'yaml',
+    emitter: 'yaml',
+    'bfres-info': 'yaml',
 };
 
 function normalizeExtension(ext: string): string {
@@ -61,7 +65,8 @@ class FormatRegistry {
                     extensions: [ext],
                     handler,
                     language: LANGUAGE_BY_HANDLER[handler] ?? undefined,
-                    editable: true,
+                    // A BFRES's summaries of its models, skeletal animations and textures can be read but not saved.
+                    editable: handler !== 'bfres-info',
                 },
                 'builtin',
             );

@@ -35,6 +35,7 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
             "msbt" => ReadMsbt(fileData, logicalPath),
             "aamp" => ReadAamp(fileData, logicalPath),
             "xlnk" => ReadXlnk(fileData, logicalPath),
+            "fmaa" or "fmat" or "emitter" or "bfres-info" => Encoding.UTF8.GetString(containers.Decompress(fileData, logicalPath).Data),
             _ => string.Format(BinaryMessageFormat, fileData.Length),
         };
     }
@@ -203,6 +204,10 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
             "msbt" => WriteMsbt(original, editorText, logicalPath),
             "aamp" => WriteAamp(original, editorText, logicalPath),
             "xlnk" => WriteXlnk(original, editorText, logicalPath),
+            "fmaa" => WriteMaterialAnim(original, editorText),
+            "fmat" => WriteModelParams(editorText),
+            "emitter" => WriteEmitter(editorText),
+            "bfres-info" => throw new InvalidOperationException($"{Path.GetFileName(logicalPath)} is a read-only summary: skeletal animations, textures, shapes and bones in a BFRES cannot be edited here."),
             _ => throw new InvalidOperationException($"Cannot write file type: {logicalPath}"),
         };
     }
@@ -268,6 +273,29 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
         MsbtFile file = new() { BigEndian = false, Encoding = MsbtEncoding.Utf16, Version = 3 };
         file.SectionOrder.AddRange(["LBL1", "TXT2"]);
         return file;
+    }
+
+    // A material animation inside a BFRES is stored as its YAML. The text is checked and written back in its standard
+    // form, with a changed constant keeping its float and raw word in agreement.
+    private byte[] WriteMaterialAnim(byte[] original, string editorText)
+    {
+        BfresSharp.Model.Animation.MaterialAnim? previous = original.Length == 0 ? null : BfresSharp.Text.MaterialAnimYaml.FromYaml(Encoding.UTF8.GetString(original), null, containers.ShaderNames);
+        BfresSharp.Model.Animation.MaterialAnim edited = BfresSharp.Text.MaterialAnimYaml.FromYaml(editorText, previous, containers.ShaderNames);
+        return Encoding.UTF8.GetBytes(BfresSharp.Text.MaterialAnimYaml.ToYaml(edited, containers.ShaderNames));
+    }
+
+    // A model inside a BFRES is stored as the YAML of its materials' parameters; the BFRES applies it to the model when it is saved.
+    // Here the text is only checked, as the model it belongs to is not at hand.
+    private static byte[] WriteEmitter(string editorText)
+    {
+        if (!BymlSharp.Byml.FromYaml(editorText).IsMap) throw new InvalidDataException("An emitter is a YAML map of renderers and their colours.");
+        return Encoding.UTF8.GetBytes(editorText);
+    }
+
+    private static byte[] WriteModelParams(string editorText)
+    {
+        BfresSharp.Text.ModelParamsYaml.Check(editorText);
+        return Encoding.UTF8.GetBytes(editorText);
     }
 
     private byte[] WriteAamp(byte[] original, string editorText, string logicalPath)

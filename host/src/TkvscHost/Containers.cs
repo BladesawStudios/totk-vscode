@@ -3,6 +3,7 @@ using TkvscHost.Plugins;
 using Yaz0Sharp;
 using ZsDicSharp;
 using ZstdSharp;
+using TkvscHost.Formats;
 
 namespace TkvscHost;
 
@@ -20,8 +21,44 @@ public sealed class Containers(Env env, GamePlugin? plugin = null)
 
     public Env Env => env;
 
-    /// <summary>The archive formats the game's plugin adds.</summary>
-    public IReadOnlyList<IArchiveFormat> ArchiveFormats => plugin?.ArchiveFormats ?? [];
+    /// <summary>The archive formats the game's plugin adds, then the ones built in, so a plugin can take over a format.</summary>
+    public IReadOnlyList<IArchiveFormat> ArchiveFormats => [.. plugin?.ArchiveFormats ?? [], _bfres ??= new BfresArchiveFormat(() => ShaderNames), _vsetb ??= new VsetbArchiveFormat()];
+
+    private BfresArchiveFormat? _bfres;
+    private VsetbArchiveFormat? _vsetb;
+    private IReadOnlyDictionary<ulong, string>? _shaderNames;
+    private bool _shaderNamesLoaded;
+
+    /// <summary>The names of the parameters, options and the like that Switch 2 files hold as hashes, from the romfs's <c>Shader/ExternalBinaryString.bfres</c>; null when it has none.</summary>
+    public IReadOnlyDictionary<ulong, string>? ShaderNames
+    {
+        get
+        {
+            if (!_shaderNamesLoaded)
+            {
+                _shaderNamesLoaded = true;
+                _shaderNames = LoadShaderNames();
+            }
+
+            return _shaderNames;
+        }
+    }
+
+    private IReadOnlyDictionary<ulong, string>? LoadShaderNames()
+    {
+        if (string.IsNullOrEmpty(env.Romfs)) return null;
+        string folder = Path.Combine(env.Romfs, "Shader");
+        string? path = new[] { "ExternalBinaryString.bfres.zs", "ExternalBinaryString.bfres" }.Select(name => Path.Combine(folder, name)).FirstOrDefault(File.Exists);
+        if (path is null) return null;
+        try
+        {
+            return BfresSharp.BfresFile.Read(Decompress(File.ReadAllBytes(path), path).Data).NamesByHash();
+        }
+        catch (Exception error) when (error is IOException or BfresSharp.Errors.BfresFormatException or InvalidDataException)
+        {
+            return null;
+        }
+    }
 
     // Looked up on use, as a plugin can register after it receives the host's services.
     private ICompressionBackend? Backend => plugin?.Compression;

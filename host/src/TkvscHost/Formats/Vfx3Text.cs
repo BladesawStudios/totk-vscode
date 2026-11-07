@@ -154,15 +154,66 @@ public static class Vfx3Text
         return end < 0 ? "" : Encoding.UTF8.GetString(d, (int)pos, end - (int)pos);
     }
 
-    // Each colour channel of each emitter, in file order.
-    private static List<Channel> Channels(byte[] d)
+    // A file holds many emitter sets, one record each: a name, then four tables of emitters, ... The first word of the
+    // section points at the VFX3 block, whose first record starts 8 bytes in; its count and record size come after.
+    private const int EsetTablesAt = 8, EsetEmitterCountAt = 0x10;
+
+    /// <summary>The emitter sets in a file, each with its emitters' names (two emitters of one name get a #2, #3 and so on).</summary>
+    public static IReadOnlyList<(string Name, IReadOnlyList<string> Emitters)> Esets(byte[] d)
+    {
+        (long records, uint count, uint size) = EsetRecords(d);
+        List<(string, IReadOnlyList<string>)> sets = [];
+        Dictionary<string, int> setNames = [];
+        for (uint i = 0; i < count; i++)
+        {
+            long record = records + i * (long)size;
+            string name = CString(d, (long)U64(d, record));
+            int seenSet = setNames.GetValueOrDefault(name);
+            setNames[name] = seenSet + 1;
+            sets.Add((seenSet == 0 ? name : $"{name}#{seenSet + 1}", EmitterNames(d, record)));
+        }
+
+        return sets;
+    }
+
+    private static (long Records, uint Count, uint Size) EsetRecords(byte[] d)
     {
         if (!IsVfx3(d)) throw new InvalidDataException("Not a Vfx3 particle file.");
-
         long section = U32(d, 0xAC);
         long block = (long)U64(d, section);
         if (block + 0x20 > d.Length || !d.AsSpan((int)block, 4).SequenceEqual("VFX3"u8))
             throw new InvalidDataException("The particle file has no VFX3 block.");
+
+        long records = (long)U64(d, section + 0x30);
+        uint count = U32(d, section + 0x38), size = U32(d, section + 0x3C);
+        // A file written before this table was known has one set, at the block itself.
+        if (records != block + 8 || count == 0 || size < 0x48) return (block + 8, 1, 0x68);
+        return (records, count, size);
+    }
+
+    private static List<string> EmitterNames(byte[] d, long record)
+    {
+        List<string> names = [];
+        Dictionary<string, int> seen = [];
+        long emitters = (long)U64(d, record + EsetTablesAt);
+        uint count = U32(d, record + EsetEmitterCountAt);
+        for (uint e = 0; e < count; e++)
+        {
+            string name = CString(d, (long)U64(d, (long)U64(d, emitters + e * 8L)));
+            int times = seen.GetValueOrDefault(name);
+            seen[name] = times + 1;
+            names.Add(times == 0 ? name : $"{name}#{times + 1}");
+        }
+
+        return names;
+    }
+
+    // Each colour channel of each emitter of one emitter set, in file order.
+    private static List<Channel> Channels(byte[] d, int esetIndex = 0)
+    {
+        (long setRecords, uint setCount, uint recordSize) = EsetRecords(d);
+        if (esetIndex < 0 || esetIndex >= setCount) throw new InvalidDataException($"The particle file has no emitter set number {esetIndex}.");
+        long block = setRecords + esetIndex * (long)recordSize - 8;
 
         List<Channel> channels = [];
         Dictionary<string, int> names = [];
@@ -209,12 +260,16 @@ public static class Vfx3Text
 
     // ---- binary to text ----
 
-    public static string ToText(byte[] data)
+    /// <param name="data">The particle file.</param>
+    /// <param name="esetIndex">Which emitter set; the first by default.</param>
+    /// <param name="onlyEmitter">When given, only that emitter (as named by <see cref="Esets"/>).</param>
+    public static string ToText(byte[] data, int esetIndex = 0, string? onlyEmitter = null)
     {
         StringBuilder sb = new();
         string emitter = "", renderer = "";
-        foreach (Channel c in Channels(data))
+        foreach (Channel c in Channels(data, esetIndex))
         {
+            if (onlyEmitter is not null && c.Emitter != onlyEmitter) continue;
             if (c.Emitter != emitter)
             {
                 emitter = c.Emitter;
@@ -306,13 +361,13 @@ public static class Vfx3Text
     }
 
     /// <summary>Applies edited <paramref name="yaml"/> (as made by <see cref="ToText"/>) to the binary and returns the new bytes.</summary>
-    public static byte[] ApplyText(byte[] original, string yaml)
+    public static byte[] ApplyText(byte[] original, string yaml, int esetIndex = 0)
     {
         Byml changes = Byml.FromYaml(yaml);
         if (!changes.IsMap) throw new InvalidDataException("Invalid particle YAML: " + yaml);
 
         byte[] data = (byte[])original.Clone();
-        foreach (Channel c in Channels(data))
+        foreach (Channel c in Channels(data, esetIndex))
         {
             if (changes[c.Emitter] is not { IsMap: true } emitter || emitter[c.Renderer] is not { IsMap: true } renderer) continue;
             if (renderer[c.Name] is not { } edit) continue;

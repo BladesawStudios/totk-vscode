@@ -37,3 +37,6 @@
 [submodule "host/libs/XLinkSharp"]
 	path = host/libs/XLinkSharp
 	url = https://github.com/BladesawStudios/XLinkSharp.git
+[submodule "host/libs/BfresSharp"]
+	path = host/libs/BfresSharp
+	url = https://github.com/BladesawStudios/BfresSharp

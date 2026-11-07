@@ -4,6 +4,9 @@ import { getActiveGameId, getGameProfileRegistry, stripCompressedSuffix } from '
 
 const DEFAULT_ARCHIVE_PATTERN = /\.(pack|sarc|genvb|blarc|bfarc|bkres|bntx)(\.zs)?$/i;
 
+/** BFRES and particle files (.vsetb.byml) open as archives in every game, so no profile has to list them. */
+const BUILTIN_ARCHIVE_PATTERN = /\.(bfres|vsetb\.byml)(\.zs)?$/i;
+
 class ArchiveRegistry {
     private readonly patternsByGame = new Map<string, RegExp[]>();
 
@@ -48,7 +51,7 @@ class ArchiveRegistry {
 
     private getPatterns(gameId?: string): RegExp[] {
         const id = gameId ?? getActiveGameId();
-        return this.patternsByGame.get(id) ?? [DEFAULT_ARCHIVE_PATTERN];
+        return [...(this.patternsByGame.get(id) ?? [DEFAULT_ARCHIVE_PATTERN]), BUILTIN_ARCHIVE_PATTERN];
     }
 
     isArchiveFileName(name: string, gameId?: string): boolean {

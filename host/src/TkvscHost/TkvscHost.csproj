@@ -24,6 +24,7 @@
     <ProjectReference Include="$(LibRoot)\SarcSharp\src\SarcSharp\SarcSharp.csproj" />
     <ProjectReference Include="$(LibRoot)\Yaz0Sharp\src\Yaz0Sharp\Yaz0Sharp.csproj" />
     <ProjectReference Include="$(LibRoot)\ZsDicSharp\src\ZsDicSharp\ZsDicSharp.csproj" />
+    <ProjectReference Include="$(LibRoot)\BfresSharp\src\BfresSharp\BfresSharp.csproj" />
     <ProjectReference Include="$(LibRoot)\BymlSharp\src\BymlSharp\BymlSharp.csproj" />
     <ProjectReference Include="$(LibRoot)\AampSharp\src\AampSharp\AampSharp.csproj" />
     <ProjectReference Include="$(LibRoot)\MsbtSharp\src\MsbtSharp\MsbtSharp.csproj" />

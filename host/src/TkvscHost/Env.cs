@@ -60,12 +60,15 @@ public sealed class Env
 
     private static readonly Regex DefaultArchivePattern = new(@"\.(pack|sarc|genvb|blarc|bfarc|bkres|bntx)(\.zs)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    // BFRES and the particle files (.vsetb.byml) open as archives in every game, so no profile has to list them.
+    private static readonly Regex BuiltInArchivePattern = new(@"\.(bfres|vsetb\.byml)(\.zs)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     private Regex[]? _archivePatterns;
 
     /// <summary>Whether a path segment names an archive, by the same patterns as the extension's <c>archiveRegistry</c>, with or without a compressed suffix.</summary>
     public bool IsArchiveName(string name)
     {
-        _archivePatterns ??= CompileArchivePatterns(ArchivePatterns);
+        _archivePatterns ??= [.. CompileArchivePatterns(ArchivePatterns), BuiltInArchivePattern];
         string normalized = name.Replace('\\', '/');
         string stripped = StripCompressedSuffix(normalized);
         return _archivePatterns.Any(pattern => pattern.IsMatch(normalized) || pattern.IsMatch(stripped));

@@ -400,7 +400,7 @@
       },
       {
         "command": "totk-editor.openPack",
-        "title": "TKVSC: Open Archive (.pack, .sarc, .genvb, .blarc, .bfarc, .bkres, .bntx)",
+        "title": "TKVSC: Open Archive (.pack, .sarc, .genvb, .blarc, .bfarc, .bkres, .bntx, .bfres)",
         "icon": "$(package)"
       },
       {

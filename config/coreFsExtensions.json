@@ -4,5 +4,18 @@
   "bgyml": "byml",
   "msbt": "msbt",
   "belnk": "xlnk",
-  "bslnk": "xlnk"
+  "bslnk": "xlnk",
+  "fmaa": "fmaa",
+  "fshu": "fmaa",
+  "fcla": "fmaa",
+  "ftsh": "fmaa",
+  "ftxp": "fmaa",
+  "fmat": "fmat",
+  "emitter": "emitter",
+  "fska": "bfres-info",
+  "fvis": "bfres-info",
+  "fsha": "bfres-info",
+  "ftex": "bfres-info",
+  "fshp": "bfres-info",
+  "fskl": "bfres-info"
 }
