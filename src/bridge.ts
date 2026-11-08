@@ -193,6 +193,9 @@ export interface BarsListResult extends BridgeResult {
 }
 
 export interface BarsAudioResult extends BridgeResult {
+    /** The entry this answers, in a batch read. */
+    index?: number;
+    usePrefetch?: boolean;
     wavPath?: string;
     name?: string;
     isPrefetch?: boolean;
@@ -509,6 +512,28 @@ export async function runBridgeDecodeBarsEntryAsync(
     );
 }
 
+/**
+ * Decodes several entries of one BARS from a single read of it. With `cacheDir`, the WAVs are kept there under a hash
+ * of their BWAV and found again next time; with '' they go to temp files. A failed entry carries its own `error`.
+ */
+export async function runBridgeReadBarsAudioManyAsync(
+    hostExe: string,
+    archivePath: string,
+    internalPath: string,
+    cacheDir: string,
+    requests: { index: number; usePrefetch: boolean }[],
+    env?: NodeJS.ProcessEnv,
+): Promise<BarsAudioResult[]> {
+    const specs = requests.map((r) => `${r.index}:${r.usePrefetch ? 1 : 0}`).join(',');
+    const result = await runBridgeJsonAsync<{ results?: BarsAudioResult[] }>(
+        hostExe,
+        ['read-bars-audio-many', archivePath, internalPath, cacheDir, specs],
+        undefined,
+        env,
+    );
+    return result.results ?? [];
+}
+
 /** A group of BARS entries in playing order, with what the music table says about each. */
 export async function runBridgeBarsSectionInfoAsync(
     hostExe: string,
@@ -541,6 +566,29 @@ export async function runBridgeReplaceBarsSectionsAsync(
         hostExe,
         ['replace-bars-sections', archivePath, internalPath],
         JSON.stringify(spec),
+        env,
+    );
+}
+
+/** Puts the same audio, with the same loop, on every listed BARS entry, all or nothing. */
+export async function runBridgeReplaceBarsSameAsync(
+    hostExe: string,
+    archivePath: string,
+    internalPath: string,
+    spec: {
+        source: string;
+        loopStart: BarsLoopSpec;
+        loopEnd: BarsLoopSpec;
+        trim: boolean;
+        updateTable: boolean;
+        indices: number[];
+    },
+    env?: NodeJS.ProcessEnv,
+): Promise<BarsReplaceResult> {
+    return runBridgeJsonAsync<BarsReplaceResult>(
+        hostExe,
+        ['replace-bars-same', archivePath, internalPath],
+        JSON.stringify({ ...spec, loopStart: String(spec.loopStart), loopEnd: String(spec.loopEnd) }),
         env,
     );
 }

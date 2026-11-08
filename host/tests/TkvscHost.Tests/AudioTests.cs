@@ -141,6 +141,45 @@ public class AudioTests
     }
 
     [Fact]
+    public void ManyEntriesAreDecodedIntoTheCacheAndFoundThereAgain()
+    {
+        using Workspace w = new();
+        string folder = Directory.CreateDirectory(Path.Combine(w.Root, "Sound", "Resource", "Stream")).FullName;
+        string file = Path.Combine(w.Root, "Sound", "Resource", "Sound.bars");
+        File.WriteAllBytes(file, Bars("Hit", Bwav.Build([Tone(500)], 32000)));
+        string stream = Path.Combine(folder, "Hit.bwav");
+        File.WriteAllBytes(stream, Bwav.Build([Tone(3000)], 32000, 100, 2900));
+        string cache = w.Path("cache");
+
+        var first = w.Run("read-bars-audio-many", [file, "", cache, "0:0,0:1,5:0"])["results"]!;
+        var full = first[0]!;
+        var clip = first[1]!;
+
+        Assert.Equal(0, full["index"]!.GetValue<int>());
+        Assert.False(full["usePrefetch"]!.GetValue<bool>());
+        Assert.False(full["isPrefetch"]!.GetValue<bool>());
+        Assert.True(clip["isPrefetch"]!.GetValue<bool>());
+        Assert.Equal(100 / 32000.0, full["loopStart"]!.GetValue<double>(), 9);
+        Assert.StartsWith(cache, full["wavPath"]!.GetValue<string>());
+        Assert.NotEqual(full["wavPath"]!.GetValue<string>(), clip["wavPath"]!.GetValue<string>());
+        Assert.Equal(3000, Wav.Parse(File.ReadAllBytes(full["wavPath"]!.GetValue<string>())).SampleCount);
+        // One bad entry doesn't fail the others.
+        Assert.Contains("out of range", first[2]!["error"]!.GetValue<string>());
+
+        // Opened again: the same file, with the loop read back from the cache.
+        var again = w.Run("read-bars-audio-many", [file, "", cache, "0:0"])["results"]![0]!;
+        Assert.Equal(full["wavPath"]!.GetValue<string>(), again["wavPath"]!.GetValue<string>());
+        Assert.Equal(2900 / 32000.0, again["loopEnd"]!.GetValue<double>(), 9);
+
+        // A replaced stream is new audio, not the cached WAV.
+        File.WriteAllBytes(stream, Bwav.Build([Tone(1200)], 32000));
+        var replaced = w.Run("read-bars-audio-many", [file, "", cache, "0:0"])["results"]![0]!;
+        Assert.NotEqual(full["wavPath"]!.GetValue<string>(), replaced["wavPath"]!.GetValue<string>());
+        Assert.Equal(1200, Wav.Parse(File.ReadAllBytes(replaced["wavPath"]!.GetValue<string>())).SampleCount);
+        Assert.Null(replaced["loopStart"]);
+    }
+
+    [Fact]
     public void ABarsEntryWithoutAnyAudioSaysSo()
     {
         using Workspace w = new();
@@ -540,6 +579,94 @@ public class AudioTests
         Assert.Null(two["Duration"]);
         Assert.Null(two["StartOffset"]);
         Assert.Equal(0f, two["FadeOutTime"]!["Value"]!.Float);
+    }
+
+    // Sets the channel count an entry's AMTA asks for (ManyBars makes them all mono).
+    private static void SetChannels(byte[] bars, int entry, int channels)
+    {
+        int count = (int)BinaryPrimitives.ReadUInt32LittleEndian(bars.AsSpan(12));
+        int amta = (int)BinaryPrimitives.ReadUInt32LittleEndian(bars.AsSpan(0x10 + 4 * count + entry * 8));
+        bars[amta + 0x31] = (byte)channels;
+    }
+
+    private static string SameSpec(string source, string loopStart, string loopEnd, bool trim, bool updateTable, params int[] indices)
+        => new System.Text.Json.Nodes.JsonObject
+        {
+            ["source"] = source,
+            ["loopStart"] = loopStart,
+            ["loopEnd"] = loopEnd,
+            ["trim"] = trim,
+            ["updateTable"] = updateTable,
+            ["indices"] = new System.Text.Json.Nodes.JsonArray([.. indices.Select(i => (System.Text.Json.Nodes.JsonNode)i)]),
+        }.ToJsonString();
+
+    [Fact]
+    public void OneTrackGoesOnEveryEntryWithTheSameLoop()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        byte[] layout = File.ReadAllBytes(bars);
+        SetChannels(layout, 2, 2);
+        File.WriteAllBytes(bars, layout);
+        string source = w.Path("track.wav");
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 24000, Channels = [Tone(6000), Tone(6000)] }));
+
+        var result = w.Run("replace-bars-same", [bars, ""], SameSpec(source, "500", "4000", true, false, 0, 1, 2));
+
+        byte[] written = File.ReadAllBytes(bars);
+        TotkBars parsed = TotkBars.Parse(written);
+        byte[] Embedded(int i) => written[parsed.Entries[i].BwavOffset..(parsed.Entries[i].BwavOffset + Bwav.Build([Tone(4000)], 24000).Length)];
+        foreach (var section in result["sections"]!.AsArray()) File.Delete(section!["fullBwavTempPath"]!.GetValue<string>());
+
+        // Cut at the loop end once, and the same everywhere.
+        foreach (int i in new[] { 0, 1, 2 })
+        {
+            Assert.Equal((500, 4000), LoopIn(written.AsSpan(parsed.Entries[i].BwavOffset)));
+            Assert.Equal(4000, Bwav.SampleCount(written.AsSpan(parsed.Entries[i].BwavOffset)));
+        }
+        // The two mono entries hold the very same encoded bytes; the stereo one kept both channels.
+        Assert.Equal(Embedded(0), Embedded(1));
+        Assert.Equal(1, Bwav.ChannelCount(written.AsSpan(parsed.Entries[0].BwavOffset)));
+        Assert.Equal(2, Bwav.ChannelCount(written.AsSpan(parsed.Entries[2].BwavOffset)));
+        Assert.Equal(3, result["sections"]!.AsArray().Count);
+    }
+
+    [Fact]
+    public void OneTrackOnEveryEntryCanFreeOnlyTheFixedLengthsItChanges()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        string table = Path.Combine(w.Root, "Sound", "Bgm", "bgm.Product.100.byml");
+        string source = w.Path("track.wav");
+
+        // Song_02 is fixed at 0.1s; a track of exactly that length changes nothing in the table.
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 32000, Channels = [Tone(3200)] }));
+        byte[] before = File.ReadAllBytes(table);
+        var same = w.Run("replace-bars-same", [bars, ""], SameSpec(source, "none", "none", false, true, 2, 0));
+        foreach (var section in same["sections"]!.AsArray()) File.Delete(section!["fullBwavTempPath"]!.GetValue<string>());
+        Assert.Null(same["tableUpdatedAt"]);
+        Assert.Equal(before, File.ReadAllBytes(table));
+
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 32000, Channels = [Tone(5000)] }));
+        var longer = w.Run("replace-bars-same", [bars, ""], SameSpec(source, "none", "none", false, true, 2, 0));
+        foreach (var section in longer["sections"]!.AsArray()) File.Delete(section!["fullBwavTempPath"]!.GetValue<string>());
+        Assert.Equal(1, longer["tableNodesChanged"]!.GetValue<int>());
+        Assert.True(Byml.FromFile(table)["BGM"]!["Song"]!["Node"]!.AsArray.First(n => n["Key"]?.AsString() == "Song_02")["IsDurationAuto"]!.Bool);
+    }
+
+    [Fact]
+    public void OneTrackOnEveryEntryIsAllOrNothing()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        byte[] before = File.ReadAllBytes(bars);
+        string source = w.Path("track.wav");
+        File.WriteAllBytes(source, Wav.Write(new PcmAudio { SampleRate = 24000, Channels = [Tone(3000)] }));
+
+        Assert.Throws<IndexOutOfRangeException>(() => w.Run("replace-bars-same", [bars, ""], SameSpec(source, "auto", "auto", false, false, 0, 1, 9)));
+        Assert.Equal(before, File.ReadAllBytes(bars));
+        Assert.Throws<InvalidDataException>(() => w.Run("replace-bars-same", [bars, ""], SameSpec(source, "auto", "auto", false, false, 0, 0)));
+        Assert.Equal(before, File.ReadAllBytes(bars));
     }
 
     [Fact]

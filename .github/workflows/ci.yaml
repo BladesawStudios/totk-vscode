@@ -90,11 +90,6 @@ jobs:
         if: matrix.target == 'linux-x64'
         run: dotnet test host/TkvscHost.slnx
 
-      - name: Inject Commit Hash into Version
-        run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          jq ".version += \"-$SHORT_SHA\"" package.json > package.json.tmp && mv package.json.tmp package.json
-
       - name: Package VSIX
         run: node scripts/package-vsix.js ${{ matrix.target }}
 
