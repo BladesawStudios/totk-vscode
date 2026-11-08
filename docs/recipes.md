@@ -27,9 +27,9 @@ Patterns: `*` matches inside one folder, `**` across folders, `?` one character.
 
 | Step | What it does |
 | --- | --- |
-| `tint COLOR [only REGEX]` | Recolours every colour in the file to `COLOR` and keeps each one's brightness. `only` limits it to colours whose name matches the regex. Works on particle emitters, material parameters (`.fmat`), material animations (`.fmaa`) and textures (see below). |
+| `tint COLOR [x TIMES] [only REGEX]` | Recolours every colour in the file to `COLOR` and keeps each one's brightness (`x 4` makes it four times as bright). `only` limits it to colours whose name matches the regex. Works on particle emitters, material parameters (`.fmat`), material animations (`.fmaa`) and textures (see below). |
 | `replace FIND -> WITH` | A regex replace over the file's text. `\n` in `WITH` is a new line, `$1` is a regex group, `$name` is a recipe variable. Matches work per line, and `\z` matches the end of the file. |
-| `copy FILE` | Makes the file a copy of another game file (or of one the recipe has already changed). Whole-file only, and it has to be the first step; steps after it change the copy. |
+| `copy FILE` | Makes the file a copy of another game file (or of one the recipe has already changed). Whole-file only, and it has to be the first step; steps after it change the copy. In a file with entry patterns, write `copy: FILE` at the top of the map. |
 | `delete` | On a file: removes it from the output. On an entry pattern: removes the matching entries from the archive. It cannot be combined with other steps. |
 
 Steps run on the readable text of each file, so anything TKVSC can show as YAML can be edited. If a particle channel can only hold one number for red, green and blue, the tint stores the closest colour it can (red becomes `[1, 0, 0]`).
@@ -44,6 +44,21 @@ Tex/Npc_Navi_Body_Alb.00.bntx.zs:
 ```
 
 `tint` gives each pixel the colour at that pixel's own brightness and keeps its alpha, then encodes the texture back in its own format with its mips made again. It works for the colour formats TKVSC can encode; textures with several layers, and data formats like normal maps, are refused. `replace` cannot change a texture.
+
+### Particle textures
+
+An emitter's YAML lists the textures its renderers sample, under `Textures:`. Textures are shared between effects, so tinting one recolours every effect that uses it. To recolour only some emitters, clone the texture and point those emitters at the clone:
+
+```yaml
+Tex/Npc_Navi_Red_Gradation_Ramp_Color_00_Fc.bntx.zs:
+  copy: Tex/Gradation_Ramp_Color_00_Fc.bntx.zs
+  '*': tint $color
+
+Effect/static.Nin_Ounce_NVN2.vsetb.byml.zs:
+  Esets/Npc_Navi_*/*.emitter: 'replace (Gradation_Ramp_Color_00_Fc)$ -> Npc_Navi_Red_$1'
+```
+
+A texture name the particle file does not list is added to it, so it must name a file you make in `Tex/` (the game finds it by that name).
 
 ## Including other recipes
 
@@ -69,4 +84,3 @@ A recipe only ever reads the game's RomFS and writes to its own `romfs` output f
 - Steps cannot be conditional, and a variable is always a string.
 - `delete` on entries works where the archive format supports deleting entries (SARC and BFRES do).
 
-See [examples/navi-recolour.recipe.yaml](examples/navi-recolour.recipe.yaml).

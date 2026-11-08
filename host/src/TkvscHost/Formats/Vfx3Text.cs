@@ -263,27 +263,30 @@ public static class Vfx3Text
     /// <param name="data">The particle file.</param>
     /// <param name="esetIndex">Which emitter set; the first by default.</param>
     /// <param name="onlyEmitter">When given, only that emitter (as named by <see cref="Esets"/>).</param>
-    public static string ToText(byte[] data, int esetIndex = 0, string? onlyEmitter = null)
+    public static string ToText(byte[] data, int esetIndex = 0, string? onlyEmitter = null, TextureNames? textures = null)
     {
         StringBuilder sb = new();
-        string emitter = "", renderer = "";
-        foreach (Channel c in Channels(data, esetIndex))
-        {
-            if (onlyEmitter is not null && c.Emitter != onlyEmitter) continue;
-            if (c.Emitter != emitter)
-            {
-                emitter = c.Emitter;
-                renderer = "";
-                sb.Append(PyYamlScalar.Write(emitter)).Append(":\n");
-            }
-            if (c.Renderer != renderer)
-            {
-                renderer = c.Renderer;
-                sb.Append("    ").Append(renderer).Append(":\n");
-            }
+        List<Channel> channels = [.. Channels(data, esetIndex).Where(c => onlyEmitter is null || c.Emitter == onlyEmitter)];
+        List<Sampler> samplers = textures is null ? [] : [.. Samplers(data, esetIndex).Where(s => onlyEmitter is null || s.Emitter == onlyEmitter)];
 
-            sb.Append("        ").Append(c.Name).Append(':');
-            AppendValue(sb, data, c);
+        foreach (var emitter in channels.Select(c => (c.Emitter, c.Renderer)).Concat(samplers.Select(s => (s.Emitter, s.Renderer))).Distinct().GroupBy(k => k.Emitter))
+        {
+            sb.Append(PyYamlScalar.Write(emitter.Key)).Append(":\n");
+            foreach (string renderer in emitter.Select(k => k.Renderer))
+            {
+                sb.Append("    ").Append(renderer).Append(":\n");
+                foreach (Channel c in channels.Where(c => c.Emitter == emitter.Key && c.Renderer == renderer))
+                {
+                    sb.Append("        ").Append(c.Name).Append(':');
+                    AppendValue(sb, data, c);
+                }
+
+                List<Sampler> here = [.. samplers.Where(s => s.Emitter == emitter.Key && s.Renderer == renderer)];
+                if (here.Count == 0) continue;
+                sb.Append("        Textures:\n");
+                foreach (Sampler s in here)
+                    sb.Append("            ").Append(s.Name).Append(": ").Append(PyYamlScalar.Write(textures!.NameOf(s.Guid) ?? s.Guid.ToString())).Append('\n');
+            }
         }
         return sb.Length == 0 ? "{}\n" : sb.ToString();
     }
@@ -361,7 +364,7 @@ public static class Vfx3Text
     }
 
     /// <summary>Applies edited <paramref name="yaml"/> (as made by <see cref="ToText"/>) to the binary and returns the new bytes.</summary>
-    public static byte[] ApplyText(byte[] original, string yaml, int esetIndex = 0)
+    public static byte[] ApplyText(byte[] original, string yaml, int esetIndex = 0, TextureNames? textures = null)
     {
         Byml changes = Byml.FromYaml(yaml);
         if (!changes.IsMap) throw new InvalidDataException("Invalid particle YAML: " + yaml);
@@ -395,7 +398,134 @@ public static class Vfx3Text
                     break;
             }
         }
+
+        if (textures is not null) ApplyTextures(data, changes, esetIndex, textures);
         return data;
+    }
+
+    // ---- textures ----
+
+    /// <summary>One texture slot of an emitter's renderer: the sampler's name, the texture's guid, and where the guid's text pointer is stored.</summary>
+    private readonly record struct Sampler(string Emitter, string Renderer, string Name, ulong Guid, long Slot);
+
+    private static ulong? ParseGuid(string text) => ulong.TryParse(text, System.Globalization.NumberStyles.None, null, out ulong guid) ? guid : null;
+
+    // The texture slots of each renderer of each emitter of one emitter set. A renderer keeps its samplers' names, guids (as
+    // decimal text) and name hashes in three parallel arrays.
+    private static List<Sampler> Samplers(byte[] d, int esetIndex)
+    {
+        (long setRecords, uint setCount, uint recordSize) = EsetRecords(d);
+        if (esetIndex < 0 || esetIndex >= setCount) return [];
+        long block = setRecords + esetIndex * (long)recordSize - 8;
+
+        List<Sampler> samplers = [];
+        Dictionary<string, int> names = [];
+        long emitters = (long)U64(d, block + 0x10);
+        uint emitterCount = U32(d, block + 0x18);
+        for (uint e = 0; e < emitterCount; e++)
+        {
+            long emitter = (long)U64(d, emitters + e * 8L);
+            string name = CString(d, (long)U64(d, emitter));
+            int seen = names.GetValueOrDefault(name);
+            names[name] = seen + 1;
+            string key = seen == 0 ? name : $"{name}#{seen + 1}";
+
+            long renderers = (long)U64(d, emitter + 8 + 4 * 16);
+            uint rendererCount = U32(d, emitter + 0x10 + 4 * 16);
+            for (uint r = 0; r < rendererCount; r++)
+            {
+                long renderer = (long)U64(d, renderers + r * 8L);
+                string rendererName = CString(d, (long)U64(d, renderer + 0x20));
+                long nameArray = (long)U64(d, renderer + 0x50), guidArray = (long)U64(d, renderer + 0x58);
+                uint count = U32(d, renderer + 0x68);
+                if (count > 32 || nameArray <= 0 || guidArray <= 0) continue;
+                for (uint i = 0; i < count; i++)
+                {
+                    long slot = guidArray + i * 8L;
+                    if (ParseGuid(CString(d, (long)U64(d, slot))) is not { } guid) continue;
+                    samplers.Add(new Sampler(key, rendererName, CString(d, (long)U64(d, nameArray + i * 8L)), guid, slot));
+                }
+            }
+        }
+        return samplers;
+    }
+
+    private static void ApplyTextures(byte[] data, Byml changes, int esetIndex, TextureNames textures)
+    {
+        foreach (Sampler s in Samplers(data, esetIndex))
+        {
+            if (changes[s.Emitter] is not { IsMap: true } emitter || emitter[s.Renderer] is not { IsMap: true } renderer) continue;
+            if (renderer["Textures"] is not { IsMap: true } list || list[s.Name]?.AsString() is not { } wanted) continue;
+            if (wanted == (textures.NameOf(s.Guid) ?? s.Guid.ToString())) continue;
+
+            string what = $"{s.Emitter}/{s.Renderer}/Textures/{s.Name}";
+            ulong guid = textures.Guid(wanted, s.Guid, data) ?? throw new InvalidDataException($"{what} names the texture '{wanted}', which this file does not list and cannot be added from the texture it replaces.");
+            long text = FindText(data, guid.ToString()) ?? throw new InvalidDataException($"{what}: the particle data has no text for the new texture's id.");
+            BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan((int)s.Slot), (ulong)text);
+        }
+    }
+
+    // Where a number's decimal text is in the file. The text may be the end of a longer number's text, since a string ends at its 0.
+    internal static long? FindText(byte[] d, string digits)
+    {
+        byte[] needle = [.. Encoding.ASCII.GetBytes(digits), (byte)0];
+        int from = 0;
+        while (from < d.Length)
+        {
+            int at = d.AsSpan(from).IndexOf(needle);
+            if (at < 0) return null;
+            at += from;
+            if (at > 0 && (d[at - 1] == 0 || d[at - 1] is >= (byte)'0' and <= (byte)'9')) return at;
+            from = at + 1;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The textures a particle file lists, by id: the <c>Textures</c> of its <c>.vsetb.byml</c>. A texture added here (named
+    /// for a clone of one the file already uses) gets an id that is the end of an existing texture's id text, so the id
+    /// has text in the file without anything in it moving.
+    /// </summary>
+    public sealed class TextureNames
+    {
+        private readonly Dictionary<ulong, string> _names = [];
+        private readonly Dictionary<string, ulong> _guids = new(StringComparer.Ordinal);
+
+        public List<(ulong Guid, string Name)> Added { get; } = [];
+
+        public static TextureNames From(Byml? textures)
+        {
+            TextureNames names = new();
+            if (textures is { IsArray: true })
+                foreach (Byml texture in textures.AsArray)
+                    if (texture["guid"] is { Type: BymlType.UInt64 } guid && texture["name"]?.AsString() is { } name)
+                    {
+                        names._names[guid.UInt64] = name;
+                        names._guids[name] = guid.UInt64;
+                    }
+            return names;
+        }
+
+        public string? NameOf(ulong guid) => _names.GetValueOrDefault(guid);
+
+        /// <summary>The id of a texture by name. A name the file does not list is added as a new texture, with an id taken from the end of <paramref name="from"/>'s text.</summary>
+        internal ulong? Guid(string name, ulong from, byte[] data)
+        {
+            if (_guids.TryGetValue(name, out ulong known)) return known;
+
+            string digits = from.ToString();
+            for (int cut = 1; cut < digits.Length - 8; cut++)
+            {
+                if (digits[cut] == '0') continue;
+                ulong candidate = ulong.Parse(digits[cut..], System.Globalization.CultureInfo.InvariantCulture);
+                if (_names.ContainsKey(candidate)) continue;
+                _names[candidate] = name;
+                _guids[name] = candidate;
+                Added.Add((candidate, name));
+                return candidate;
+            }
+            return null;
+        }
     }
 
     [ThreadStatic]

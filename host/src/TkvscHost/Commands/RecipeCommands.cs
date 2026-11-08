@@ -28,7 +28,7 @@ namespace TkvscHost;
 /// or a list) that run first and share their variables with this one. A key with a map under it is a file in the game's
 /// RomFS, and each key of the map is a pattern for the entries inside it (<c>*</c> inside a folder, <c>**</c> across
 /// folders; a texture file's entries are its textures) with the step, or list of steps, to run on them. A file with steps
-/// directly under it (a string or a list) runs them on the file itself. A step is <c>tint COLOR [only REGEX]</c>,
+/// directly under it (a string or a list) runs them on the file itself. A step is <c>tint COLOR [x TIMES] [only REGEX]</c>,
 /// <c>replace FIND -> WITH</c>, <c>copy FILE</c> (the file becomes a copy of another) or <c>delete</c> (the file, or the
 /// matching entries, are removed). The changed files are written to a <c>romfs</c> folder next to the recipe, and each run
 /// starts again from the game's own files. A preview runs the same recipe into a temporary folder and reports what would
@@ -101,7 +101,16 @@ public static partial class RecipeCommands
                 }
             }
             else if (value is Dictionary<object, object> entries)
-                foreach (var (pattern, steps) in entries) edits.Add(new Edit(name, Scalar(pattern), StepList(steps)));
+            {
+                if (entries.TryGetValue("copy", out object? copyTarget))
+                    edits.Add(new Edit(name, null, [$"copy {Scalar(copyTarget)}"]));
+
+                foreach (var (pattern, steps) in entries)
+                {
+                    if (Scalar(pattern) == "copy") continue;
+                    edits.Add(new Edit(name, Scalar(pattern), StepList(steps)));
+                }
+            }
             else if (value is List<object>)
                 edits.Add(new Edit(name, null, StepList(value)));
             else if (IsStep(Scalar(value)))
@@ -466,7 +475,14 @@ public static partial class RecipeCommands
             {
                 int only = rest.IndexOf(" only ", StringComparison.Ordinal);
                 string color = Substitute(only < 0 ? rest : rest[..only], variables).Trim();
-                return new TextOp(Tint.Make(color, only < 0 ? null : Substitute(rest[(only + 6)..], variables).Trim()), Tint.Pixels(color), "tint");
+                double times = 1;
+                if (Regex.Match(color, @"^(.*?)\s+x\s*([\d.]+)$") is { Success: true } scaled)
+                {
+                    color = scaled.Groups[1].Value.Trim();
+                    times = double.Parse(scaled.Groups[2].Value, CultureInfo.InvariantCulture);
+                }
+
+                return new TextOp(Tint.Make(color, only < 0 ? null : Substitute(rest[(only + 6)..], variables).Trim(), times), Tint.Pixels(color, times), "tint");
             }
             case "replace":
             {
@@ -483,7 +499,7 @@ public static partial class RecipeCommands
                 if (rest.Length > 0) throw new InvalidDataException($"\"{step}\": delete takes no arguments");
                 return new DeleteOp();
             default:
-                throw new InvalidDataException($"Unknown step \"{step}\"; the steps are 'tint COLOR [only REGEX]', 'replace FIND -> WITH', 'copy FILE' and 'delete'");
+                throw new InvalidDataException($"Unknown step \"{step}\"; the steps are 'tint COLOR [x TIMES] [only REGEX]', 'replace FIND -> WITH', 'copy FILE' and 'delete'");
         }
     }
 
@@ -510,14 +526,14 @@ public static partial class RecipeCommands
         }
 
         /// <summary>The same recolour for the pixels of a texture (RGBA8): each pixel becomes the colour at its own brightness; alpha stays.</summary>
-        public static Func<byte[], byte[]> Pixels(string color)
+        public static Func<byte[], byte[]> Pixels(string color, double times = 1)
         {
             double[] target = Target(color);
             return rgba =>
             {
                 for (int i = 0; i + 3 < rgba.Length; i += 4)
                 {
-                    double brightness = Math.Max(rgba[i], Math.Max(rgba[i + 1], rgba[i + 2])) / 255.0;
+                    double brightness = times * Math.Max(rgba[i], Math.Max(rgba[i + 1], rgba[i + 2])) / 255.0;
                     for (int k = 0; k < 3; k++) rgba[i + k] = (byte)Math.Clamp((int)Math.Round(target[k] * brightness * 255.0), 0, 255);
                 }
 
@@ -525,7 +541,7 @@ public static partial class RecipeCommands
             };
         }
 
-        public static Func<string, string> Make(string color, string? only)
+        public static Func<string, string> Make(string color, string? only, double times = 1)
         {
             double[] target = Target(color);
             Regex? restriction = only is null ? null : new Regex(only, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -534,7 +550,7 @@ public static partial class RecipeCommands
 
             string Recolour(Match match)
             {
-                double brightness = Enumerable.Range(1, 3).Max(i => double.Parse(match.Groups[i].Value, CultureInfo.InvariantCulture));
+                double brightness = times * Enumerable.Range(1, 3).Max(i => double.Parse(match.Groups[i].Value, CultureInfo.InvariantCulture));
                 string alpha = match.Groups[4].Success ? ", " + match.Groups[4].Value : "";
                 return $"[{string.Join(", ", target.Select(t => Number(t * brightness)))}{alpha}]";
             }

@@ -78,6 +78,17 @@ public class RecipeTests
     }
 
     [Fact]
+    public void TintCanMakeTheColourBrighterOrDimmerWithX()
+    {
+        using Workspace w = new();
+        var (env, recipe, output) = Setup(w, TintRecipe.Replace("tint $color", "tint $color x 4"));
+
+        Run(w, env, "apply-recipe", recipe);
+
+        Assert.Equal([2f, 0f, 0f, 1f], Colour(output));
+    }
+
+    [Fact]
     public void AVariableCanBeGivenAnotherValueAndEachRunStartsFromTheGameFile()
     {
         using Workspace w = new();

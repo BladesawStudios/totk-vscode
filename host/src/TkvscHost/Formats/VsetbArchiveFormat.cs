@@ -27,7 +27,7 @@ public sealed class VsetbArchiveFormat : IArchiveFormat
     {
         BymlFile file = BymlFile.FromBinary(data);
         byte[] binary = ParticleBinary(file) ?? throw new InvalidDataException("The file has no Vfx3 particle data.");
-        return [.. Entries(binary, edits: null).Select(entry => new ArchiveFile(entry.Name, entry.Data))];
+        return [.. Entries(binary, edits: null, Vfx3Text.TextureNames.From(file.Root["Textures"])).Select(entry => new ArchiveFile(entry.Name, entry.Data))];
     }
 
     public byte[] Write(IReadOnlyList<ArchiveFile> files, byte[] original, string logicalPath)
@@ -37,7 +37,8 @@ public sealed class VsetbArchiveFormat : IArchiveFormat
 
         Dictionary<string, byte[]> given = files.ToDictionary(f => f.Name, f => f.Data, StringComparer.Ordinal);
         List<(int Eset, string Emitter, string Text)> edits = [];
-        Dictionary<string, Entry> before = Entries(binary, edits).ToDictionary(entry => entry.Name, StringComparer.Ordinal);
+        Vfx3Text.TextureNames textures = Vfx3Text.TextureNames.From(file.Root["Textures"]);
+        Dictionary<string, Entry> before = Entries(binary, edits, textures).ToDictionary(entry => entry.Name, StringComparer.Ordinal);
 
         foreach (Entry entry in before.Values)
         {
@@ -50,14 +51,21 @@ public sealed class VsetbArchiveFormat : IArchiveFormat
         if (edits.Count == 0) return original;
 
         byte[] edited = binary;
-        foreach (var (eset, _, text) in edits) edited = Vfx3Text.ApplyText(edited, text, eset);
+        foreach (var (eset, _, text) in edits) edited = Vfx3Text.ApplyText(edited, text, eset, textures);
+
+        if (textures.Added.Count > 0 && file.Root["Textures"] is { IsArray: true } list)
+            foreach (var (guid, name) in textures.Added)
+            {
+                int at = list.AsArray.TakeWhile(t => string.CompareOrdinal(t["name"]?.AsString(), name) < 0).Count();
+                list.AsArray.Insert(at, Byml.Map(new Dictionary<string, Byml> { ["guid"] = Byml.From(guid), ["name"] = Byml.From(name) }));
+            }
 
         BymlType type = file.Root["PtclBin"].Type;
         file.Root.AsMap["PtclBin"] = type == BymlType.BinaryAligned ? Byml.From(edited, file.Root["PtclBin"].BinaryAlignment) : Byml.From(edited);
         return file.Write();
     }
 
-    private static IEnumerable<Entry> Entries(byte[] binary, List<(int Eset, string Emitter, string Text)>? edits)
+    private static IEnumerable<Entry> Entries(byte[] binary, List<(int Eset, string Emitter, string Text)>? edits, Vfx3Text.TextureNames textures)
     {
         var sets = Vfx3Text.Esets(binary);
         for (int index = 0; index < sets.Count; index++)
@@ -65,7 +73,7 @@ public sealed class VsetbArchiveFormat : IArchiveFormat
             int set = index;
             foreach (string emitter in sets[set].Emitters)
             {
-                string text = Vfx3Text.ToText(binary, set, emitter);
+                string text = Vfx3Text.ToText(binary, set, emitter, textures);
                 string header = $"# Colours of the emitter \"{emitter}\" in the effect set \"{sets[set].Name}\". Edit the numbers; each renderer lists its colour channels.\n";
                 yield return new Entry($"{Folder}/{sets[set].Name}/{emitter}{Extension}", Encoding.UTF8.GetBytes(header + text), changed => edits?.Add((set, emitter, changed)));
             }

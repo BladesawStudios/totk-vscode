@@ -129,6 +129,22 @@ public class RecipeStepTests
     }
 
     [Fact]
+    public void ACopyStepInsideAFileMappingCopiesFirstThenEditsEntries()
+    {
+        using Workspace w = new();
+        var (env, mod, game) = Setup(w, ("t.recipe.yaml", """
+            Tex/c.bntx:
+              copy: Tex/a.bntx
+              '*': tint "#0000FF"
+            """));
+
+        Run(w, env, "apply-recipe", Path.Combine(mod, "t.recipe.yaml"));
+
+        Assert.Equal([0, 0, 200, 255], FirstPixel(Path.Combine(mod, "romfs", "Tex", "c.bntx")));
+        Assert.Equal([200, 100, 50, 255], FirstPixel(Path.Combine(game, "Tex", "a.bntx")));
+    }
+
+    [Fact]
     public void ACopyStepHasToComeFirstAndDeleteStandsAlone()
     {
         using Workspace w = new();
