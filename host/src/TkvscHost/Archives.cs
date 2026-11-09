@@ -78,7 +78,7 @@ public sealed class Archives(Containers containers)
     /// <summary>The archive on disk and how it was wrapped (zstd, a plugin's compression or Yaz0), so a save puts it back the same way.</summary>
     public (OpenArchive Archive, Unwrapped Wrapping) LoadArchive(string archivePath)
     {
-        Unwrapped unwrapped = containers.Decompress(File.ReadAllBytes(archivePath), archivePath);
+        Unwrapped unwrapped = containers.Decompress(ReadShared(archivePath), archivePath);
 
         if (unwrapped.Data.Length >= 4 && unwrapped.Data.AsSpan(0, 4).SequenceEqual("BNTX"u8))
             throw new InvalidDataException($"Cannot open BNTX file as an archive: {archivePath}. Use the BNTX reader instead.");
@@ -120,7 +120,7 @@ public sealed class Archives(Containers containers)
     {
         if (IsBntxName(diskArchivePath))
         {
-            byte[] raw = containers.Decompress(File.ReadAllBytes(diskArchivePath), diskArchivePath).Data;
+            byte[] raw = containers.Decompress(ReadShared(diskArchivePath), diskArchivePath).Data;
             if (BntxNames.IsBntx(raw)) return new(raw, Normalize(locatorPath), "");
         }
 
@@ -200,7 +200,7 @@ public sealed class Archives(Containers containers)
         List<string> names = [];
         if (IsBntxName(diskArchivePath))
         {
-            byte[] raw = containers.Decompress(File.ReadAllBytes(diskArchivePath), diskArchivePath).Data;
+            byte[] raw = containers.Decompress(ReadShared(diskArchivePath), diskArchivePath).Data;
             if (BntxNames.IsBntx(raw)) return BntxNames.List(raw);
         }
 
@@ -225,6 +225,32 @@ public sealed class Archives(Containers containers)
             }
             catch (Exception) { }
         }
+    }
+
+    /// <summary>
+    /// The content hash of a file on disk and of everything inside it (nested archives too), as <c>path, hash</c> pairs
+    /// where the path starts with <paramref name="relPath"/>. Compressed files are hashed unwrapped, so compressing the same
+    /// content another way gives the same hash.
+    /// </summary>
+    public void HashFileTree(string diskPath, string relPath, Action<string, string> add, bool descend = true)
+        => HashTree(ReadShared(diskPath), Path.GetFileName(diskPath), Normalize(relPath), add, descend);
+
+    private void HashTree(byte[] raw, string name, string path, Action<string, string> add, bool descend)
+    {
+        byte[] plain;
+        try { plain = containers.Decompress(raw, name).Data; }
+        catch (Exception) { plain = raw; }
+
+        add(path, FileHashes.Hex(plain));
+        if (!descend || !IsArchiveName(name) || IsBfresName(containers.Env, name) || IsBntxName(name)) return;
+
+        // A file that is named like an archive but doesn't open still has its own hash.
+        OpenArchive archive;
+        try { archive = Open(plain, name); }
+        catch (Exception) { return; }
+
+        foreach (SarcEntry entry in archive.Entries)
+            HashTree(entry.Data, entry.Name, path.Length > 0 ? $"{path}/{entry.Name}" : entry.Name, add, descend: true);
     }
 
     public byte[] ReadArchiveFileBytes(string diskArchivePath, string filePath)
@@ -306,6 +332,26 @@ public sealed class Archives(Containers containers)
     private void Save(string archivePath, OpenArchive archive, Unwrapped wrapping)
         => AtomicWrite(archivePath, containers.Compress(archive.Write(), archivePath, wrapping.WasZstd, wrapping.WasYaz0));
 
+    /// <summary>
+    /// Reads a file without locking anyone else out: other readers, and a writer that replaces it, can go on while this
+    /// reads. (<c>File.ReadAllBytes</c> allows only other readers, so an edit made while an earlier command was still
+    /// reading the same archive failed with "being used by another process".)
+    /// </summary>
+    public static byte[] ReadShared(string path)
+    {
+        using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        byte[] bytes = new byte[stream.Length];
+        stream.ReadExactly(bytes);
+        return bytes;
+    }
+
+    private const int ReplaceAttempts = 10;
+
+    /// <summary>
+    /// Writes the file whole or not at all (a temp file beside it, then a rename). Something else holding the file open
+    /// (a scan by antivirus or the indexer, another VS Code window) is usually gone within a moment, so the rename is
+    /// retried briefly before giving up.
+    /// </summary>
     public static void AtomicWrite(string path, byte[] bytes)
     {
         string full = Path.GetFullPath(path);
@@ -319,7 +365,20 @@ public sealed class Archives(Containers containers)
                 stream.Flush(true);
             }
 
-            File.Move(temp, full, overwrite: true);
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    // Replace (unlike a Move over it) succeeds while a reader that shares deletes has the file open.
+                    if (File.Exists(full)) File.Replace(temp, full, null);
+                    else File.Move(temp, full);
+                    break;
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException && attempt < ReplaceAttempts)
+                {
+                    Thread.Sleep(50 * attempt);
+                }
+            }
         }
         catch
         {

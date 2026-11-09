@@ -27,6 +27,7 @@ public static partial class Cmd
         commands["compress-file"] = CompressFile;
         commands["build-romfs-index"] = c => IndexBuilders.BuildRomfsIndex(c);
         commands["build-canonical-path-index"] = c => IndexBuilders.BuildCanonicalPathIndex(c);
+        HashCommands.Register(commands);
         TextureCommands.Register(commands);
         FontCommands.Register(commands);
         AudioCommands.Register(commands);
@@ -193,7 +194,7 @@ public static partial class Cmd
         string name;
         if (internalPath.Length == 0)
         {
-            data = File.ReadAllBytes(archive);
+            data = Archives.ReadShared(archive);
             name = Path.GetFileName(archive);
         }
         else

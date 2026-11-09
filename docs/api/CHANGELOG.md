@@ -8,6 +8,22 @@ Reference docs: [v1.md](v1.md)
 
 ---
 
+## Project folders per game
+
+**Changed**
+
+- Each game has its own list of project folders, setting `TKVSC.projectFolders` (`{ "<gameId>": ["<folder>", ...] }`), edited in settings. New projects are created in the first one. A game with none uses `<TKVSC.projectsPath>/<gameId>/`. Projects already added stay where they are.
+
+---
+
+## BARS tree items
+
+**Changed**
+
+- `.bars` files in the projects tree now have the context values `archiveBars` and `archiveVirtualBars` (in `TKVSC_ARCHIVE_CONTEXT`) instead of `archiveFile` and `archiveVirtualFile`, so their right-click menu can offer exporting and replacing tracks. An addon that matches `archiveFile` for a `.bars` file needs to match these too.
+
+---
+
 ## Game support
 
 **Added**

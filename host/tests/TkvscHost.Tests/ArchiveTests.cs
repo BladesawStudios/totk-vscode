@@ -289,4 +289,36 @@ public class ArchiveTests
 
         Assert.Contains("Binary Data: 4 bytes", w.Run("read-disk", [file], manifest: manifest).ToJsonString());
     }
+
+    [Fact]
+    public void AtomicWrite_ReplacesAFileThatIsBeingRead()
+    {
+        using Workspace w = new();
+        string path = w.Path("held.bars");
+        File.WriteAllBytes(path, [1, 2, 3]);
+
+        // A reader that is still going, as an earlier command's read of the same BARS would be.
+        using (FileStream reader = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            Archives.AtomicWrite(path, [4, 5, 6]);
+        }
+
+        Assert.Equal([4, 5, 6], Archives.ReadShared(path));
+    }
+
+    [Fact]
+    public void AtomicWrite_WaitsForAFileThatIsBrieflyLocked()
+    {
+        using Workspace w = new();
+        string path = w.Path("busy.bars");
+        File.WriteAllBytes(path, [1, 2, 3]);
+
+        // Held with no sharing, like a scan by antivirus, and let go of after a moment.
+        FileStream locked = new(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        _ = Task.Run(() => { Thread.Sleep(150); locked.Dispose(); });
+
+        Archives.AtomicWrite(path, [7, 8, 9]);
+
+        Assert.Equal([7, 8, 9], Archives.ReadShared(path));
+    }
 }

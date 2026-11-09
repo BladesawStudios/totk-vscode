@@ -24,6 +24,7 @@ public static class AudioCommands
         commands["bars-section-info"] = BarsSectionInfo;
         commands["replace-bars-sections"] = ReplaceBarsSections;
         commands["replace-bars-same"] = ReplaceBarsSame;
+        commands["replace-bars-batch"] = ReplaceBarsBatch;
     }
 
     // ---- shared ----
@@ -41,14 +42,14 @@ public static class AudioCommands
     private static (byte[] Data, string Logical) Source(Archives archives, string archive, string internalPath)
         => internalPath.Length > 0
             ? (archives.ReadArchiveFileBytes(archive, internalPath), internalPath)
-            : (File.ReadAllBytes(archive), archive);
+            : (Archives.ReadShared(archive), archive);
 
     private static void Save(CommandContext c, Archives archives, string archive, string logical, byte[] bytes, bool wasZstd)
     {
         if (wasZstd) bytes = c.Containers.Compress(bytes, logical.Length > 0 ? logical : archive, wasZstd: true, wasYaz0: false);
 
         if (logical != archive) archives.WriteArchiveFileBytes(archive, logical, bytes);
-        else File.WriteAllBytes(archive, bytes);
+        else Archives.AtomicWrite(archive, bytes);
     }
 
     private static PcmAudio Decode(byte[] bwav) => Bwav.Decode(bwav);
@@ -414,7 +415,7 @@ public static class AudioCommands
     private static (string Path, BymlFile Table, Unwrapped Unwrapped)? LoadBgmTable(CommandContext c, string modRoot)
     {
         if ((FindBgmTable(modRoot) ?? FindBgmTable(c.Romfs)) is not { } path) return null;
-        Unwrapped unwrapped = c.Containers.Decompress(File.ReadAllBytes(path), path);
+        Unwrapped unwrapped = c.Containers.Decompress(Archives.ReadShared(path), path);
         return (path, BymlFile.FromBinary(unwrapped.Data), unwrapped);
     }
 
@@ -544,7 +545,7 @@ public static class AudioCommands
         if (sections.Select(s => s.Index).Distinct().Count() != sections.Count) throw new InvalidDataException("An entry appears twice in the section list.");
 
         Archives archives = new(c.Containers);
-        byte[] original = File.ReadAllBytes(archive);
+        byte[] original = Archives.ReadShared(archive);
         JsonArray results = [];
         try
         {
@@ -572,7 +573,7 @@ public static class AudioCommands
         }
         catch
         {
-            File.WriteAllBytes(archive, original);
+            Archives.AtomicWrite(archive, original);
             foreach (JsonNode? result in results)
                 if (result?["fullBwavTempPath"]?.GetValue<string>() is { } temp) File.Delete(temp);
             throw;
@@ -596,7 +597,7 @@ public static class AudioCommands
         if (indices.Distinct().Count() != indices.Length) throw new InvalidDataException("An entry appears twice in the list.");
 
         Archives archives = new(c.Containers);
-        byte[] original = File.ReadAllBytes(archive);
+        byte[] original = Archives.ReadShared(archive);
         JsonArray results = [];
         try
         {
@@ -639,11 +640,61 @@ public static class AudioCommands
         }
         catch
         {
-            File.WriteAllBytes(archive, original);
+            Archives.AtomicWrite(archive, original);
             foreach (JsonNode? result in results)
                 if (result?["fullBwavTempPath"]?.GetValue<string>() is { } temp) File.Delete(temp);
             throw;
         }
+    }
+
+    // Replaces many entries, each with its own audio file, loading and saving the BARS once. The spec on stdin:
+    // { items: [{ index, source, loopStart, loopEnd, trim }] }, the loop as replace-bars-audio takes it. Unlike the all-or-nothing
+    // commands above, an item that can't be replaced (a file that won't decode, say) is reported and skipped, and the rest go in.
+    private static JsonNode ReplaceBarsBatch(CommandContext c)
+    {
+        string archive = c.Arg(0), internalPath = c.ArgOr(1, "");
+        JsonNode spec = JsonNode.Parse(c.StdinText) ?? throw new InvalidDataException("Empty item list.");
+        JsonArray items = spec["items"]?.AsArray() ?? throw new InvalidDataException("No items to replace.");
+        if (items.Count == 0) throw new InvalidDataException("No entries to replace.");
+        int[] indices = [.. items.Select(i => i!["index"]!.GetValue<int>())];
+        if (indices.Distinct().Count() != indices.Length) throw new InvalidDataException("An entry appears twice in the list.");
+
+        Archives archives = new(c.Containers);
+        var (file, logical) = Source(archives, archive, internalPath);
+        Unwrapped unwrapped = c.Containers.Decompress(file, logical);
+        byte[] current = unwrapped.Data;
+
+        JsonArray results = [];
+        int replaced = 0;
+        foreach (JsonNode? item in items)
+        {
+            int index = item!["index"]!.GetValue<int>();
+            string source = item["source"]!.GetValue<string>();
+            try
+            {
+                var loopStart = ParseLoop(item["loopStart"]?.ToString() ?? "auto");
+                var loopEnd = ParseLoop(item["loopEnd"]?.ToString() ?? "auto");
+                bool trim = item["trim"]?.GetValue<bool>() ?? false;
+                byte[] payload = File.ReadAllBytes(source);
+
+                // Each item starts from the BARS the earlier ones left, held in memory.
+                byte[] before = current;
+                JsonNode result = ReplaceEntryAudio(
+                    c, archives, archive, logical, new Unwrapped(before, unwrapped.WasZstd, unwrapped.WasYaz0), index,
+                    loopStart, loopEnd, Path.GetFileName(source), trim, payload, bytes => current = bytes);
+                result["index"] = index;
+                result["source"] = source;
+                results.Add(result);
+                replaced++;
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                results.Add(new JsonObject { ["success"] = false, ["index"] = index, ["source"] = source, ["error"] = e.Message });
+            }
+        }
+
+        if (replaced > 0) Save(c, archives, archive, logical, current, unwrapped.WasZstd);
+        return new JsonObject { ["success"] = true, ["replaced"] = replaced, ["results"] = results };
     }
 
     // Makes these entries' table nodes play their whole file, in the exact shape of the table's other nodes that do. Given the
@@ -669,7 +720,7 @@ public static class AudioCommands
 
         string target = Path.Combine(modRoot, "Sound", "Bgm", Path.GetFileName(loaded.Path));
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        File.WriteAllBytes(target, c.Containers.Compress(loaded.Table.Write(), target, loaded.Unwrapped.WasZstd, loaded.Unwrapped.WasYaz0));
+        Archives.AtomicWrite(target, c.Containers.Compress(loaded.Table.Write(), target, loaded.Unwrapped.WasZstd, loaded.Unwrapped.WasYaz0));
         return (target, changed);
     }
 
@@ -783,8 +834,15 @@ public static class AudioCommands
     private static JsonNode ReplaceEntryAudio(
         CommandContext c, Archives archives, string archive, string logical, Unwrapped unwrapped, int entryIndex,
         (bool Auto, bool None, int Value) loopStartArg, (bool Auto, bool None, int Value) loopEndArg,
-        string nameHint, bool trim, byte[] payload)
+        string nameHint, bool trim, byte[] payload, Action<byte[]>? deferSave = null)
     {
+        // With deferSave, the rebuilt BARS goes to the caller instead of the disk, so a batch can save once at the end.
+        void Commit(byte[] bytes)
+        {
+            if (deferSave is not null) deferSave(bytes);
+            else Save(c, archives, archive, logical, bytes, unwrapped.WasZstd);
+        }
+
         // Every looping BWAV in the game ends on its loop end, so an earlier end can cut the audio there. Needs explicit loop points.
         bool explicitLoop = loopStartArg is { Auto: false, None: false } && loopEndArg is { Auto: false, None: false };
         bool trimAfterLoop = trim && explicitLoop;
@@ -864,7 +922,7 @@ public static class AudioCommands
         {
             // Stream-only entry: nothing embedded to swap. The caller gets the whole BWAV to put in Sound/Resource/Stream/.
             needsStreamFile = true;
-            if (loudnessUpdated) Save(c, archives, archive, logical, working, unwrapped.WasZstd);
+            if (loudnessUpdated) Commit(working);
         }
         else
         {
@@ -882,7 +940,7 @@ public static class AudioCommands
                 embedded = "full";
             }
             byte[] rebuilt = TotkBars.Rebuild(working, new Dictionary<int, byte[]> { [entryIndex] = blob });
-            Save(c, archives, archive, logical, rebuilt, unwrapped.WasZstd);
+            Commit(rebuilt);
         }
 
         // An existing whole BWAV is what the entry plays from, so it has to be replaced too, whatever the BARS embeds.

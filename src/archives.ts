@@ -10,6 +10,7 @@ export {
     isArchiveFile,
     isArchiveFileName,
     isBarsAudioArchive,
+    isBntxFile,
     isBntxTextureUri,
     isBwavAudioFile,
     isPathInsideArchive,

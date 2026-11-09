@@ -89,6 +89,7 @@ import {
 import { getArchiveSelection, setArchiveRawIo } from './archiveFsCommands';
 import { getDumpSelection, registerGameDumpTree, type DumpTreeItem } from './dumpTree';
 import { registerGamePicker } from './gamePicker';
+import { ModifiedFileMarker } from './modifiedFiles';
 import { createReadonlyArchiveFs } from './readonlyArchiveFs';
 import { resolveRomfsPath } from './romfs';
 import {
@@ -106,6 +107,8 @@ import { FontViewerProvider } from './fontViewer';
 import { FONT_IMPORT_FILTERS, isFontFilePath } from './fontReplace';
 import { InfoJsonEditorProvider } from './infoJsonEditor';
 import { resolveEditableCopy } from './addToProject';
+import { replaceBarsFromFiles } from './barsBatchReplace';
+import { exportBarsTracks } from './barsExport';
 import { BwavEditorProvider } from './bwavEditor';
 import { openHexEditor } from './editors/hexEditor';
 import { setExtensionPath } from './romfsIndex';
@@ -1179,6 +1182,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         return rebuilt;
     };
 
+    // Marks files of a project that differ from the game's. The game's file hashes are kept per game, as they are asked for.
+    const modifiedFileMarker = new ModifiedFileMarker({
+        getHost,
+        getEnv: () => getBridgeEnv(),
+        getRomfs: () => resolveRomfsPath(),
+        getCachePath: () => gameIndexPaths().fileHashCache,
+        isEnabled: () => vscode.workspace.getConfiguration('TKVSC').get<boolean>('markModifiedFiles', true),
+    });
+
     const runCanonicalPropagation = async (info: {
         diskArchivePath: string;
         internalPath: string;
@@ -1637,6 +1649,62 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         return { start: 0, end: 2147483647 };
     }
 
+    // Audio files dropped on a BARS in the project tree replace the entries named like them.
+    context.subscriptions.push(
+        vscode.commands.registerCommand('totk-editor.replaceBarsFromFiles', async (barsUri: vscode.Uri, dropped: vscode.Uri[]) => {
+            const hostExe = getHost();
+            if (!hostExe) {
+                void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
+                return;
+            }
+            try {
+                await replaceBarsFromFiles({ hostExe, env: getBridgeEnv() }, barsUri, dropped);
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                void vscode.window.showErrorMessage(`Replacing the BARS entries failed: ${msg}`);
+            }
+        }),
+    );
+
+    // Context-menu entries on a .bars: the same replace as a drop, from a picked folder, and the export that feeds it.
+    const withBarsHost = async (
+        item: { resourceUri?: vscode.Uri } | undefined,
+        failure: string,
+        run: (host: { hostExe: string; env: NodeJS.ProcessEnv }, barsUri: vscode.Uri) => Promise<void>,
+    ): Promise<void> => {
+        const hostExe = getHost();
+        if (!hostExe) {
+            void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
+            return;
+        }
+        if (!item?.resourceUri) {
+            return;
+        }
+        try {
+            await run({ hostExe, env: getBridgeEnv() }, item.resourceUri);
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            void vscode.window.showErrorMessage(`${failure}: ${msg}`);
+        }
+    };
+    context.subscriptions.push(
+        vscode.commands.registerCommand('totk-editor.barsReplaceFromFolder', (item?: { resourceUri?: vscode.Uri }) =>
+            withBarsHost(item, 'Replacing the BARS entries failed', async (host, barsUri) => {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFiles: false,
+                    canSelectFolders: true,
+                    canSelectMany: false,
+                    openLabel: 'Replace From This Folder',
+                    title: 'Folder of audio files named like the BARS entries',
+                });
+                if (picked?.[0]) {
+                    await replaceBarsFromFiles(host, barsUri, [picked[0]]);
+                }
+            })),
+        vscode.commands.registerCommand('totk-editor.barsExportTracks', (item?: { resourceUri?: vscode.Uri }) =>
+            withBarsHost(item, 'Exporting the BARS tracks failed', exportBarsTracks)),
+    );
+
     context.subscriptions.push(
         vscode.commands.registerCommand('totk-editor.openBarsArchive', async (uri: vscode.Uri) => {
             const hostExe = getHost();
@@ -1660,7 +1728,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     let barsPath = diskArchive;
 
                     // Runs a host edit on the project's copy of the BARS and saves what it produces there too.
-                    const applyBarsEdit = async (
+                    // One edit at a time per viewer: each host run reads the whole BARS and writes it back, so two
+                    // overlapping edits would lose one of them or fail with "file in use".
+                    let barsEditQueue: Promise<unknown> = Promise.resolve();
+                    const applyBarsEdit = (
+                        progressTitle: string,
+                        runHost: (barsFile: string) => Promise<BarsReplaceResult>,
+                        describe: (result: BarsReplaceResult) => string,
+                    ): Promise<BarsEntry[] | undefined> => {
+                        const run = barsEditQueue.then(() => applyBarsEditNow(progressTitle, runHost, describe));
+                        barsEditQueue = run.catch(() => undefined);
+                        return run;
+                    };
+                    const applyBarsEditNow = async (
                         progressTitle: string,
                         runHost: (barsFile: string) => Promise<BarsReplaceResult>,
                         describe: (result: BarsReplaceResult) => string,
@@ -2067,6 +2147,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     registerIconThemeCommands(context);
 
     archiveTree = registerArchiveTree(context);
+    archiveTree.setModifiedFileMarker(modifiedFileMarker);
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration('TKVSC.markModifiedFiles')) {
+                modifiedFileMarker.invalidate();
+                archiveTree?.refreshView();
+                    }
+        }),
+    );
     gameDumpTree = registerGameDumpTree(context, archiveTree, (projectRoot) =>
         importKnownProjectCanonicalPaths(projectRoot ? { projectRoots: [projectRoot] } : undefined),
     );
@@ -2122,7 +2211,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 gameDumpTree?.setExternalIndexPath(romfsIndexPath());
                 gameDumpTree?.onRomfsPathChanged();
                 void buildRomfsIndex();
-                void buildCanonicalIndex().then((rebuilt) => {
+                // The marks are of the other game's (or dump's) files until the new index is there.
+                modifiedFileMarker.invalidate();
+                archiveTree?.refreshView();
+                        void buildCanonicalIndex().then((rebuilt) => {
                     // Project overlay import is only needed after a rebuild clears import state.
                     if (rebuilt) {
                         return importKnownProjectCanonicalPaths();

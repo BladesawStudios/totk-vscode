@@ -540,6 +540,14 @@
         "title": "Export..."
       },
       {
+        "command": "totk-editor.barsExportTracks",
+        "title": "Export All Tracks to Folder..."
+      },
+      {
+        "command": "totk-editor.barsReplaceFromFolder",
+        "title": "Replace Tracks by Name from Folder..."
+      },
+      {
         "command": "totk-editor.dumpExport",
         "title": "Export..."
       },
@@ -663,7 +671,7 @@
     "viewsWelcome": [
       {
         "view": "totk-editor.archives",
-        "contents": "You don't currently have any Project Folders, please create or add one using the buttons below.\n\n[Create New Project](command:totk-editor.createProject)\n[Add Projects via File Explorer](command:totk-editor.addProjectFolders)"
+        "contents": "You don't currently have any Project Folders for this game, please create or add one using the buttons below.\n\n[Create New Project](command:totk-editor.createProject)\n[Add Projects via File Explorer](command:totk-editor.addProjectFolders)"
       },
       {
         "view": "totk-editor.gameDump",
@@ -671,6 +679,16 @@
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "totk-editor.barsExportTracks",
+          "when": "false"
+        },
+        {
+          "command": "totk-editor.barsReplaceFromFolder",
+          "when": "false"
+        }
+      ],
       "view/title": [
         {
           "command": "totk-editor.selectActiveGame",
@@ -721,12 +739,12 @@
       "view/item/context": [
         {
           "command": "totk-editor.openHexEditor",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage)",
+          "when": "view == totk-editor.archives && ((viewItem == archiveFile || viewItem == archiveBars) || viewItem == archiveTkproj || (viewItem == archiveVirtualFile || viewItem == archiveVirtualBars) || viewItem == archivePackage)",
           "group": "3_view@1"
         },
         {
           "command": "totk-editor.openHexEditor",
-          "when": "view == totk-editor.gameDump && (viewItem == dumpFile || viewItem == dumpVirtualFile || viewItem == dumpArchive)",
+          "when": "view == totk-editor.gameDump && ((viewItem == dumpFile || viewItem == dumpBars) || (viewItem == dumpVirtualFile || viewItem == dumpVirtualBars) || viewItem == dumpArchive)",
           "group": "3_view@1"
         },
         {
@@ -795,17 +813,17 @@
         },
         {
           "command": "totk-editor.archiveRename",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == archiveProjectDir || viewItem == archiveProjectDirActive || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
+          "when": "view == totk-editor.archives && ((viewItem == archiveFile || viewItem == archiveBars) || viewItem == archiveTkproj || (viewItem == archiveVirtualFile || viewItem == archiveVirtualBars) || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == archiveProjectDir || viewItem == archiveProjectDirActive || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
           "group": "7_modification@1"
         },
         {
           "command": "totk-editor.archiveDelete",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == archiveProjectDir || viewItem == archiveProjectDirActive || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
+          "when": "view == totk-editor.archives && ((viewItem == archiveFile || viewItem == archiveBars) || viewItem == archiveTkproj || (viewItem == archiveVirtualFile || viewItem == archiveVirtualBars) || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == archiveProjectDir || viewItem == archiveProjectDirActive || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
           "group": "7_modification@2"
         },
         {
           "command": "totk-editor.archiveReplaceFile",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile)",
+          "when": "view == totk-editor.archives && ((viewItem == archiveFile || viewItem == archiveBars) || viewItem == archiveTkproj || (viewItem == archiveVirtualFile || viewItem == archiveVirtualBars))",
           "group": "7_modification@3"
         },
         {
@@ -815,17 +833,17 @@
         },
         {
           "command": "totk-editor.archiveCopy",
-          "when": "view == totk-editor.archives && (viewItem == archiveRoot || viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == archiveProjectDir || viewItem == archiveProjectDirActive || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
+          "when": "view == totk-editor.archives && (viewItem == archiveRoot || (viewItem == archiveFile || viewItem == archiveBars) || viewItem == archiveTkproj || (viewItem == archiveVirtualFile || viewItem == archiveVirtualBars) || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == archiveProjectDir || viewItem == archiveProjectDirActive || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
           "group": "9_cutcopypaste@1"
         },
         {
           "command": "totk-editor.archiveCopy",
-          "when": "view == totk-editor.gameDump && (viewItem == dumpFile || viewItem == dumpVirtualFile || viewItem == dumpArchive || viewItem == dumpDir)",
+          "when": "view == totk-editor.gameDump && ((viewItem == dumpFile || viewItem == dumpBars) || (viewItem == dumpVirtualFile || viewItem == dumpVirtualBars) || viewItem == dumpArchive || viewItem == dumpDir)",
           "group": "9_cutcopypaste@1"
         },
         {
           "command": "totk-editor.archiveCut",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == archiveProjectDir || viewItem == archiveProjectDirActive || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
+          "when": "view == totk-editor.archives && ((viewItem == archiveFile || viewItem == archiveBars) || viewItem == archiveTkproj || (viewItem == archiveVirtualFile || viewItem == archiveVirtualBars) || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir || viewItem == archiveProjectDir || viewItem == archiveProjectDirActive || viewItem == tkmmOptionsRoot || viewItem == tkmmOptionGroup || viewItem == tkmmOption || viewItem == tkmmOptionActive)",
           "group": "9_cutcopypaste@2"
         },
         {
@@ -835,52 +853,67 @@
         },
         {
           "command": "totk-editor.archiveExport",
-          "when": "view == totk-editor.archives && (viewItem == archiveVirtualFile || viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archivePackage)",
+          "when": "view == totk-editor.archives && ((viewItem == archiveVirtualFile || viewItem == archiveVirtualBars) || (viewItem == archiveFile || viewItem == archiveBars) || viewItem == archiveTkproj || viewItem == archivePackage)",
           "group": "5_export@1"
         },
         {
+          "command": "totk-editor.barsExportTracks",
+          "when": "view == totk-editor.archives && (viewItem == archiveBars || viewItem == archiveVirtualBars)",
+          "group": "5_export@2"
+        },
+        {
+          "command": "totk-editor.barsExportTracks",
+          "when": "view == totk-editor.gameDump && (viewItem == dumpBars || viewItem == dumpVirtualBars)",
+          "group": "5_export@2"
+        },
+        {
+          "command": "totk-editor.barsReplaceFromFolder",
+          "when": "view == totk-editor.archives && (viewItem == archiveBars || viewItem == archiveVirtualBars)",
+          "group": "7_modification@4"
+        },
+        {
           "command": "totk-editor.dumpExport",
-          "when": "view == totk-editor.gameDump && (viewItem == dumpVirtualFile || viewItem == dumpFile || viewItem == dumpArchive)",
+          "when": "view == totk-editor.gameDump && ((viewItem == dumpVirtualFile || viewItem == dumpVirtualBars) || (viewItem == dumpFile || viewItem == dumpBars) || viewItem == dumpArchive)",
           "group": "5_export@1"
         },
         {
           "command": "totk-editor.archiveAddToActiveOption",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir) && resourcePath =~ /(?:^|[\\\\/])romfs(?:[\\\\/]|$)/i",
+          "when": "view == totk-editor.archives && ((viewItem == archiveFile || viewItem == archiveBars) || (viewItem == archiveVirtualFile || viewItem == archiveVirtualBars) || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir) && resourcePath =~ /(?:^|[\\\\/])romfs(?:[\\\\/]|$)/i",
           "group": "2_add@1"
         },
         {
           "command": "totk-editor.archiveAddToOption",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir) && resourcePath =~ /(?:^|[\\\\/])romfs(?:[\\\\/]|$)/i",
+          "when": "view == totk-editor.archives && ((viewItem == archiveFile || viewItem == archiveBars) || (viewItem == archiveVirtualFile || viewItem == archiveVirtualBars) || viewItem == archivePackage || viewItem == archiveDir || viewItem == archiveVirtualDir) && resourcePath =~ /(?:^|[\\\\/])romfs(?:[\\\\/]|$)/i",
           "group": "2_add@2"
         },
         {
           "command": "totk-editor.addDumpToActiveProject",
-          "when": "view == totk-editor.gameDump && (viewItem == dumpFile || viewItem == dumpVirtualFile || viewItem == dumpArchive)",
+          "when": "view == totk-editor.gameDump && ((viewItem == dumpFile || viewItem == dumpBars) || (viewItem == dumpVirtualFile || viewItem == dumpVirtualBars) || viewItem == dumpArchive)",
           "group": "2_add@1"
         },
         {
           "command": "totk-editor.addDumpToProject",
-          "when": "view == totk-editor.gameDump && (viewItem == dumpFile || viewItem == dumpVirtualFile || viewItem == dumpArchive)",
+          "when": "view == totk-editor.gameDump && ((viewItem == dumpFile || viewItem == dumpBars) || (viewItem == dumpVirtualFile || viewItem == dumpVirtualBars) || viewItem == dumpArchive)",
           "group": "2_add@2"
         },
         {
           "command": "totk-editor.configureFilteringRules",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveTkproj || viewItem == archiveVirtualFile || viewItem == archivePackage)",
+          "when": "view == totk-editor.archives && ((viewItem == archiveFile || viewItem == archiveBars) || viewItem == archiveTkproj || (viewItem == archiveVirtualFile || viewItem == archiveVirtualBars) || viewItem == archivePackage)",
           "group": "8_filter@1"
         },
         {
           "command": "totk-editor.configureFilteringRules",
-          "when": "view == totk-editor.gameDump && (viewItem == dumpFile || viewItem == dumpVirtualFile || viewItem == dumpArchive)",
+          "when": "view == totk-editor.gameDump && ((viewItem == dumpFile || viewItem == dumpBars) || (viewItem == dumpVirtualFile || viewItem == dumpVirtualBars) || viewItem == dumpArchive)",
           "group": "8_filter@1"
         },
         {
           "command": "totk-editor.importTextureDds",
-          "when": "view == totk-editor.archives && (viewItem == archiveVirtualFile || (viewItem == archiveFile && resourceExtname == .txtg))",
+          "when": "view == totk-editor.archives && ((viewItem == archiveVirtualFile || viewItem == archiveVirtualBars) || ((viewItem == archiveFile || viewItem == archiveBars) && resourceExtname == .txtg))",
           "group": "5_export@2"
         },
         {
           "command": "totk-editor.importFontReplacement",
-          "when": "view == totk-editor.archives && (viewItem == archiveFile || viewItem == archiveVirtualFile) && (resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf || resourceFilename =~ /\\.(bfotf|bfttf)\\.zs$/i)",
+          "when": "view == totk-editor.archives && ((viewItem == archiveFile || viewItem == archiveBars) || (viewItem == archiveVirtualFile || viewItem == archiveVirtualBars)) && (resourceExtname == .bfotf || resourceExtname == .bfttf || resourceExtname == .ttf || resourceExtname == .otf || resourceFilename =~ /\\.(bfotf|bfttf)\\.zs$/i)",
           "group": "7_modification@5"
         }
       ],
@@ -1009,10 +1042,24 @@
           "minimum": 0,
           "markdownDescription": "How much disk space (MB) decoded BARS audio may use, so a BARS opens without decoding its sounds again. The least recently played sounds are dropped first. `0` turns the cache off. **TKVSC: Clear BARS Audio Cache** empties it."
         },
+        "TKVSC.markModifiedFiles": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Mark files in Your Projects that differ from the game's, including files inside archives, with `- modified`. It compares content, so it reads the game's copy of each file in a project once (in the background) and remembers the result per game."
+        },
+        "TKVSC.projectFolders": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "markdownDescription": "The folders each game's projects live in, by game id. New projects are created in the first one. Edit these from the **Game** section above Your Projects."
+        },
         "TKVSC.projectsPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Default path where new projects will be created."
+          "markdownDescription": "Fallback folder for new projects when a game has no folder in `TKVSC.projectFolders`. Each game then gets its own folder inside it (for example `totk`), so projects of different games are never mixed."
         },
         "TKVSC.romfsPath": {
           "type": "string",

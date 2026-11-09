@@ -7,6 +7,7 @@ import type { ArchiveTreeProvider } from './archiveTree';
 import { resolveRomfsPath } from './romfs';
 import { invalidateRomfsIndex, queryRomfsIndex } from './romfsIndex';
 import { getActiveProjectOption, askForProjectOption } from './projectAdapters/registry';
+import { registerSingleTextureAutoOpen } from './singleTextureAutoOpen';
 
 export const DUMP_SCHEME = 'totk-dump';
 const GAME_DUMP_SEARCH_VIEW_ID = 'totk-editor.gameDumpSearch';
@@ -557,7 +558,11 @@ function contextValueForEntry(
     romfsPath: string,
 ): string {
     if (!isDirectory) {
-        return isPathInsideArchive(fsPath) ? 'dumpVirtualFile' : 'dumpFile';
+        const inside = isPathInsideArchive(fsPath);
+        if (isBarsAudioArchive(name)) {
+            return inside ? 'dumpVirtualBars' : 'dumpBars';
+        }
+        return inside ? 'dumpVirtualFile' : 'dumpFile';
     }
     if (isArchiveFile(name)) {
         return 'dumpArchive';
@@ -587,7 +592,7 @@ export function registerGameDumpTree(
         canSelectMany: true,
     });
     dumpTreeView = treeView;
-    context.subscriptions.push(treeView);
+    context.subscriptions.push(treeView, registerSingleTextureAutoOpen(treeView));
     const searchViewProvider = new GameDumpSearchViewProvider(provider);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(GAME_DUMP_SEARCH_VIEW_ID, searchViewProvider),
@@ -657,6 +662,8 @@ export function registerGameDumpTree(
                     (entry) =>
                         entry.contextValue === 'dumpFile' ||
                         entry.contextValue === 'dumpVirtualFile' ||
+                        entry.contextValue === 'dumpBars' ||
+                        entry.contextValue === 'dumpVirtualBars' ||
                         entry.contextValue === 'dumpArchive',
                 );
                 if (entries.length === 0) {
@@ -716,6 +723,8 @@ export function registerGameDumpTree(
                     (entry) =>
                         entry.contextValue === 'dumpFile' ||
                         entry.contextValue === 'dumpVirtualFile' ||
+                        entry.contextValue === 'dumpBars' ||
+                        entry.contextValue === 'dumpVirtualBars' ||
                         entry.contextValue === 'dumpArchive',
                 );
                 if (entries.length === 0) {

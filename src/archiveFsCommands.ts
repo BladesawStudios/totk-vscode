@@ -4,7 +4,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { toSarcUri, type ArchiveTreeItem } from './archiveTree';
 import { isAampExtension } from './aampExtensions';
-import { isPathInsideArchive, isArchiveFile, getDiskArchivePath, isArchiveFileName, isBntxTextureUri, isTxtgFile } from './archives';
+import { isPathInsideArchive, isArchiveFile, getDiskArchivePath, isArchiveFileName, isBarsAudioArchive, isBntxTextureUri, isTxtgFile } from './archives';
+import { collectAudioFiles } from './barsBatchReplace';
 import { getDumpSelection, type DumpTreeItem } from './dumpTree';
 import { resolveRomfsPath } from './romfs';
 import { addDumpEntryToProject, resolveRomfsForProject } from './addToProject';
@@ -196,8 +197,10 @@ async function initialContentForNewFile(name: string): Promise<Uint8Array | unde
 
 const MOVABLE_CONTEXTS = new Set([
     'archiveFile',
+    'archiveBars',
     'archiveTkproj',
     'archiveVirtualFile',
+    'archiveVirtualBars',
     'archivePackage',
     'archiveDir',
     'archiveVirtualDir',
@@ -205,7 +208,7 @@ const MOVABLE_CONTEXTS = new Set([
     'archiveProjectDirActive',
 ]);
 
-const FILE_CONTEXTS = new Set(['archiveFile', 'archiveTkproj', 'archiveVirtualFile']);
+const FILE_CONTEXTS = new Set(['archiveFile', 'archiveBars', 'archiveTkproj', 'archiveVirtualFile', 'archiveVirtualBars']);
 
 /** Entries that may be renamed, deleted or cut. Project roots are excluded: use "Remove Project". */
 function isMovableItem(item: ArchiveTreeItem): boolean {
@@ -1314,8 +1317,14 @@ export class ArchiveTreeDragDrop
             .filter((line) => line && !line.startsWith('#'))
             .map((line) => vscode.Uri.parse(line))
             .filter((uri) => uri.scheme === 'file');
-        if (uris.length > 0) {
-            await importEntries(uris, folderUri);
+        if (uris.length === 0) {
+            return;
         }
+        // Audio dropped on a BARS replaces the entries named like it, instead of being imported beside it.
+        if (isBarsAudioArchive(target.resourceUri.fsPath) && (await collectAudioFiles(uris)).length > 0) {
+            await vscode.commands.executeCommand('totk-editor.replaceBarsFromFiles', target.resourceUri, uris);
+            return;
+        }
+        await importEntries(uris, folderUri);
     }
 }
