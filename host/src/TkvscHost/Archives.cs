@@ -227,6 +227,32 @@ public sealed class Archives(Containers containers)
         }
     }
 
+    /// <summary>
+    /// The content hash of a file on disk and of everything inside it (nested archives too), as <c>path, hash</c> pairs
+    /// where the path starts with <paramref name="relPath"/>. Compressed files are hashed unwrapped, so compressing the same
+    /// content another way gives the same hash.
+    /// </summary>
+    public void HashFileTree(string diskPath, string relPath, Action<string, string> add, bool descend = true)
+        => HashTree(ReadShared(diskPath), Path.GetFileName(diskPath), Normalize(relPath), add, descend);
+
+    private void HashTree(byte[] raw, string name, string path, Action<string, string> add, bool descend)
+    {
+        byte[] plain;
+        try { plain = containers.Decompress(raw, name).Data; }
+        catch (Exception) { plain = raw; }
+
+        add(path, FileHashes.Hex(plain));
+        if (!descend || !IsArchiveName(name) || IsBfresName(containers.Env, name) || IsBntxName(name)) return;
+
+        // A file that is named like an archive but doesn't open still has its own hash.
+        OpenArchive archive;
+        try { archive = Open(plain, name); }
+        catch (Exception) { return; }
+
+        foreach (SarcEntry entry in archive.Entries)
+            HashTree(entry.Data, entry.Name, path.Length > 0 ? $"{path}/{entry.Name}" : entry.Name, add, descend: true);
+    }
+
     public byte[] ReadArchiveFileBytes(string diskArchivePath, string filePath)
     {
         filePath = Normalize(filePath);

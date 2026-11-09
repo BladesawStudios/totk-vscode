@@ -9,6 +9,8 @@ export interface GameIndexPaths {
     romfsIndexState: string;
     canonicalIndex: string;
     canonicalIndexState: string;
+    /** Hashes of the game's files, made as a project asks about them, to tell the project's modified files. */
+    fileHashCache: string;
     ainbNodeDefs: string;
     ainbNodeDefsState: string;
 }
@@ -35,6 +37,7 @@ export function getGameIndexPaths(globalStorageFsPath: string, gameId: string): 
         romfsIndexState: path.join(indexDir, 'romfs-index.state.json'),
         canonicalIndex: path.join(indexDir, 'canonical-paths.sqlite'),
         canonicalIndexState: path.join(indexDir, 'canonical-paths.state.json'),
+        fileHashCache: path.join(indexDir, 'file-hashes.sqlite'),
         ainbNodeDefs: path.join(indexDir, 'ainb-node-defs.json.gz'),
         ainbNodeDefsState: path.join(indexDir, 'ainb-node-defs.state.json'),
     };

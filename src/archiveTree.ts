@@ -17,6 +17,7 @@ import {
     projectRootExists,
 } from './tkvscConfig';
 import { logger } from './logger';
+import type { ModifiedFileMarker } from './modifiedFiles';
 import { getFallbackProjectFolder, getProjectFolders, pickAndAddProjectFolder } from './projectFolders';
 import { registerSingleTextureAutoOpen } from './singleTextureAutoOpen';
 
@@ -186,6 +187,13 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         return !projectRootExists(root.fsPath);
     }
 
+    private modifiedFileMarker: ModifiedFileMarker | undefined;
+
+    /** Lets the tree mark the files of a project that differ from the game's. */
+    setModifiedFileMarker(marker: ModifiedFileMarker): void {
+        this.modifiedFileMarker = marker;
+    }
+
     getTreeItem(element: ArchiveTreeItem): vscode.TreeItem {
         return element;
     }
@@ -319,7 +327,13 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                     return undefined;
                   }
                 }));
-            return results.filter((item): item is ArchiveTreeItem => item !== undefined);
+            const items = results.filter((item): item is ArchiveTreeItem => item !== undefined);
+            this.modifiedFileMarker?.mark(
+                items,
+                this.resolveConfigRoot(vscode.Uri.file(workspaceRootPath)),
+                () => this.onDidChangeTreeDataEmitter.fire(element),
+            );
+            return items;
         } catch (error) {
             if (isMissingPathError(error)) {
                 // The folder was removed while the tree was open: re-render it as missing

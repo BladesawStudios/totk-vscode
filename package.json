@@ -1042,6 +1042,11 @@
           "minimum": 0,
           "markdownDescription": "How much disk space (MB) decoded BARS audio may use, so a BARS opens without decoding its sounds again. The least recently played sounds are dropped first. `0` turns the cache off. **TKVSC: Clear BARS Audio Cache** empties it."
         },
+        "TKVSC.markModifiedFiles": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Mark files in Your Projects that differ from the game's, including files inside archives, with `- modified`. It compares content, so it reads the game's copy of each file in a project once (in the background) and remembers the result per game."
+        },
         "TKVSC.projectFolders": {
           "type": "object",
           "default": {},

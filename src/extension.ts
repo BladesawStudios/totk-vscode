@@ -89,6 +89,7 @@ import {
 import { getArchiveSelection, setArchiveRawIo } from './archiveFsCommands';
 import { getDumpSelection, registerGameDumpTree, type DumpTreeItem } from './dumpTree';
 import { registerGamePicker } from './gamePicker';
+import { ModifiedFileMarker } from './modifiedFiles';
 import { createReadonlyArchiveFs } from './readonlyArchiveFs';
 import { resolveRomfsPath } from './romfs';
 import {
@@ -1181,6 +1182,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         return rebuilt;
     };
 
+    // Marks files of a project that differ from the game's. The game's file hashes are kept per game, as they are asked for.
+    const modifiedFileMarker = new ModifiedFileMarker({
+        getHost,
+        getEnv: () => getBridgeEnv(),
+        getRomfs: () => resolveRomfsPath(),
+        getCachePath: () => gameIndexPaths().fileHashCache,
+        isEnabled: () => vscode.workspace.getConfiguration('TKVSC').get<boolean>('markModifiedFiles', true),
+    });
+
     const runCanonicalPropagation = async (info: {
         diskArchivePath: string;
         internalPath: string;
@@ -2137,6 +2147,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     registerIconThemeCommands(context);
 
     archiveTree = registerArchiveTree(context);
+    archiveTree.setModifiedFileMarker(modifiedFileMarker);
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration('TKVSC.markModifiedFiles')) {
+                modifiedFileMarker.invalidate();
+                archiveTree?.refreshView();
+                    }
+        }),
+    );
     gameDumpTree = registerGameDumpTree(context, archiveTree, (projectRoot) =>
         importKnownProjectCanonicalPaths(projectRoot ? { projectRoots: [projectRoot] } : undefined),
     );
@@ -2192,7 +2211,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                 gameDumpTree?.setExternalIndexPath(romfsIndexPath());
                 gameDumpTree?.onRomfsPathChanged();
                 void buildRomfsIndex();
-                void buildCanonicalIndex().then((rebuilt) => {
+                // The marks are of the other game's (or dump's) files until the new index is there.
+                modifiedFileMarker.invalidate();
+                archiveTree?.refreshView();
+                        void buildCanonicalIndex().then((rebuilt) => {
                     // Project overlay import is only needed after a rebuild clears import state.
                     if (rebuilt) {
                         return importKnownProjectCanonicalPaths();
