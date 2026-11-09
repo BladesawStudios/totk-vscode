@@ -157,6 +157,11 @@ export function isTxtgFile(filePath: string): boolean {
     return hasExtension(filePath, '.txtg');
 }
 
+/** Whether a path is a BNTX container itself (not a texture inside one). */
+export function isBntxFile(filePath: string): boolean {
+    return hasExtension(filePath, '.bntx');
+}
+
 export function isBntxTextureUri(uri: { fsPath: string }): boolean {
     return uri.fsPath.split(/[/\\]/).slice(0, -1).some((segment) => hasExtension(segment, '.bntx'));
 }

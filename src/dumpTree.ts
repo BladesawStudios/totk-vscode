@@ -7,6 +7,7 @@ import type { ArchiveTreeProvider } from './archiveTree';
 import { resolveRomfsPath } from './romfs';
 import { invalidateRomfsIndex, queryRomfsIndex } from './romfsIndex';
 import { getActiveProjectOption, askForProjectOption } from './projectAdapters/registry';
+import { registerSingleTextureAutoOpen } from './singleTextureAutoOpen';
 
 export const DUMP_SCHEME = 'totk-dump';
 const GAME_DUMP_SEARCH_VIEW_ID = 'totk-editor.gameDumpSearch';
@@ -587,7 +588,7 @@ export function registerGameDumpTree(
         canSelectMany: true,
     });
     dumpTreeView = treeView;
-    context.subscriptions.push(treeView);
+    context.subscriptions.push(treeView, registerSingleTextureAutoOpen(treeView));
     const searchViewProvider = new GameDumpSearchViewProvider(provider);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(GAME_DUMP_SEARCH_VIEW_ID, searchViewProvider),

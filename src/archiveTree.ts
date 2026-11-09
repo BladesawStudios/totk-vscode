@@ -17,6 +17,7 @@ import {
     projectRootExists,
 } from './tkvscConfig';
 import { logger } from './logger';
+import { registerSingleTextureAutoOpen } from './singleTextureAutoOpen';
 
 const STORAGE_KEY = 'totk-editor.archiveRoots';
 const MISSING_ROOT_CONTEXT = 'archiveRootMissing';
@@ -570,7 +571,7 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
     });
     archiveTreeView = treeView;
     setArchiveTreeView(treeView);
-    context.subscriptions.push(treeView);
+    context.subscriptions.push(treeView, registerSingleTextureAutoOpen(treeView));
 
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument((document) => {
