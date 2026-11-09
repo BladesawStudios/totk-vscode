@@ -193,7 +193,7 @@ public static partial class Cmd
         string name;
         if (internalPath.Length == 0)
         {
-            data = File.ReadAllBytes(archive);
+            data = Archives.ReadShared(archive);
             name = Path.GetFileName(archive);
         }
         else

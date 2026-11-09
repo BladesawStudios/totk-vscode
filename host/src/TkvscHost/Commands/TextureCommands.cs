@@ -49,7 +49,7 @@ public static class TextureCommands
     private static (byte[] Data, string Logical) Source(CommandContext c, Archives archives, string archive, string internalPath)
         => internalPath.Length > 0
             ? (archives.ReadArchiveFileBytes(archive, internalPath), internalPath)
-            : (File.ReadAllBytes(archive), archive);
+            : (Archives.ReadShared(archive), archive);
 
     private static (byte[] Payload, bool IsZstd) Unwrap(CommandContext c, byte[] data, string logical)
     {
@@ -70,7 +70,7 @@ public static class TextureCommands
         if (wasZstd) bytes = c.Containers.Compress(bytes, logical.Length > 0 ? logical : archive, wasZstd: true, wasYaz0: false);
 
         if (logical != archive) archives.WriteArchiveFileBytes(archive, logical, bytes);
-        else File.WriteAllBytes(archive, bytes);
+        else Archives.AtomicWrite(archive, bytes);
     }
 
     // ---- BNTX ----
@@ -101,7 +101,7 @@ public static class TextureCommands
         if (zstd) bntx = c.Containers.Compress(bntx, view.Prefix.Length > 0 ? view.Prefix : archive, wasZstd: true, wasYaz0: false);
 
         if (view.Prefix.Length > 0) archives.WriteArchiveFileBytes(archive, view.Prefix, bntx);
-        else File.WriteAllBytes(archive, bntx);
+        else Archives.AtomicWrite(archive, bntx);
     }
 
     private static JsonNode UpdateBntxMetadata(CommandContext c)

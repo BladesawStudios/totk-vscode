@@ -41,14 +41,14 @@ public static class AudioCommands
     private static (byte[] Data, string Logical) Source(Archives archives, string archive, string internalPath)
         => internalPath.Length > 0
             ? (archives.ReadArchiveFileBytes(archive, internalPath), internalPath)
-            : (File.ReadAllBytes(archive), archive);
+            : (Archives.ReadShared(archive), archive);
 
     private static void Save(CommandContext c, Archives archives, string archive, string logical, byte[] bytes, bool wasZstd)
     {
         if (wasZstd) bytes = c.Containers.Compress(bytes, logical.Length > 0 ? logical : archive, wasZstd: true, wasYaz0: false);
 
         if (logical != archive) archives.WriteArchiveFileBytes(archive, logical, bytes);
-        else File.WriteAllBytes(archive, bytes);
+        else Archives.AtomicWrite(archive, bytes);
     }
 
     private static PcmAudio Decode(byte[] bwav) => Bwav.Decode(bwav);
@@ -414,7 +414,7 @@ public static class AudioCommands
     private static (string Path, BymlFile Table, Unwrapped Unwrapped)? LoadBgmTable(CommandContext c, string modRoot)
     {
         if ((FindBgmTable(modRoot) ?? FindBgmTable(c.Romfs)) is not { } path) return null;
-        Unwrapped unwrapped = c.Containers.Decompress(File.ReadAllBytes(path), path);
+        Unwrapped unwrapped = c.Containers.Decompress(Archives.ReadShared(path), path);
         return (path, BymlFile.FromBinary(unwrapped.Data), unwrapped);
     }
 
@@ -544,7 +544,7 @@ public static class AudioCommands
         if (sections.Select(s => s.Index).Distinct().Count() != sections.Count) throw new InvalidDataException("An entry appears twice in the section list.");
 
         Archives archives = new(c.Containers);
-        byte[] original = File.ReadAllBytes(archive);
+        byte[] original = Archives.ReadShared(archive);
         JsonArray results = [];
         try
         {
@@ -572,7 +572,7 @@ public static class AudioCommands
         }
         catch
         {
-            File.WriteAllBytes(archive, original);
+            Archives.AtomicWrite(archive, original);
             foreach (JsonNode? result in results)
                 if (result?["fullBwavTempPath"]?.GetValue<string>() is { } temp) File.Delete(temp);
             throw;
@@ -596,7 +596,7 @@ public static class AudioCommands
         if (indices.Distinct().Count() != indices.Length) throw new InvalidDataException("An entry appears twice in the list.");
 
         Archives archives = new(c.Containers);
-        byte[] original = File.ReadAllBytes(archive);
+        byte[] original = Archives.ReadShared(archive);
         JsonArray results = [];
         try
         {
@@ -639,7 +639,7 @@ public static class AudioCommands
         }
         catch
         {
-            File.WriteAllBytes(archive, original);
+            Archives.AtomicWrite(archive, original);
             foreach (JsonNode? result in results)
                 if (result?["fullBwavTempPath"]?.GetValue<string>() is { } temp) File.Delete(temp);
             throw;
@@ -669,7 +669,7 @@ public static class AudioCommands
 
         string target = Path.Combine(modRoot, "Sound", "Bgm", Path.GetFileName(loaded.Path));
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        File.WriteAllBytes(target, c.Containers.Compress(loaded.Table.Write(), target, loaded.Unwrapped.WasZstd, loaded.Unwrapped.WasYaz0));
+        Archives.AtomicWrite(target, c.Containers.Compress(loaded.Table.Write(), target, loaded.Unwrapped.WasZstd, loaded.Unwrapped.WasYaz0));
         return (target, changed);
     }
 

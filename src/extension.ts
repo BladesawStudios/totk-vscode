@@ -1660,7 +1660,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                     let barsPath = diskArchive;
 
                     // Runs a host edit on the project's copy of the BARS and saves what it produces there too.
-                    const applyBarsEdit = async (
+                    // One edit at a time per viewer: each host run reads the whole BARS and writes it back, so two
+                    // overlapping edits would lose one of them or fail with "file in use".
+                    let barsEditQueue: Promise<unknown> = Promise.resolve();
+                    const applyBarsEdit = (
+                        progressTitle: string,
+                        runHost: (barsFile: string) => Promise<BarsReplaceResult>,
+                        describe: (result: BarsReplaceResult) => string,
+                    ): Promise<BarsEntry[] | undefined> => {
+                        const run = barsEditQueue.then(() => applyBarsEditNow(progressTitle, runHost, describe));
+                        barsEditQueue = run.catch(() => undefined);
+                        return run;
+                    };
+                    const applyBarsEditNow = async (
                         progressTitle: string,
                         runHost: (barsFile: string) => Promise<BarsReplaceResult>,
                         describe: (result: BarsReplaceResult) => string,
