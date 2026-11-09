@@ -671,7 +671,7 @@
     "viewsWelcome": [
       {
         "view": "totk-editor.archives",
-        "contents": "You don't currently have any Project Folders, please create or add one using the buttons below.\n\n[Create New Project](command:totk-editor.createProject)\n[Add Projects via File Explorer](command:totk-editor.addProjectFolders)"
+        "contents": "You don't currently have any Project Folders for this game, please create or add one using the buttons below.\n\n[Create New Project](command:totk-editor.createProject)\n[Add Projects via File Explorer](command:totk-editor.addProjectFolders)"
       },
       {
         "view": "totk-editor.gameDump",
@@ -1042,10 +1042,19 @@
           "minimum": 0,
           "markdownDescription": "How much disk space (MB) decoded BARS audio may use, so a BARS opens without decoding its sounds again. The least recently played sounds are dropped first. `0` turns the cache off. **TKVSC: Clear BARS Audio Cache** empties it."
         },
+        "TKVSC.projectFolders": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "markdownDescription": "The folders each game's projects live in, by game id. New projects are created in the first one. Edit these from the **Game** section above Your Projects."
+        },
         "TKVSC.projectsPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Default path where new projects will be created."
+          "markdownDescription": "Fallback folder for new projects when a game has no folder in `TKVSC.projectFolders`. Each game then gets its own folder inside it (for example `totk`), so projects of different games are never mixed."
         },
         "TKVSC.romfsPath": {
           "type": "string",

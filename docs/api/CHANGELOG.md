@@ -8,6 +8,14 @@ Reference docs: [v1.md](v1.md)
 
 ---
 
+## Project folders per game
+
+**Changed**
+
+- Each game has its own list of project folders, setting `TKVSC.projectFolders` (`{ "<gameId>": ["<folder>", ...] }`), edited in settings. New projects are created in the first one. A game with none uses `<TKVSC.projectsPath>/<gameId>/`. Projects already added stay where they are.
+
+---
+
 ## BARS tree items
 
 **Changed**

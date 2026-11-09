@@ -9,7 +9,7 @@ import {
     resolveProjectRootFromTreeItem,
 } from './projectAdapters/registry';
 import type { ProjectAdapter } from './projectAdapters/types';
-import { getActiveGameId } from './gameProfile';
+import { getActiveGameId, getActiveGameProfile } from './gameProfile';
 import {
     DEFAULT_PROJECT_GAME_ID,
     ensureProjectGameId,
@@ -17,6 +17,7 @@ import {
     projectRootExists,
 } from './tkvscConfig';
 import { logger } from './logger';
+import { getFallbackProjectFolder, getProjectFolders, pickAndAddProjectFolder } from './projectFolders';
 import { registerSingleTextureAutoOpen } from './singleTextureAutoOpen';
 
 const STORAGE_KEY = 'totk-editor.archiveRoots';
@@ -661,11 +662,31 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
     };
 
     const createProject = async (): Promise<void> => {
-        const config = vscode.workspace.getConfiguration('TKVSC');
-        const projectsPath = config.get<string>('projectsPath');
-        if (!projectsPath) {
-            void vscode.window.showErrorMessage('TKVSC: Please set a default projects path in settings (TKVSC.projectsPath) first.');
-            return;
+        const gameId = getActiveGameId();
+        const gameName = getActiveGameProfile().displayName;
+        let folders = getProjectFolders(gameId);
+        if (folders.length === 0) {
+            const fallback = getFallbackProjectFolder(gameId);
+            if (fallback) {
+                folders = [fallback];
+            } else {
+                const added = await pickAndAddProjectFolder(gameId, gameName);
+                if (!added) {
+                    return;
+                }
+                folders = [added];
+            }
+        }
+        let projectsPath = folders[0]!;
+        if (folders.length > 1) {
+            const choice = await vscode.window.showQuickPick(
+                folders.map((folder) => ({ label: path.basename(folder) || folder, description: folder, folder })),
+                { title: `Create ${gameName} Project In`, ignoreFocusOut: true },
+            );
+            if (!choice) {
+                return;
+            }
+            projectsPath = choice.folder;
         }
 
         const projectName = await vscode.window.showInputBox({
@@ -678,7 +699,7 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
         }
 
         const projectFolderUri = vscode.Uri.file(path.join(projectsPath, projectName));
-        
+
         try {
             // Check if exists
             try {
@@ -704,7 +725,9 @@ export function registerArchiveTree(context: vscode.ExtensionContext): ArchiveTr
             await provider.addRoot(projectFolderUri);
             void focusArchiveSidebar();
 
-            void vscode.window.showInformationMessage(`TKVSC: Created new project '${projectName}'.`);
+            void vscode.window.showInformationMessage(
+                `TKVSC: Created new ${getActiveGameProfile().displayName} project '${projectName}' in ${projectsPath}.`,
+            );
 
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
