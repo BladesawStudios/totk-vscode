@@ -15,6 +15,19 @@ export function initBarsViewer(extUri: vscode.Uri): void {
     extensionUri = extUri;
 }
 
+/**
+ * Redraws an open viewer from a fresh entry list, after an edit made outside it (a batch replace). Audio the viewer had
+ * loaded is dropped, and loads again as needed. Returns false when no viewer is open for `key`.
+ */
+export function reloadBarsViewer(key: string, barsName: string, entries: BarsEntry[]): boolean {
+    const panel = panels.get(key);
+    if (!panel) {
+        return false;
+    }
+    panel.webview.html = buildHtml(barsName, entries, true);
+    return true;
+}
+
 export function openBarsViewer(
     barsName: string,
     key: string,
@@ -186,7 +199,7 @@ function renderEntry(e: BarsEntry, idx: number, canReplace: boolean): string {
     return `
         <div class="entry" data-index="${idx}" data-name="${escapeHtml(e.name)}">
             <div class="entry-header">
-                <div class="entry-name">${canReplace ? `<input type="checkbox" class="select-entry" id="select-${idx}" data-index="${idx}" title="Select for replacing as a group"> ` : ''}${escapeHtml(e.name)}</div>
+                <div class="entry-name">${escapeHtml(e.name)}</div>
                 <div class="entry-meta">
                     ${e.has_prefetch ? `<button class="tag prefetch" id="tag-prefetch-${idx}" data-index="${idx}">Prefetch</button>` : ''}
                     ${e.has_romfs_bwav ? `<button class="tag romfs" id="tag-romfs-${idx}" data-index="${idx}">Full</button>` : ''}
@@ -214,6 +227,7 @@ function renderEntry(e: BarsEntry, idx: number, canReplace: boolean): string {
             </div>
 
             ${metaHtml}
+            ${canReplace ? `<input type="checkbox" class="select-entry" id="select-${idx}" data-index="${idx}" title="Select for replacing as a group" aria-label="Select ${escapeHtml(e.name)}">` : ''}
         </div>
         `;
 }
@@ -338,7 +352,40 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
     .tag.loop { background: #a855f740; color: #c084fc; opacity: 0.8; }
     .tag.loop:hover { opacity: 1; }
     .tag.loop:disabled { opacity: 0.4; cursor: wait; }
-    .select-entry { vertical-align: -1px; margin-right: 4px; cursor: pointer; }
+    /* A small box in the card's bottom-right corner, quiet until hovered or ticked. */
+    .entry { position: relative; }
+    .entry:has(.select-entry) .metadata-block { padding-right: 36px; }
+    .entry:has(.select-entry:checked) { border-color: var(--player-accent); }
+    .select-entry {
+        appearance: none;
+        -webkit-appearance: none;
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        border-radius: 4px;
+        border: 1px solid var(--vscode-checkbox-border, var(--player-border));
+        background: var(--vscode-checkbox-background, transparent);
+        cursor: pointer;
+        opacity: 0.55;
+        transition: opacity 0.1s, border-color 0.1s, background-color 0.1s;
+    }
+    .select-entry:hover { opacity: 1; border-color: var(--player-accent); }
+    .select-entry:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; opacity: 1; }
+    .select-entry:checked { opacity: 1; background: var(--player-accent); border-color: var(--player-accent); }
+    .select-entry:checked::after {
+        content: '';
+        position: absolute;
+        left: 4px;
+        top: 1px;
+        width: 4px;
+        height: 8px;
+        border: solid var(--vscode-button-foreground, #fff);
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+    }
     .toolbar-btn {
         font: inherit;
         font-size: 12px;

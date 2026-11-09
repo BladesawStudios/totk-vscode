@@ -936,7 +936,11 @@ function archiveContextValue(name: string, isDirectory: boolean, fsPath: string)
         if (isTkprojFile(name) && !isPathInsideArchive(fsPath)) {
             value = 'archiveTkproj';
         } else {
-            value = isPathInsideArchive(fsPath) ? 'archiveVirtualFile' : 'archiveFile';
+            // A BARS has its own values so its menu can offer track export and replace; elsewhere it is a file like any other.
+            const inside = isPathInsideArchive(fsPath);
+            value = isBarsAudioArchive(name)
+                ? (inside ? 'archiveVirtualBars' : 'archiveBars')
+                : (inside ? 'archiveVirtualFile' : 'archiveFile');
         }
     } else {
         value = isPathInsideArchive(fsPath) ? 'archiveVirtualDir' : 'archiveDir';

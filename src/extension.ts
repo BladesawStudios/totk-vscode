@@ -106,6 +106,8 @@ import { FontViewerProvider } from './fontViewer';
 import { FONT_IMPORT_FILTERS, isFontFilePath } from './fontReplace';
 import { InfoJsonEditorProvider } from './infoJsonEditor';
 import { resolveEditableCopy } from './addToProject';
+import { replaceBarsFromFiles } from './barsBatchReplace';
+import { exportBarsTracks } from './barsExport';
 import { BwavEditorProvider } from './bwavEditor';
 import { openHexEditor } from './editors/hexEditor';
 import { setExtensionPath } from './romfsIndex';
@@ -1636,6 +1638,62 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         }
         return { start: 0, end: 2147483647 };
     }
+
+    // Audio files dropped on a BARS in the project tree replace the entries named like them.
+    context.subscriptions.push(
+        vscode.commands.registerCommand('totk-editor.replaceBarsFromFiles', async (barsUri: vscode.Uri, dropped: vscode.Uri[]) => {
+            const hostExe = getHost();
+            if (!hostExe) {
+                void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
+                return;
+            }
+            try {
+                await replaceBarsFromFiles({ hostExe, env: getBridgeEnv() }, barsUri, dropped);
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                void vscode.window.showErrorMessage(`Replacing the BARS entries failed: ${msg}`);
+            }
+        }),
+    );
+
+    // Context-menu entries on a .bars: the same replace as a drop, from a picked folder, and the export that feeds it.
+    const withBarsHost = async (
+        item: { resourceUri?: vscode.Uri } | undefined,
+        failure: string,
+        run: (host: { hostExe: string; env: NodeJS.ProcessEnv }, barsUri: vscode.Uri) => Promise<void>,
+    ): Promise<void> => {
+        const hostExe = getHost();
+        if (!hostExe) {
+            void vscode.window.showErrorMessage('The TKVSC host is not available for this platform. Reinstall the extension for your platform or build it from host/ (see host/README.md).');
+            return;
+        }
+        if (!item?.resourceUri) {
+            return;
+        }
+        try {
+            await run({ hostExe, env: getBridgeEnv() }, item.resourceUri);
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            void vscode.window.showErrorMessage(`${failure}: ${msg}`);
+        }
+    };
+    context.subscriptions.push(
+        vscode.commands.registerCommand('totk-editor.barsReplaceFromFolder', (item?: { resourceUri?: vscode.Uri }) =>
+            withBarsHost(item, 'Replacing the BARS entries failed', async (host, barsUri) => {
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFiles: false,
+                    canSelectFolders: true,
+                    canSelectMany: false,
+                    openLabel: 'Replace From This Folder',
+                    title: 'Folder of audio files named like the BARS entries',
+                });
+                if (picked?.[0]) {
+                    await replaceBarsFromFiles(host, barsUri, [picked[0]]);
+                }
+            })),
+        vscode.commands.registerCommand('totk-editor.barsExportTracks', (item?: { resourceUri?: vscode.Uri }) =>
+            withBarsHost(item, 'Exporting the BARS tracks failed', exportBarsTracks)),
+    );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('totk-editor.openBarsArchive', async (uri: vscode.Uri) => {

@@ -593,6 +593,37 @@ export async function runBridgeReplaceBarsSameAsync(
     );
 }
 
+/** One entry's outcome in a batch replace. Failed items carry `error` and are left unchanged in the BARS. */
+export interface BarsBatchItemResult extends BarsReplaceResult {
+    index: number;
+    /** The audio file this entry was replaced from. */
+    source: string;
+}
+
+export interface BarsBatchResult extends BridgeResult {
+    replaced: number;
+    results: BarsBatchItemResult[];
+}
+
+/**
+ * Replaces many BARS entries, each from its own file, reading and writing the BARS once. An item that fails is
+ * reported and skipped; the others still go in.
+ */
+export async function runBridgeReplaceBarsBatchAsync(
+    hostExe: string,
+    archivePath: string,
+    internalPath: string,
+    items: { index: number; source: string; loopStart: BarsLoopSpec; loopEnd: BarsLoopSpec }[],
+    env?: NodeJS.ProcessEnv,
+): Promise<BarsBatchResult> {
+    return runBridgeJsonAsync<BarsBatchResult>(
+        hostExe,
+        ['replace-bars-batch', archivePath, internalPath],
+        JSON.stringify({ items: items.map((i) => ({ ...i, loopStart: String(i.loopStart), loopEnd: String(i.loopEnd) })) }),
+        env,
+    );
+}
+
 /** Sets a BARS entry's loop without re-encoding, unless `trimAfterLoop` has to cut audio. */
 export async function runBridgeSetBarsLoopAsync(
     hostExe: string,

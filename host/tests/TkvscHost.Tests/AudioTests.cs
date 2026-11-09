@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using System.Text.Json.Nodes;
 using BfAudioSharp;
 using BymlSharp;
 
@@ -720,5 +721,73 @@ public class AudioTests
         string path = result["fullBwavTempPath"]!.GetValue<string>();
         Assert.True(Bwav.IsBwav(File.ReadAllBytes(path)));
         File.Delete(path);
+    }
+
+    private static string BatchSpec(params (int Index, string Source, string Loop)[] items)
+        => new JsonObject
+        {
+            ["items"] = new JsonArray([.. items.Select(i => (JsonNode)new JsonObject
+            {
+                ["index"] = i.Index, ["source"] = i.Source, ["loopStart"] = i.Loop, ["loopEnd"] = i.Loop,
+            })]),
+        }.ToJsonString();
+
+    private static int SamplesOf(string barsFile, int index)
+    {
+        byte[] data = File.ReadAllBytes(barsFile);
+        return Bwav.SampleCount(data.AsSpan(TotkBars.Parse(data).Entries[index].BwavOffset).ToArray());
+    }
+
+    [Fact]
+    public void ABatchReplacesEveryEntryAndSavesOnce()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        string a = w.Path("a.wav"), b = w.Path("b.wav"), c = w.Path("c.wav");
+        File.WriteAllBytes(a, Wav.Write(new PcmAudio { SampleRate = 32000, Channels = [Tone(1000)] }));
+        File.WriteAllBytes(b, Wav.Write(new PcmAudio { SampleRate = 32000, Channels = [Tone(2000)] }));
+        File.WriteAllBytes(c, Wav.Write(new PcmAudio { SampleRate = 32000, Channels = [Tone(3000)] }));
+
+        var result = w.Run("replace-bars-batch", [bars, ""], BatchSpec((0, a, "none"), (1, b, "none"), (2, c, "none")));
+
+        Assert.Equal(3, result["replaced"]!.GetValue<int>());
+        Assert.Equal(1000, SamplesOf(bars, 0));
+        Assert.Equal(2000, SamplesOf(bars, 1));
+        Assert.Equal(3000, SamplesOf(bars, 2));
+        foreach (var item in result["results"]!.AsArray()) File.Delete(item!["fullBwavTempPath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ABatchSkipsAnItemThatFailsAndKeepsTheRest()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        string good = w.Path("good.wav"), missing = w.Path("missing.wav");
+        File.WriteAllBytes(good, Wav.Write(new PcmAudio { SampleRate = 32000, Channels = [Tone(1500)] }));
+        int untouched = SamplesOf(bars, 0);
+
+        var result = w.Run("replace-bars-batch", [bars, ""], BatchSpec((0, missing, "none"), (1, good, "none"), (9, good, "none")));
+
+        Assert.Equal(1, result["replaced"]!.GetValue<int>());
+        var results = result["results"]!.AsArray();
+        Assert.False(results[0]!["success"]!.GetValue<bool>());
+        Assert.True(results[1]!["success"]!.GetValue<bool>());
+        Assert.False(results[2]!["success"]!.GetValue<bool>());
+        Assert.Equal(untouched, SamplesOf(bars, 0));
+        Assert.Equal(1500, SamplesOf(bars, 1));
+        File.Delete(results[1]!["fullBwavTempPath"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ABatchWithNothingToReplaceLeavesTheFileAlone()
+    {
+        using Workspace w = new();
+        string bars = SongGroup(w);
+        byte[] before = File.ReadAllBytes(bars);
+
+        var result = w.Run("replace-bars-batch", [bars, ""], BatchSpec((0, w.Path("nope.wav"), "auto")));
+
+        Assert.Equal(0, result["replaced"]!.GetValue<int>());
+        Assert.Equal(before, File.ReadAllBytes(bars));
     }
 }

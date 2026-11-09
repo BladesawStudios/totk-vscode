@@ -558,7 +558,11 @@ function contextValueForEntry(
     romfsPath: string,
 ): string {
     if (!isDirectory) {
-        return isPathInsideArchive(fsPath) ? 'dumpVirtualFile' : 'dumpFile';
+        const inside = isPathInsideArchive(fsPath);
+        if (isBarsAudioArchive(name)) {
+            return inside ? 'dumpVirtualBars' : 'dumpBars';
+        }
+        return inside ? 'dumpVirtualFile' : 'dumpFile';
     }
     if (isArchiveFile(name)) {
         return 'dumpArchive';
@@ -658,6 +662,8 @@ export function registerGameDumpTree(
                     (entry) =>
                         entry.contextValue === 'dumpFile' ||
                         entry.contextValue === 'dumpVirtualFile' ||
+                        entry.contextValue === 'dumpBars' ||
+                        entry.contextValue === 'dumpVirtualBars' ||
                         entry.contextValue === 'dumpArchive',
                 );
                 if (entries.length === 0) {
@@ -717,6 +723,8 @@ export function registerGameDumpTree(
                     (entry) =>
                         entry.contextValue === 'dumpFile' ||
                         entry.contextValue === 'dumpVirtualFile' ||
+                        entry.contextValue === 'dumpBars' ||
+                        entry.contextValue === 'dumpVirtualBars' ||
                         entry.contextValue === 'dumpArchive',
                 );
                 if (entries.length === 0) {
