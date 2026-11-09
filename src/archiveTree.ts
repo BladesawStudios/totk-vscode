@@ -104,11 +104,16 @@ export class ArchiveTreeItem extends vscode.TreeItem {
     }
 }
 
+export interface ProjectRootsChange {
+    added: string[];
+}
+
 export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeItem> {
     private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ArchiveTreeItem | undefined>();
     readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
-    private readonly onDidChangeRootsEmitter = new vscode.EventEmitter<void>();
+    private readonly onDidChangeRootsEmitter = new vscode.EventEmitter<ProjectRootsChange>();
     readonly onDidChangeRoots = this.onDidChangeRootsEmitter.event;
+    private reportedRoots = new Set<string>();
 
     private roots: vscode.Uri[] = [];
     private activeProjectRootUri: string | undefined;
@@ -166,6 +171,20 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         
         this.sortRoots();
         this.migrateExistingProjectGameIds();
+        this.reportedRoots = this.currentRootKeys();
+    }
+
+    private currentRootKeys(): Set<string> {
+        return new Set(this.getProjectRoots().map((root) => root.fsPath.toLowerCase()));
+    }
+
+    /** Fire onDidChangeRoots with only the roots that became usable since the last fire. */
+    private fireRootsChanged(): void {
+        const added = this.getProjectRoots()
+            .filter((root) => !this.reportedRoots.has(root.fsPath.toLowerCase()))
+            .map((root) => root.fsPath);
+        this.reportedRoots = this.currentRootKeys();
+        this.onDidChangeRootsEmitter.fire({ added });
     }
 
     /** Existing stored projects without gameId are assumed TotK. */
@@ -426,7 +445,7 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         ensureProjectGameId(configRoot, getActiveGameId());
         
         this.onDidChangeTreeDataEmitter.fire(undefined);
-        this.onDidChangeRootsEmitter.fire();
+        this.fireRootsChanged();
         void this.ensureRomfsFolder(fileUri);
     }
 
@@ -442,7 +461,7 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         void this.persistRoots();
         void this.persistLogicalRoots();
         this.onDidChangeTreeDataEmitter.fire(undefined);
-        this.onDidChangeRootsEmitter.fire();
+        this.fireRootsChanged();
     }
 
     /** Re-render the tree without rescanning project roots. */
@@ -496,7 +515,7 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
     onActiveGameChanged(): void {
         this.getActiveProject();
         this.onDidChangeTreeDataEmitter.fire(undefined);
-        this.onDidChangeRootsEmitter.fire();
+        this.fireRootsChanged();
     }
 
     setActiveProject(fsPath: string | undefined): void {

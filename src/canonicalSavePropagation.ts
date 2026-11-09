@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { runBridgeJsonAsync } from './bridge';
 import { isArchiveFile } from './archives';
 import { hasBaseCanonicalPath, queryCanonicalArchives } from './canonicalPathIndex';
-import { isWithinRoot, normalizePath, pathsEqual, resolveProjectRomfsMount, getProjectModRoots } from './projectPaths';
+import { isWithinRoot, normalizePath, pathsEqual, resolveProjectRomfsMount } from './projectPaths';
 import {
     addProjectCanonicalEntry,
     bumpProjectImportAfterArchiveWrites,
@@ -174,34 +174,6 @@ function inferActiveModRoot(
     return best.root;
 }
 
-function resolveModRootForArchivePath(
-    archiveAbsPath: string,
-    projectRoots: ProjectRootInfo[],
-    romfsPath: string,
-): { modRoot: string; projectRomfsRoot: string } | undefined {
-    const normalizedArchive = normalizePath(archiveAbsPath);
-    let best: { modRoot: string; projectRomfsRoot: string; score: number } | undefined;
-
-    for (const root of projectRoots) {
-        for (const modRoot of getProjectModRoots(root.fsPath)) {
-            const projectRomfsRoot = resolveProjectRomfsMount(modRoot, romfsPath);
-            const normalizedMount = normalizePath(projectRomfsRoot);
-            if (
-                normalizedArchive === normalizedMount
-                || normalizedArchive.startsWith(`${normalizedMount}${path.sep}`)
-                || normalizedArchive.startsWith(`${normalizedMount}/`)
-            ) {
-                const score = normalizedMount.length;
-                if (!best || score > best.score) {
-                    best = { modRoot, projectRomfsRoot: normalizedMount, score };
-                }
-            }
-        }
-    }
-
-    return best ? { modRoot: best.modRoot, projectRomfsRoot: best.projectRomfsRoot } : undefined;
-}
-
 async function ensureArchiveInProject(
     projectArchivePath: string,
     dumpArchivePath: string,
@@ -367,12 +339,7 @@ export async function propagateCanonicalSave(
     const tasks = Array.from(mergedMatches.values()).map(async (match) => {
         const dumpArchivePath = path.join(options.romfsPath, ...splitRel(match.archiveRelPath));
         const projectArchivePath = path.join(projectRomfsRoot, ...splitRel(match.archiveRelPath));
-        const target = resolveModRootForArchivePath(
-            projectArchivePath,
-            options.projectRoots,
-            options.romfsPath,
-        );
-        const targetModRoot = target?.modRoot ?? activeProjectRoot.fsPath;
+        const targetModRoot = activeProjectRoot.fsPath;
         if (
             pathContainsBlacklistedArchiveType(match.canonicalPath, options.archiveTypeBlacklist) ||
             pathContainsBlacklistedArchiveType(match.archiveRelPath, options.archiveTypeBlacklist)

@@ -86,7 +86,7 @@ import {
     migrateSarcWorkspaceFolders,
     registerArchiveTree,
 } from './archiveTree';
-import { getArchiveSelection, setArchiveRawIo } from './archiveFsCommands';
+import { getArchiveSelection, invalidateArchiveListings, setArchiveRawIo } from './archiveFsCommands';
 import { getDumpSelection, registerGameDumpTree, type DumpTreeItem } from './dumpTree';
 import { registerGamePicker } from './gamePicker';
 import { ModifiedFileMarker } from './modifiedFiles';
@@ -1214,7 +1214,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             archiveTypeBlacklist: getCanonicalArchiveTypeBlacklist(),
             fileExtensionBlacklist: getCanonicalFileExtensionBlacklist(),
             importSchemaVersion: PROJECT_CANONICAL_IMPORT_SCHEMA_VERSION,
-            onPulledNewFiles: () => archiveTree?.refresh(),
+            onPulledNewFiles: ({ copiedArchives }) => {
+                for (const archive of copiedArchives) {
+                    invalidateArchiveListings(archive);
+                }
+                archiveTree?.refreshView();
+            },
             writeInput: {
                 diskArchivePath: normalizePath(info.diskArchivePath),
                 internalPath: info.internalPath,
@@ -1248,8 +1253,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
             const allModRoots = new Set<string>();
             for (const root of roots) {
+                const projectInScope = !scopedRoots
+                    || scopedRoots.some((scoped) => pathsEqual(scoped, root.fsPath));
                 for (const modRoot of getProjectModRoots(root.fsPath)) {
-                    if (!scopedRoots || scopedRoots.some((scoped) => pathsEqual(scoped, modRoot))) {
+                    if (projectInScope || scopedRoots!.some((scoped) => pathsEqual(scoped, modRoot))) {
                         allModRoots.add(modRoot);
                     }
                 }
@@ -1298,13 +1305,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
             );
         };
 
-        if (projectImportPromise) {
-            return projectImportPromise;
-        }
-        projectImportPromise = importTask().finally(() => {
-            projectImportPromise = undefined;
-        });
-        return projectImportPromise;
+        const queued: Promise<void> = (projectImportPromise ?? Promise.resolve())
+            .catch(() => undefined)
+            .then(importTask)
+            .finally(() => {
+                if (projectImportPromise === queued) {
+                    projectImportPromise = undefined;
+                }
+            });
+        projectImportPromise = queued;
+        return queued;
     };
 
     context.subscriptions.push(
@@ -2169,8 +2179,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
     }
 
     context.subscriptions.push(
-        archiveTree.onDidChangeRoots(() => {
-            void importKnownProjectCanonicalPaths();
+        archiveTree.onDidChangeRoots(({ added }) => {
+            if (added.length > 0) {
+                void importKnownProjectCanonicalPaths({ projectRoots: added });
+            }
         }),
     );
 
