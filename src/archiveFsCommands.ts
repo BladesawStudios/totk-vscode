@@ -1006,6 +1006,20 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                 }
                 const srcPath = picked[0].fsPath;
 
+                if (isBarsAudioArchive(targetUri.fsPath) && !isBarsAudioArchive(srcPath)) {
+                    const openBars = 'Open BARS';
+                    const choice = await vscode.window.showWarningMessage(
+                        `${path.basename(srcPath)} is not a BARS archive, so Replace File would write it over all of ${entry.entryName} ` +
+                        'and the game could no longer load its sounds. To replace a sound inside it, open the BARS and use Replace on that entry.',
+                        { modal: true },
+                        openBars,
+                    );
+                    if (choice === openBars) {
+                        await vscode.commands.executeCommand('totk-editor.openBarsArchive', entry.resourceUri);
+                    }
+                    return;
+                }
+
                 try {
                     await vscode.window.withProgress(
                         {

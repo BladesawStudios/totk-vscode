@@ -921,7 +921,8 @@ public static class AudioCommands
             if (targetChannels > 0 && channels.Length != targetChannels)
             {
                 sourceChannels = channels.Length;
-                channels = Bwav.MatchChannelCount(channels, targetChannels);
+                ushort[]? layout = original is not null && Bwav.ChannelCount(original) == targetChannels ? Bwav.ReadPans(original) : null;
+                channels = Bwav.MatchSpeakerLayout(channels, targetChannels, layout);
             }
             if (trimAfterLoop && loopStart < loopEnd && loopEnd < channels[0].Length)
             {
