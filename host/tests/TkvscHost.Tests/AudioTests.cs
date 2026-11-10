@@ -88,6 +88,80 @@ public class AudioTests
         Assert.Throws<NotSupportedException>(() => w.Run("read-bwav-audio", [file, ""]));
     }
 
+    private static int[] BarsModified(Workspace w, string romfs, string file)
+    {
+        Env env = TkvscHost.Env.From(name => name switch
+        {
+            "TKVSC_COMPRESSION_BACKEND" => "plain-zstd-yaz0",
+            "TKVSC_ROMFS" => romfs,
+            _ => null,
+        });
+        var result = Commands.Find("bars-modified")!(w.Context("bars-modified", env, "", file, ""));
+        return [.. result["modified"]!.AsArray().Select(n => n!.GetValue<int>())];
+    }
+
+    [Fact]
+    public void ABarsEntryThatDiffersFromTheGamesIsModified()
+    {
+        using Workspace w = new();
+        string game = Directory.CreateDirectory(Path.Combine(w.Root, "game", "Sound", "Resource")).FullName;
+        string mod = Directory.CreateDirectory(Path.Combine(w.Root, "mod", "romfs", "Sound", "Resource")).FullName;
+        File.WriteAllBytes(Path.Combine(game, "Sound.bars"), Bars("Hit", Bwav.Build([Tone(500)], 32000)));
+        string romfs = Path.Combine(w.Root, "game");
+
+        File.WriteAllBytes(Path.Combine(mod, "Sound.bars"), Bars("Hit", Bwav.Build([Tone(500)], 32000)));
+        Assert.Empty(BarsModified(w, romfs, Path.Combine(mod, "Sound.bars")));
+
+        File.WriteAllBytes(Path.Combine(mod, "Sound.bars"), Bars("Hit", Bwav.Build([Tone(800)], 32000)));
+        Assert.Equal([0], BarsModified(w, romfs, Path.Combine(mod, "Sound.bars")));
+
+        // The game's own file is never modified.
+        Assert.Empty(BarsModified(w, romfs, Path.Combine(game, "Sound.bars")));
+    }
+
+    [Fact]
+    public void AModifiedBarsEntryIsResetToTheGames()
+    {
+        using Workspace w = new();
+        string game = Directory.CreateDirectory(Path.Combine(w.Root, "game", "Sound", "Resource")).FullName;
+        string mod = Directory.CreateDirectory(Path.Combine(w.Root, "mod", "romfs", "Sound", "Resource")).FullName;
+        byte[] original = Bars("Hit", Bwav.Build([Tone(500)], 32000));
+        File.WriteAllBytes(Path.Combine(game, "Sound.bars"), original);
+        string romfs = Path.Combine(w.Root, "game"), file = Path.Combine(mod, "Sound.bars");
+        File.WriteAllBytes(file, Bars("Hit", Bwav.Build([Tone(900)], 32000)));
+        Assert.Equal([0], BarsModified(w, romfs, file));
+
+        Env env = TkvscHost.Env.From(name => name switch
+        {
+            "TKVSC_COMPRESSION_BACKEND" => "plain-zstd-yaz0",
+            "TKVSC_ROMFS" => romfs,
+            _ => null,
+        });
+        var result = Commands.Find("reset-bars-entry")!(w.Context("reset-bars-entry", env, "", file, "", "0"));
+
+        Assert.True(result["changed"]!.GetValue<bool>());
+        Assert.Empty(BarsModified(w, romfs, file));
+    }
+
+    [Fact]
+    public void ABarsEntryWithItsOwnStreamIsModified()
+    {
+        using Workspace w = new();
+        string game = Directory.CreateDirectory(Path.Combine(w.Root, "game", "Sound", "Resource", "Stream")).FullName;
+        string mod = Directory.CreateDirectory(Path.Combine(w.Root, "mod", "romfs", "Sound", "Resource", "Stream")).FullName;
+        byte[] bars = Bars("Line", null);
+        File.WriteAllBytes(Path.Combine(game, "..", "Line.bars"), bars);
+        File.WriteAllBytes(Path.Combine(mod, "..", "Line.bars"), bars);
+        File.WriteAllBytes(Path.Combine(game, "Line.bwav"), Bwav.Build([Tone(3000)], 32000));
+        string romfs = Path.Combine(w.Root, "game"), file = Path.Combine(mod, "..", "Line.bars");
+
+        File.WriteAllBytes(Path.Combine(mod, "Line.bwav"), Bwav.Build([Tone(3000)], 32000));
+        Assert.Empty(BarsModified(w, romfs, file));
+
+        File.WriteAllBytes(Path.Combine(mod, "Line.bwav"), Bwav.Build([Tone(2000)], 32000));
+        Assert.Equal([0], BarsModified(w, romfs, file));
+    }
+
     [Fact]
     public void ABarsIsListedWithItsMetadata()
     {

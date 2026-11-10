@@ -139,6 +139,15 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
         return root.fsPath;
     }
 
+    /** The project (its logical root, when one is set) that a path in the tree belongs to. */
+    projectRootFor(fsPath: string): string | undefined {
+        const lower = fsPath.toLowerCase();
+        const root = this.roots
+            .filter((r) => lower === r.fsPath.toLowerCase() || lower.startsWith(r.fsPath.toLowerCase() + path.sep))
+            .sort((a, b) => b.fsPath.length - a.fsPath.length)[0];
+        return root ? this.resolveConfigRoot(root) : undefined;
+    }
+
     private getVisibleRoots(): vscode.Uri[] {
         const activeGameId = getActiveGameId();
         return this.roots.filter(

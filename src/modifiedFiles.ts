@@ -39,6 +39,33 @@ function stampOf(filePath: string): string | undefined {
     }
 }
 
+/** Where the game's RomFS has a file of the project, relative to it, or undefined when the file is not under the project's RomFS. */
+function relativeToMount(filePath: string, fallbackProjectRoot: string, romfs: string): string | undefined {
+    const parts = filePath.split(/[\\/]/);
+    const romfsIndex = parts.findIndex((part) => part.toLowerCase() === 'romfs');
+    const mount = romfsIndex >= 0
+        ? parts.slice(0, romfsIndex + 1).join(path.sep)
+        : resolveProjectRomfsMount(fallbackProjectRoot, romfs);
+    const rel = path.relative(mount, filePath);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+        return undefined;
+    }
+    return rel.replace(/\\/g, '/');
+}
+
+/**
+ * The game's copy of a project file (which may be inside an archive, so the path may go through one), or undefined when the
+ * file isn't under the project's RomFS or is the game's own file.
+ */
+export function gameCopyPath(filePath: string, fallbackProjectRoot: string, romfs: string): string | undefined {
+    const rel = relativeToMount(filePath, fallbackProjectRoot, romfs);
+    if (rel === undefined) {
+        return undefined;
+    }
+    const game = path.join(romfs, rel);
+    return path.normalize(game).toLowerCase() === path.normalize(filePath).toLowerCase() ? undefined : game;
+}
+
 function cacheKey(filePath: string): string {
     return path.normalize(filePath).toLowerCase();
 }
@@ -140,18 +167,8 @@ export class ModifiedFileMarker {
         }
     }
 
-    /** Where the game's RomFS has a file of the project, or undefined when the file is not under the project's RomFS. */
     private relativeToMount(filePath: string, fallbackProjectRoot: string, romfs: string): string | undefined {
-        const parts = filePath.split(/[\\/]/);
-        const romfsIndex = parts.findIndex((part) => part.toLowerCase() === 'romfs');
-        const mount = romfsIndex >= 0
-            ? parts.slice(0, romfsIndex + 1).join(path.sep)
-            : resolveProjectRomfsMount(fallbackProjectRoot, romfs);
-        const rel = path.relative(mount, filePath);
-        if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
-            return undefined;
-        }
-        return rel.replace(/\\/g, '/');
+        return relativeToMount(filePath, fallbackProjectRoot, romfs);
     }
 
     private async compare(

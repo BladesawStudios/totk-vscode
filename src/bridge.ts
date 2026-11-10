@@ -205,6 +205,10 @@ export interface BarsAudioResult extends BridgeResult {
 
 export interface BarsReplaceResult extends BridgeResult {
     success?: boolean;
+    /** reset-bars-entry: whether the BARS itself changed. */
+    changed?: boolean;
+    /** reset-bars-entry: the project's own full stream for the entry, which the caller removes. */
+    ownStream?: string | null;
     name?: string;
     /** What was embedded into the BARS: 'prefetch', 'full', or null (stream-only entry). */
     embedded?: 'prefetch' | 'full' | 'stub' | null;
@@ -507,6 +511,41 @@ export async function runBridgeDecodeBarsEntryAsync(
     return runBridgeJsonAsync<DecodedAudioFile>(
         hostExe,
         ['decode-bars-entry', archivePath, internalPath, entryIndex.toString()],
+        undefined,
+        env,
+    );
+}
+
+/**
+ * The entries of a project's BARS that differ from the same entries of the game's copy (their metadata, embedded clip,
+ * or the project's own full stream). Empty for the game's own BARS, or one the game doesn't have.
+ */
+export async function runBridgeBarsModifiedAsync(
+    hostExe: string,
+    archivePath: string,
+    internalPath: string,
+    env?: NodeJS.ProcessEnv,
+): Promise<number[]> {
+    const result = await runBridgeJsonAsync<{ modified?: number[] }>(
+        hostExe,
+        ['bars-modified', archivePath, internalPath],
+        undefined,
+        env,
+    );
+    return result.modified ?? [];
+}
+
+/** Puts one entry of a project's BARS back the way the game's copy has it. Its own full stream comes back as `ownStream`. */
+export async function runBridgeResetBarsEntryAsync(
+    hostExe: string,
+    archivePath: string,
+    internalPath: string,
+    entryIndex: number,
+    env?: NodeJS.ProcessEnv,
+): Promise<BarsReplaceResult> {
+    return runBridgeJsonAsync<BarsReplaceResult>(
+        hostExe,
+        ['reset-bars-entry', archivePath, internalPath, entryIndex.toString()],
         undefined,
         env,
     );

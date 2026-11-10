@@ -9,6 +9,8 @@ export interface BarsAudioRequest {
 }
 
 const panels = new Map<string, vscode.WebviewPanel>();
+/** Finds the viewer's modified entries again, after anything that may have changed them. */
+const modifiedRefreshers = new Map<string, () => void>();
 let extensionUri: vscode.Uri | undefined;
 
 export function initBarsViewer(extUri: vscode.Uri): void {
@@ -25,6 +27,7 @@ export function reloadBarsViewer(key: string, barsName: string, entries: BarsEnt
         return false;
     }
     panel.webview.html = buildHtml(barsName, entries, true);
+    modifiedRefreshers.get(key)?.();
     return true;
 }
 
@@ -38,6 +41,10 @@ export function openBarsViewer(
     editLoop?: (index: number) => Promise<BarsEntry[] | undefined>,
     replaceGroup?: (indices: number[]) => Promise<BarsEntry[] | undefined>,
     replaceSame?: (indices: number[]) => Promise<BarsEntry[] | undefined>,
+    /** The entries that differ from the game's, shown "- modified" like the file browser shows changed files. */
+    findModified?: () => Promise<number[]>,
+    /** Puts one entry back the way the game's copy has it. */
+    resetEntry?: (index: number) => Promise<BarsEntry[] | undefined>,
 ): void {
     const existing = panels.get(key);
 
@@ -66,6 +73,21 @@ export function openBarsViewer(
 
     panel.webview.html = buildHtml(barsName, entries, !!replaceAudio);
 
+    // Each check is numbered so an older, slower one can't overwrite a newer answer.
+    let modifiedCheck = 0;
+    const refreshModified = () => {
+        if (!findModified) {
+            return;
+        }
+        const check = ++modifiedCheck;
+        findModified().then((indices) => {
+            if (check === modifiedCheck) {
+                void panel.webview.postMessage({ type: 'modified', indices });
+            }
+        }, () => { /* the marks are a hint; the viewer works without them */ });
+    };
+    refreshModified();
+
     const postReplaced = (entries: BarsEntry[], index: number) => {
         panel.webview.postMessage({
             type: 'entry-replaced',
@@ -93,9 +115,13 @@ export function openBarsViewer(
                 void vscode.window.showErrorMessage(`Editing the BARS failed: ${msg}`);
             }
             panel.webview.postMessage({ type: 'group-done' });
+            refreshModified();
             return;
         }
-        const edit =message.type === 'replace-audio' ? replaceAudio : message.type === 'edit-loop' ? editLoop : undefined;
+        const edit = message.type === 'replace-audio' ? replaceAudio
+            : message.type === 'edit-loop' ? editLoop
+                : message.type === 'reset-entry' ? resetEntry
+                    : undefined;
         if (edit) {
             try {
                 const newEntries = await edit(message.index);
@@ -103,6 +129,7 @@ export function openBarsViewer(
                     // Only this entry's card and player change. Its size may have moved the blocks after it, so
                     // the others just get their new offsets and keep their loaded audio.
                     postReplaced(newEntries, message.index);
+                    refreshModified();
                 } else {
                     panel.webview.postMessage({ type: 'replace-done', index: message.index });
                 }
@@ -142,8 +169,10 @@ export function openBarsViewer(
     });
 
     panels.set(key, panel);
+    modifiedRefreshers.set(key, refreshModified);
     panel.onDidDispose(() => {
         panels.delete(key);
+        modifiedRefreshers.delete(key);
         void pruneBarsAudioCache();
     });
 }
@@ -199,12 +228,13 @@ function renderEntry(e: BarsEntry, idx: number, canReplace: boolean): string {
     return `
         <div class="entry" data-index="${idx}" data-name="${escapeHtml(e.name)}">
             <div class="entry-header">
-                <div class="entry-name">${escapeHtml(e.name)}</div>
+                <div class="entry-name">${escapeHtml(e.name)}<span class="entry-modified" id="modified-${idx}" hidden title="Differs from the game's copy of this track">- modified</span></div>
                 <div class="entry-meta">
                     ${e.has_prefetch ? `<button class="tag prefetch" id="tag-prefetch-${idx}" data-index="${idx}">Prefetch</button>` : ''}
                     ${e.has_romfs_bwav ? `<button class="tag romfs" id="tag-romfs-${idx}" data-index="${idx}">Full</button>` : ''}
                     ${canReplace && canPlay ? `<button class="tag loop" id="loop-btn-${idx}" data-index="${idx}" title="Edit this entry's loop points without changing its audio">Loop</button>` : ''}
                     ${canReplace ? `<button class="tag replace" id="replace-btn-${idx}" data-index="${idx}" title="Replace this entry's audio with a WAV or BWAV file">Replace</button>` : ''}
+                    ${canReplace ? `<button class="tag reset" id="reset-btn-${idx}" data-index="${idx}" hidden title="Put this track back the way the game has it">Reset</button>` : ''}
                 </div>
             </div>
             
@@ -319,6 +349,13 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
         font-size: 14px;
         word-break: break-all;
     }
+    .entry-modified {
+        margin-left: 6px;
+        font-weight: normal;
+        font-size: 12px;
+        color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-descriptionForeground));
+        white-space: nowrap;
+    }
     .entry-meta {
         display: flex;
         gap: 6px;
@@ -349,6 +386,10 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
     .tag.replace { background: #f59e0b40; color: #fbbf24; opacity: 0.8; }
     .tag.replace:hover { opacity: 1; }
     .tag.replace:disabled { opacity: 0.4; cursor: wait; }
+    .tag.reset { background: #ef444440; color: #f87171; opacity: 0.8; }
+    .tag.reset:hover { opacity: 1; }
+    .tag.reset:disabled { opacity: 0.4; cursor: wait; }
+    .tag[hidden], .entry-modified[hidden] { display: none; }
     .tag.loop { background: #a855f740; color: #c084fc; opacity: 0.8; }
     .tag.loop:hover { opacity: 1; }
     .tag.loop:disabled { opacity: 0.4; cursor: wait; }
@@ -547,6 +588,7 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
             <select id="sort-select" style="background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); padding: 4px; border-radius: 4px; outline: none; cursor: pointer;">
                 <option value="default">Default</option>
                 <option value="alphabetical">Alphabetical</option>
+                <option value="modified">Modified first</option>
             </select>
         </div>
     </div>
@@ -566,6 +608,9 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
         }
 
         const sortSelect = document.getElementById('sort-select');
+        // Entries that differ from the game's copy. Kept here so a card redrawn after an edit gets its mark back.
+        let modifiedEntries = new Set();
+
         function applySort(mode) {
             const list = document.querySelector('.entry-list');
             const entries = Array.from(list.querySelectorAll('.entry'));
@@ -573,6 +618,10 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
             entries.sort((a, b) => {
                 if (mode === 'alphabetical') {
                     return a.dataset.name.localeCompare(b.dataset.name);
+                } else if (mode === 'modified') {
+                    // Modified tracks first, each group in the BARS's own order.
+                    const ai = parseInt(a.dataset.index), bi = parseInt(b.dataset.index);
+                    return (modifiedEntries.has(bi) ? 1 : 0) - (modifiedEntries.has(ai) ? 1 : 0) || ai - bi;
                 } else {
                     return parseInt(a.dataset.index) - parseInt(b.dataset.index);
                 }
@@ -764,19 +813,19 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
             }
         }
 
-        // Replace and Loop buttons. Delegated, since an edit swaps the entry's card.
+        // Replace, Loop and Reset buttons. Delegated, since an edit swaps the entry's card.
         document.querySelector('.entry-list').addEventListener('click', ev => {
-            const el = ev.target.closest('.tag.replace, .tag.loop');
+            const el = ev.target.closest('.tag.replace, .tag.loop, .tag.reset');
             if (!el) return;
             const idx = parseInt(el.dataset.index);
-            const isLoop = el.classList.contains('loop');
-            // One edit per entry at a time: both would write the same files.
-            for (const id of ['replace-btn-', 'loop-btn-']) {
+            const kind = el.classList.contains('loop') ? 'loop' : el.classList.contains('reset') ? 'reset' : 'replace';
+            // One edit per entry at a time: they would write the same files.
+            for (const id of ['replace-btn-', 'loop-btn-', 'reset-btn-']) {
                 const button = document.getElementById(id + idx);
                 if (button) button.disabled = true;
             }
-            el.textContent = isLoop ? 'Editing…' : 'Replacing…';
-            vscode.postMessage({ type: isLoop ? 'edit-loop' : 'replace-audio', index: idx });
+            el.textContent = kind === 'loop' ? 'Editing…' : kind === 'reset' ? 'Resetting…' : 'Replacing…';
+            vscode.postMessage({ type: kind === 'loop' ? 'edit-loop' : kind === 'reset' ? 'reset-entry' : 'replace-audio', index: idx });
         });
 
         // Choosing a group of entries to cut one audio file across.
@@ -938,6 +987,15 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
         }
         playableIndices.forEach(initPlayer);
 
+        function applyModified() {
+            document.querySelectorAll('.entry-modified').forEach(mark => {
+                mark.hidden = !modifiedEntries.has(Number(mark.id.slice('modified-'.length)));
+            });
+            document.querySelectorAll('.tag.reset').forEach(button => {
+                button.hidden = !modifiedEntries.has(Number(button.dataset.index));
+            });
+        }
+
         window.addEventListener('message', event => {
             const message = event.data;
             if (message.type === 'audio-loaded') {
@@ -1029,6 +1087,7 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
 
                 const card = document.querySelector('.entry[data-index="' + index + '"]');
                 if (card) card.outerHTML = html;
+                applyModified();
                 assetOffsets.forEach((text, i) => {
                     const offset = document.getElementById('asset-offset-' + i);
                     if (offset) offset.textContent = text;
@@ -1040,6 +1099,10 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
                     fetchQueue.push(index);
                     fetchNext();
                 }
+            } else if (message.type === 'modified') {
+                modifiedEntries = new Set(message.indices);
+                applyModified();
+                if (sortSelect.value === 'modified') applySort('modified');
             } else if (message.type === 'group-done') {
                 groupBusy = false;
                 refreshGroup();
@@ -1053,6 +1116,11 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
                 if (lbtn) {
                     lbtn.disabled = false;
                     lbtn.textContent = 'Loop';
+                }
+                const resetButton = document.getElementById('reset-btn-' + message.index);
+                if (resetButton) {
+                    resetButton.disabled = false;
+                    resetButton.textContent = 'Reset';
                 }
             } else if (message.type === 'audio-error') {
                 const btn = document.getElementById('play-btn-' + message.index);

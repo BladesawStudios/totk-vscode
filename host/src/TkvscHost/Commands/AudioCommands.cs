@@ -15,6 +15,8 @@ public static class AudioCommands
         commands["read-bwav"] = ReadBwav;
         commands["read-bwav-audio"] = ReadBwavAudio;
         commands["list-bars"] = ListBars;
+        commands["bars-modified"] = BarsModified;
+        commands["reset-bars-entry"] = ResetBarsEntry;
         commands["read-bars-audio"] = ReadBarsAudio;
         commands["read-bars-audio-many"] = ReadBarsAudioMany;
         commands["replace-bars-audio"] = ReplaceBarsAudio;
@@ -202,6 +204,163 @@ public static class AudioCommands
             });
         }
         return new JsonObject { ["entries"] = entries };
+    }
+
+    // The entries of a project's BARS that differ from the same entries of the game's copy: their AMTA, their embedded
+    // BWAV, or the project's own full stream. An entry the game doesn't have, or a BARS the game doesn't have, is not modified.
+    private static JsonNode BarsModified(CommandContext c)
+    {
+        string archive = c.Arg(0), internalPath = c.ArgOr(1, "");
+        JsonArray modified = [];
+        JsonObject result = new() { ["modified"] = modified };
+        if (GameCopyOf(c, archive) is not { } gameArchive) return result;
+
+        var (data, bars) = LoadBars(c, archive, internalPath);
+        byte[] gameData;
+        TotkBars gameBars;
+        try
+        {
+            (gameData, gameBars) = LoadBars(c, gameArchive, internalPath);
+        }
+        catch (Exception)
+        {
+            return result;
+        }
+
+        Dictionary<string, int> gameIndex = new(StringComparer.Ordinal);
+        for (int i = 0; i < gameBars.Entries.Count; i++) gameIndex.TryAdd(gameBars.Entries[i].Name, i);
+        string modRoot = ModRomfsRoot(archive);
+
+        for (int i = 0; i < bars.Entries.Count; i++)
+        {
+            string name = bars.Entries[i].Name;
+            if (!gameIndex.TryGetValue(name, out int g)) continue;
+            bool differs = !AmtaBytes(data, bars, i).SequenceEqual(AmtaBytes(gameData, gameBars, g))
+                || !(TotkBars.BlockBytes(data, i) ?? []).AsSpan().SequenceEqual(TotkBars.BlockBytes(gameData, g) ?? [])
+                || StreamDiffers(c, name, modRoot);
+            if (differs) modified.Add(i);
+        }
+        return result;
+    }
+
+    // Puts one entry of a project's BARS back the way the game's copy has it: its AMTA and its embedded BWAV. The project's own
+    // full stream for it is not deleted here; it comes back as ownStream for the caller to remove, since that is the user's file.
+    private static JsonNode ResetBarsEntry(CommandContext c)
+    {
+        string archive = c.Arg(0), internalPath = c.ArgOr(1, "");
+        int index = int.Parse(c.ArgOr(2, "0"));
+        string gameArchive = GameCopyOf(c, archive)
+            ?? throw new FileNotFoundException("The game has no copy of this BARS to reset from (or the game dump path isn't set).");
+
+        Archives archives = new(c.Containers);
+        var (file, logical) = Source(archives, archive, internalPath);
+        Unwrapped unwrapped = c.Containers.Decompress(file, logical);
+        byte[] data = unwrapped.Data;
+        TotkBars bars = TotkBars.Parse(data);
+        TotkBarsEntry entry = EntryAt(bars, index);
+
+        var (gameData, gameBars) = LoadBars(c, gameArchive, internalPath);
+        int g = gameBars.Entries.FindIndex(e => e.Name == entry.Name);
+        if (g < 0) throw new InvalidDataException($"The game's copy of this BARS has no '{entry.Name}' to reset to.");
+
+        ReadOnlySpan<byte> amta = AmtaBytes(data, bars, index), gameAmta = AmtaBytes(gameData, gameBars, g);
+        if (amta.Length != gameAmta.Length)
+            throw new InvalidDataException($"The metadata of '{entry.Name}' is laid out differently from the game's, so it can't be reset in place.");
+
+        byte[] working = (byte[])data.Clone();
+        gameAmta.CopyTo(working.AsSpan(entry.AmtaOffset));
+
+        byte[]? block = TotkBars.BlockBytes(working, index), gameBlock = TotkBars.BlockBytes(gameData, g);
+        if ((block is null) != (gameBlock is null))
+            throw new InvalidDataException($"'{entry.Name}' {(block is null ? "has no" : "has an")} embedded clip where the game's {(block is null ? "has one" : "doesn't")}, so it can't be reset in place.");
+        if (block is not null && !block.AsSpan().SequenceEqual(gameBlock))
+            working = TotkBars.Rebuild(working, new Dictionary<int, byte[]> { [index] = gameBlock! }, new HashSet<int> { index });
+
+        bool changed = !working.AsSpan().SequenceEqual(data);
+        if (changed) Save(c, archives, archive, logical, working, unwrapped.WasZstd);
+
+        string modRoot = ModRomfsRoot(archive);
+        string? ownStream = modRoot.Length > 0 && LocateFullBwav(entry.Name, "", modRoot) is { } own
+            && (LocateFullBwav(entry.Name, c.Romfs, "") is null || StreamDiffers(c, entry.Name, modRoot))
+            ? own.Path : null;
+        return new JsonObject
+        {
+            ["success"] = true,
+            ["name"] = entry.Name,
+            ["changed"] = changed,
+            ["ownStream"] = ownStream,
+        };
+    }
+
+    // Where the game's RomFS has the BARS a project path points at, or null when it is the game's own file or the game has none.
+    private static string? GameCopyOf(CommandContext c, string archive)
+    {
+        if (c.Romfs.Length == 0 || !Directory.Exists(c.Romfs)) return null;
+        string full = Path.GetFullPath(archive);
+        string romfs = Path.TrimEndingDirectorySeparator(Path.GetFullPath(c.Romfs));
+        if (full.StartsWith(romfs + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return null;
+
+        string mount = ModRomfsRoot(full);
+        if (mount.Length == 0)
+        {
+            string[] parts = full.Split(Path.DirectorySeparatorChar);
+            int at = Array.FindLastIndex(parts, p => p.Equals("romfs", StringComparison.OrdinalIgnoreCase));
+            if (at < 0) return null;
+            mount = string.Join(Path.DirectorySeparatorChar, parts[..(at + 1)]);
+        }
+        string rel = Path.GetRelativePath(mount, full);
+        if (rel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(rel)) return null;
+
+        string plain = rel.EndsWith(".zs", StringComparison.OrdinalIgnoreCase) ? rel[..^3] : rel;
+        foreach (string candidate in new[] { rel, plain, plain + ".zs" })
+        {
+            string game = Path.Combine(romfs, candidate);
+            if (File.Exists(game)) return game;
+        }
+        return null;
+    }
+
+    // An entry's AMTA block: the size its header gives, or up to the next block when that size is missing.
+    private static ReadOnlySpan<byte> AmtaBytes(byte[] data, TotkBars bars, int index)
+    {
+        int start = bars.Entries[index].AmtaOffset;
+        uint size = start + 12 <= data.Length ? BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(start + 8)) : 0;
+        if (size > 0 && start + (long)size <= data.Length) return data.AsSpan(start, (int)size);
+
+        int end = data.Length;
+        for (int i = 0; i < bars.Entries.Count; i++)
+        {
+            int other = bars.Entries[i].AmtaOffset;
+            if (other > start && other < end) end = other;
+            int bwav = TotkBars.RawBwavOffset(data, i);
+            if (bwav > start && bwav < end) end = bwav;
+        }
+        return data.AsSpan(start, end - start);
+    }
+
+    // True when the project has its own full stream for the entry and it isn't the game's.
+    private static bool StreamDiffers(CommandContext c, string name, string modRoot)
+    {
+        if (modRoot.Length == 0 || LocateFullBwav(name, "", modRoot) is not { } own) return false;
+        if (LocateFullBwav(name, c.Romfs, "") is not { } game) return false;
+        if (Path.GetFullPath(own.Path).Equals(Path.GetFullPath(game.Path), StringComparison.OrdinalIgnoreCase)) return false;
+        try
+        {
+            if (new FileInfo(own.Path).Length != new FileInfo(game.Path).Length) return true;
+            using FileStream a = File.OpenRead(own.Path), b = File.OpenRead(game.Path);
+            byte[] bufA = new byte[1 << 16], bufB = new byte[1 << 16];
+            while (true)
+            {
+                int read = a.ReadAtLeast(bufA, bufA.Length, throwOnEndOfStream: false);
+                b.ReadExactly(bufB, 0, read);
+                if (read == 0) return false;
+                if (!bufA.AsSpan(0, read).SequenceEqual(bufB.AsSpan(0, read))) return true;
+            }
+        }
+        catch (IOException)
+        {
+            return false;
+        }
     }
 
     private static JsonNode ReadBarsAudio(CommandContext c)

@@ -21,6 +21,8 @@ import {
     runBridgeBarsSectionInfoAsync,
     runBridgeReplaceBarsSectionsAsync,
     runBridgeReplaceBarsSameAsync,
+    runBridgeBarsModifiedAsync,
+    runBridgeResetBarsEntryAsync,
     runBridgeReadBarsAudioManyAsync,
     type BarsEntry,
     type BarsLoopSpec,
@@ -86,10 +88,10 @@ import {
     migrateSarcWorkspaceFolders,
     registerArchiveTree,
 } from './archiveTree';
-import { getArchiveSelection, invalidateArchiveListings, setArchiveRawIo } from './archiveFsCommands';
+import { getArchiveSelection, invalidateArchiveListings, setArchiveRawIo, setGameCopyResolver } from './archiveFsCommands';
 import { getDumpSelection, registerGameDumpTree, type DumpTreeItem } from './dumpTree';
 import { registerGamePicker } from './gamePicker';
-import { ModifiedFileMarker } from './modifiedFiles';
+import { gameCopyPath, ModifiedFileMarker } from './modifiedFiles';
 import { createReadonlyArchiveFs } from './readonlyArchiveFs';
 import { resolveRomfsPath } from './romfs';
 import {
@@ -2056,6 +2058,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
                                 return `Put "${sourceName}" on ${indices.length} tracks${tableNote ? `.${tableNote} Saved` : ''}`;
                             },
                         );
+                    }, async () => vscode.workspace.getConfiguration('TKVSC').get<boolean>('markModifiedFiles', true)
+                        // barsPath moves to the project's copy once an edit pulls it in, so this follows it.
+                        ? runBridgeBarsModifiedAsync(hostExe, barsPath, filePath, getBridgeEnv())
+                        : [], async (index: number) => {
+                        const name = entries[index]?.name ?? 'this track';
+                        const choice = await vscode.window.showWarningMessage(
+                            `Reset "${name}" to the game's version?`,
+                            {
+                                modal: true,
+                                detail: "Its audio, loop and metadata go back to the game's. If your project has its own full stream for it, that file is moved to the trash.",
+                            },
+                            'Reset',
+                        );
+                        if (choice !== 'Reset') {
+                            return undefined;
+                        }
+                        let trashed: string | undefined;
+                        const refreshedEntries = await applyBarsEdit(
+                            `Resetting "${name}"…`,
+                            async (barsFile) => {
+                                const result = await runBridgeResetBarsEntryAsync(hostExe, barsFile, filePath, index, getBridgeEnv());
+                                if (result.ownStream) {
+                                    await vscode.workspace.fs.delete(vscode.Uri.file(result.ownStream), { useTrash: true });
+                                    trashed = result.ownStream;
+                                }
+                                return result;
+                            },
+                            (result) => `Reset "${result.name}" to the game's version`
+                                + (trashed ? ` and moved ${path.basename(trashed)} to the trash` : ''),
+                        );
+                        if (trashed) {
+                            void archiveTree?.refresh();
+                        }
+                        return refreshedEntries;
                     });
                 } else {
                     const err = raw && (raw as any).error ? (raw as any).error : 'Unknown error';
@@ -2158,6 +2194,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
     archiveTree = registerArchiveTree(context);
     archiveTree.setModifiedFileMarker(modifiedFileMarker);
+    setGameCopyResolver((fsPath) => {
+        const romfs = resolveRomfsPath();
+        const projectRoot = archiveTree?.projectRootFor(fsPath);
+        return romfs && projectRoot ? gameCopyPath(fsPath, projectRoot, romfs) : undefined;
+    });
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {
             if (event.affectsConfiguration('TKVSC.markModifiedFiles')) {

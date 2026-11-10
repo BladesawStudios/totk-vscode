@@ -32,6 +32,19 @@ export interface ArchiveRawIo {
 
 let rawIo: ArchiveRawIo | undefined;
 
+/** Finds the game's copy of a project file, for resetting it. */
+let gameCopyResolver: ((fsPath: string) => string | undefined) | undefined;
+
+export function setGameCopyResolver(resolver: (fsPath: string) => string | undefined): void {
+    gameCopyResolver = resolver;
+}
+
+const RESETTABLE_CONTEXTS = new Set(['archiveFile', 'archiveBars', 'archiveVirtualFile', 'archiveVirtualBars', 'archivePackage']);
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+    return a.length === b.length && Buffer.from(a.buffer, a.byteOffset, a.byteLength).equals(Buffer.from(b.buffer, b.byteOffset, b.byteLength));
+}
+
 export function setArchiveRawIo(io: ArchiveRawIo): void {
     rawIo = io;
 }
@@ -633,6 +646,92 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
         );
         await vscode.commands.executeCommand('setContext', 'totk-editor.archiveClipboardNotEmpty', uris.length > 0);
     };
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'totk-editor.archiveResetToGame',
+            async (item?: unknown, selection?: unknown) => {
+                const items = pruneNestedSelections(selectedItems(item, selection)
+                    .filter((entry) => RESETTABLE_CONTEXTS.has(String(entry.contextValue))));
+                if (items.length === 0) {
+                    return;
+                }
+                const io = requireRawIo();
+                const resets: { uri: vscode.Uri; before: Uint8Array; after: Uint8Array }[] = [];
+                const skipped: string[] = [];
+                await vscode.window.withProgress(
+                    { location: vscode.ProgressLocation.Notification, title: 'Comparing with the game...', cancellable: false },
+                    async () => {
+                        for (const entry of items) {
+                            const uri = entry.resourceUri;
+                            const game = gameCopyResolver?.(uri.fsPath);
+                            if (!game) {
+                                skipped.push(`${entry.entryName}: not in a project's RomFS, or the game dump path isn't set`);
+                                continue;
+                            }
+                            let after: Uint8Array;
+                            try {
+                                after = await io.readStoredBytes(vscode.Uri.file(game));
+                            } catch {
+                                skipped.push(`${entry.entryName}: the game has no file there`);
+                                continue;
+                            }
+                            try {
+                                const before = await io.readStoredBytes(uri);
+                                if (sameBytes(before, after)) {
+                                    skipped.push(`${entry.entryName}: already the game's version`);
+                                } else {
+                                    resets.push({ uri, before, after });
+                                }
+                            } catch (error) {
+                                skipped.push(`${entry.entryName}: ${errorMessage(error)}`);
+                            }
+                        }
+                    },
+                );
+                if (resets.length === 0) {
+                    void vscode.window.showInformationMessage(`Nothing to reset. ${skipped.join('; ')}`);
+                    return;
+                }
+                const label = describeCount(resets.map((reset) => path.basename(reset.uri.fsPath)));
+                const confirm = await vscode.window.showWarningMessage(
+                    `Reset ${label} to the game's version?`,
+                    { modal: true, detail: 'Your changes are replaced with the game\'s file. You can undo this with Ctrl+Z in Your Projects while VS Code stays open.' },
+                    'Reset',
+                );
+                if (confirm !== 'Reset') {
+                    return;
+                }
+                const done: typeof resets = [];
+                const errors: string[] = [];
+                for (const reset of resets) {
+                    try {
+                        await io.writeStoredBytes(toSarc(reset.uri), reset.after);
+                        done.push(reset);
+                    } catch (error) {
+                        errors.push(`${path.basename(reset.uri.fsPath)}: ${errorMessage(error)}`);
+                    }
+                }
+                if (done.length > 0) {
+                    historyManager.push({
+                        description: `Reset ${describeCount(done.map((reset) => path.basename(reset.uri.fsPath)))}`,
+                        undo: async () => {
+                            for (const reset of done) {
+                                await io.writeStoredBytes(toSarc(reset.uri), reset.before);
+                            }
+                        },
+                        redo: async () => {
+                            for (const reset of done) {
+                                await io.writeStoredBytes(toSarc(reset.uri), reset.after);
+                            }
+                        },
+                    });
+                }
+                reportTransferErrors('Reset', errors);
+                refreshArchives();
+            },
+        ),
+    );
 
     context.subscriptions.push(
         vscode.commands.registerCommand(
