@@ -8,6 +8,15 @@ Reference docs: [v1.md](v1.md)
 
 ---
 
+## Value names
+
+**Added**
+
+- Game profile field `valueNamesPath`: a file of names, one per line, for values the game stores as the MurmurHash3 (seed 0) of a name, such as enum values. A `!u` BYML value equal to a listed name's hash shows in the text editor as `!hash Name`.
+- `!hash Name` in BYML text, for any game, saves as the unsigned hash of `Name`, listed or not.
+
+---
+
 ## Project folders per game
 
 **Changed**

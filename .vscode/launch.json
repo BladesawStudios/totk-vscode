@@ -20,7 +20,8 @@
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}",
 				"--extensionDevelopmentPath=${workspaceFolder}/../tkvsc-addons/splatoon3-support",
-				"--extensionDevelopmentPath=${workspaceFolder}/../tkvsc-addons/tkmm-cli"
+				"--extensionDevelopmentPath=${workspaceFolder}/../tkvsc-addons/tkmm-cli",
+				"--extensionDevelopmentPath=${workspaceFolder}/../tkvsc-addons/oot-support"
 			],
 			"outFiles": [
 				"${workspaceFolder}/dist/**/*.js",

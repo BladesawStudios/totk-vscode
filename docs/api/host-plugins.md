@@ -14,6 +14,7 @@ A profile can set all of this without any C#:
 | Its own SARC archive extensions | `archivePatterns` and `indexing.archiveExtensions` |
 | Its own MSBT tags | `msbtConfigPath` |
 | Flag hash names | `hashNamesPath` |
+| Enum values stored as name hashes | `valueNamesPath` |
 | AAMP names | `aampNameTable`, `aampHashNamesPath` |
 | XLink files of another version | `xlinkVersions` |
 

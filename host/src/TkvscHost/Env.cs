@@ -31,6 +31,9 @@ public sealed class Env
     /// <summary>The file of flag and save-variable hash names for this game; empty when it has none.</summary>
     public string HashNamesPath { get; init; } = "";
 
+    /// <summary>The file of names for hashed BYML values (enum values), one per line; empty when the game has none.</summary>
+    public string ValueNamesPath { get; init; } = "";
+
     /// <summary>The built-in AAMP name table: <c>totk</c>, <c>botw</c> or <c>none</c>.</summary>
     public string AampNameTable { get; init; } = "totk";
 
@@ -142,6 +145,7 @@ public sealed class Env
             CompressedSuffixes = List(Get("TKVSC_COMPRESSED_SUFFIXES")) is { Length: > 0 } suffixes ? [.. suffixes.Select(s => s.StartsWith('.') ? s : "." + s)] : [".zs"],
             ZsDicPath = Get("TKVSC_ZSDIC_PATH").Length > 0 ? Get("TKVSC_ZSDIC_PATH") : DefaultZsDicPath,
             HashNamesPath = hashNames,
+            ValueNamesPath = Get("TKVSC_VALUE_NAMES"),
             AampNameTable = Get("TKVSC_AAMP_NAME_TABLE").Length > 0 ? Get("TKVSC_AAMP_NAME_TABLE").ToLowerInvariant() : "totk",
             ProfileAampNamesPath = Get("TKVSC_PROFILE_AAMP_NAMES"),
             XlinkELinkVersion = ParseVersion(Get("TKVSC_XLINK_ELINK_VERSION")),

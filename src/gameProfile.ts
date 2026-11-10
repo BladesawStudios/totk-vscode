@@ -37,6 +37,11 @@ export interface GameProfileRegistration {
     zsDicPath?: string;
     /** File of `hash;type;name` lines naming this game's flag hashes. Relative to the registering extension root. */
     hashNamesPath?: string;
+    /**
+     * File of names for hashed BYML values, such as enum values, one per line. A `!u` value equal to a name's
+     * MurmurHash3 shows in the text as `!hash Name`. Relative to the registering extension root.
+     */
+    valueNamesPath?: string;
     /** The built-in AAMP name table to start from. Default `totk`. */
     aampNameTable?: 'totk' | 'botw' | 'none';
     /** More AAMP names, as JSON like `TKVSC.aampHashNames`. Relative to the registering extension root. */
@@ -61,6 +66,8 @@ export interface GameProfile extends GameProfileRegistration {
     msbtConfigResolvedPath?: string;
     /** Absolute path to the resolved hash names file. */
     hashNamesResolvedPath?: string;
+    /** Absolute path to the resolved value names file. */
+    valueNamesResolvedPath?: string;
     /** Absolute path to the resolved AAMP names file. */
     aampHashNamesResolvedPath?: string;
     /** Absolute path to the resolved host plugin. */
@@ -158,6 +165,7 @@ class GameProfileRegistry {
             extensionRoot,
             msbtConfigResolvedPath,
             hashNamesResolvedPath: resolveExtensionPath(registration.hashNamesPath, extensionRoot ?? coreExtensionPath),
+            valueNamesResolvedPath: resolveExtensionPath(registration.valueNamesPath, extensionRoot ?? coreExtensionPath),
             aampHashNamesResolvedPath: resolveExtensionPath(registration.aampHashNamesPath, extensionRoot ?? coreExtensionPath),
             hostPluginResolvedPath: resolveExtensionPath(registration.hostPlugin, extensionRoot),
         });

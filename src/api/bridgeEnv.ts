@@ -32,6 +32,7 @@ export function getBridgeEnv(): NodeJS.ProcessEnv {
         TKVSC_COMPRESSED_SUFFIXES: getCompressedSuffixes(profile.id).join(','),
         TKVSC_ZSDIC_PATH: profile.zsDicPath ?? '',
         TKVSC_HASH_NAMES: profile.hashNamesResolvedPath ?? '',
+        TKVSC_VALUE_NAMES: profile.valueNamesResolvedPath ?? '',
         TKVSC_AAMP_NAME_TABLE: profile.aampNameTable ?? '',
         TKVSC_PROFILE_AAMP_NAMES: profile.aampHashNamesResolvedPath ?? '',
         TKVSC_XLINK_ELINK_VERSION: profile.xlinkVersions?.elink?.toString() ?? '',

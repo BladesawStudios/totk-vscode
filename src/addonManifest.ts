@@ -44,7 +44,7 @@ function parseGameProfile(raw: unknown): GameProfileRegistration | undefined {
     if (typeof obj.msbtConfigPath === 'string' && obj.msbtConfigPath.trim()) {
         profile.msbtConfigPath = obj.msbtConfigPath.trim();
     }
-    for (const key of ['zsDicPath', 'hashNamesPath', 'aampHashNamesPath', 'hostPlugin'] as const) {
+    for (const key of ['zsDicPath', 'hashNamesPath', 'valueNamesPath', 'aampHashNamesPath', 'hostPlugin'] as const) {
         const value = obj[key];
         if (typeof value === 'string' && value.trim()) {
             profile[key] = value.trim();

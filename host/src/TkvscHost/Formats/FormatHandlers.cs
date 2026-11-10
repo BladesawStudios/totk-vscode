@@ -47,7 +47,7 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
     }
 
     private string ReadByml(byte[] fileData, string logicalPath)
-        => HashNames.Load(env).Annotate(ReadBymlText(fileData, logicalPath));
+        => ValueNames.Load(env).Name(HashNames.Load(env).Annotate(ReadBymlText(fileData, logicalPath)));
 
     private string ReadBymlText(byte[] fileData, string logicalPath)
     {
@@ -218,6 +218,7 @@ public sealed partial class FormatHandlers(Env env, Containers containers, FileK
 
     private byte[] WriteByml(byte[] original, string editorText, string logicalPath)
     {
+        editorText = ValueNames.Unname(editorText);
         Unwrapped unwrapped = containers.Decompress(original, logicalPath);
         byte[] plain = unwrapped.Data;
 
