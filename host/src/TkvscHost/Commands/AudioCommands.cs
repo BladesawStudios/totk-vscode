@@ -120,6 +120,20 @@ public static class AudioCommands
         return "";
     }
 
+    private static byte[]? OriginalHeader(CommandContext c, byte[] bars, int entryIndex, string name)
+    {
+        if (LocateFullBwav(name, c.Romfs, "") is { } game)
+        {
+            using FileStream stream = File.OpenRead(game.Path);
+            byte[] head = new byte[Math.Min(stream.Length, 0x10 + 0x4C * 32)];
+            stream.ReadExactly(head);
+            if (Bwav.IsBwav(head) && Bwav.ChannelCount(head) > 0) return head;
+        }
+        int offset = TotkBars.RawBwavOffset(bars, entryIndex);
+        if (offset is -1 or 0 || offset >= bars.Length || !Bwav.IsBwav(bars.AsSpan(offset)) || Bwav.ChannelCount(bars.AsSpan(offset)) == 0) return null;
+        return bars[offset..];
+    }
+
     // Where an entry's whole BWAV is: the mod's own folder is searched before the game's, so a replaced stream wins.
     private static (string Path, string RomfsRelative)? LocateFullBwav(string name, string romfs, string modRoot)
     {
@@ -603,14 +617,15 @@ public static class AudioCommands
         {
             // The first entry of each channel count is encoded from the source; the rest get that same BWAV with the loop it
             // ended up with, so they all match exactly and a long track isn't encoded again for each entry.
-            Dictionary<int, byte[]> encoded = [];
+            Dictionary<(int Channels, bool Opus), byte[]> encoded = [];
             Dictionary<string, double> newSeconds = [];
             foreach (int index in indices)
             {
                 var (file, logical) = Source(archives, archive, internalPath);
                 Unwrapped unwrapped = c.Containers.Decompress(file, logical);
                 TotkBarsEntry entry = EntryAt(TotkBars.Parse(unwrapped.Data), index);
-                int channels = entry.Metadata.ChannelCount;
+                var channels = (entry.Metadata.ChannelCount,
+                    OriginalHeader(c, unwrapped.Data, index, entry.Name) is { } head && Bwav.Codec(head) == BwavCodec.Opus);
 
                 JsonNode result;
                 if (encoded.TryGetValue(channels, out byte[]? bwav))
@@ -789,9 +804,22 @@ public static class AudioCommands
         if (trim && loopEnd is { } cutAt && cutAt < Bwav.SampleCount(whole))
             return ReplaceEntryAudio(c, archives, archive, logical, unwrapped, entryIndex, startArg, endArg, entry.Name, true, whole);
 
-        if (embedded)
+        int rawOffset = TotkBars.RawBwavOffset(data, entryIndex);
+        bool stub = !embedded && rawOffset is not (-1 or 0) && Bwav.IsBwav(data.AsSpan(rawOffset)) && Bwav.ChannelCount(data.AsSpan(rawOffset)) > 0;
+
+        if (embedded && !prefetch)
         {
             Bwav.SetLoop(data.AsSpan(entry.BwavOffset), loopStart, loopEnd).CopyTo(data, entry.BwavOffset);
+            Save(c, archives, archive, logical, data, unwrapped.WasZstd);
+        }
+        else if (prefetch || stub)
+        {
+            byte[] block = TotkBars.BlockBytes(data, entryIndex)!;
+            byte[] looped = Bwav.SetLoop(block, loopStart, loopEnd);
+            if (TotkBars.SharesBlock(data, entryIndex))
+                data = TotkBars.Rebuild(data, new Dictionary<int, byte[]> { [entryIndex] = looped }, new HashSet<int> { entryIndex });
+            else
+                looped.CopyTo(data, rawOffset);
             Save(c, archives, archive, logical, data, unwrapped.WasZstd);
         }
 
@@ -801,7 +829,7 @@ public static class AudioCommands
         {
             ["success"] = true,
             ["name"] = entry.Name,
-            ["embedded"] = embedded ? (prefetch ? "prefetch" : "full") : null,
+            ["embedded"] = embedded ? (prefetch ? "prefetch" : "full") : stub ? "stub" : null,
             ["needsStreamFile"] = full is not null,
             ["streamRelativePath"] = located?.RomfsRelative,
             ["fullBwavTempPath"] = full is null ? null : TempFile("totk-bwav-full-", ".bwav", written),
@@ -856,8 +884,13 @@ public static class AudioCommands
         (int? Start, int? End)? bwavAutoLoop = null;
         PcmAudio? pcm = null;
 
+        byte[]? original = OriginalHeader(c, data, entryIndex, entry.Name);
+        BwavCodec codec = original is not null && Bwav.Codec(original) == BwavCodec.Opus ? BwavCodec.Opus : BwavCodec.DspAdpcm;
+        bool payloadNeedsReencode = codec == BwavCodec.Opus && Bwav.IsBwav(payload) && Bwav.ChannelCount(payload) > 0 && Bwav.Codec(payload) != BwavCodec.Opus;
+
         if (Bwav.IsBwav(payload) && ((targetChannels > 0 && Bwav.ChannelCount(payload) != targetChannels)
-            || (trimAfterLoop && loopEndArg.Value < Bwav.SampleCount(payload))))
+            || (trimAfterLoop && loopEndArg.Value < Bwav.SampleCount(payload))
+            || payloadNeedsReencode))
         {
             // Decode it so it can be remixed or cut, keeping its own loop for "auto".
             int srcEnd = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(0x10 + 0x3C)), srcStart = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(0x10 + 0x40));
@@ -895,7 +928,10 @@ public static class AudioCommands
                 int kept = loopEnd.Value;
                 channels = [.. channels.Select(channel => channel[..kept])];
             }
-            fullBwav = Bwav.Build(channels, wav.SampleRate, loopStart, loopEnd);
+            ushort[]? pans = original is not null && Bwav.ChannelCount(original) == channels.Length ? Bwav.ReadPans(original) : null;
+            fullBwav = codec == BwavCodec.Opus
+                ? Bwav.BuildOpus(channels, wav.SampleRate, loopStart, loopEnd, pans)
+                : Bwav.Build(channels, wav.SampleRate, loopStart, loopEnd, pans);
             pcm = new PcmAudio { SampleRate = wav.SampleRate, Channels = channels };
         }
 
@@ -930,8 +966,15 @@ public static class AudioCommands
             byte[] blob;
             if (wasPrefetch)
             {
-                blob = Bwav.MakePrefetch(fullBwav);
+                int? clip = Bwav.Codec(fullBwav) == BwavCodec.Opus ? Bwav.SamplesInFile(working.AsSpan(rawOffset)) : null;
+                blob = Bwav.MakePrefetch(fullBwav, clip);
                 embedded = "prefetch";
+                needsStreamFile = true;
+            }
+            else if (Bwav.IsDummy(working.AsSpan(rawOffset)))
+            {
+                blob = Bwav.MakeStub(fullBwav);
+                embedded = "stub";
                 needsStreamFile = true;
             }
             else
@@ -939,7 +982,8 @@ public static class AudioCommands
                 blob = fullBwav;
                 embedded = "full";
             }
-            byte[] rebuilt = TotkBars.Rebuild(working, new Dictionary<int, byte[]> { [entryIndex] = blob });
+            HashSet<int>? own = embedded is "prefetch" or "stub" ? [entryIndex] : null;
+            byte[] rebuilt = TotkBars.Rebuild(working, new Dictionary<int, byte[]> { [entryIndex] = blob }, own);
             Commit(rebuilt);
         }
 

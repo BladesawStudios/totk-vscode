@@ -207,7 +207,7 @@ export interface BarsReplaceResult extends BridgeResult {
     success?: boolean;
     name?: string;
     /** What was embedded into the BARS: 'prefetch', 'full', or null (stream-only entry). */
-    embedded?: 'prefetch' | 'full' | null;
+    embedded?: 'prefetch' | 'full' | 'stub' | null;
     /** True when the entry streams from romfs and the full BWAV must also be placed there. */
     needsStreamFile?: boolean;
     /** Romfs-relative path of the entry's existing full BWAV (mod or game), when it has one. */
