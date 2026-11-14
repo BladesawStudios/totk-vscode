@@ -6,12 +6,12 @@ import { runBridgeJsonAsync } from './bridge';
 import { logger } from './logger';
 import { resolveProjectRomfsMount } from './projectPaths';
 
-export const MODIFIED_MARKER = '- modified';
+/** The theme colour (contributed in package.json) that modified files are drawn in. */
+export const MODIFIED_COLOR_ID = 'TKVSC.modifiedResourceForeground';
 
 /** What the marker needs of a tree item. */
 export interface MarkableItem {
     resourceUri: vscode.Uri;
-    description?: string | boolean;
     collapsibleState?: vscode.TreeItemCollapsibleState;
 }
 
@@ -37,6 +37,13 @@ function stampOf(filePath: string): string | undefined {
     } catch {
         return undefined;
     }
+}
+
+/** True for things under a `romfs` folder (not the folder itself): only those are ever marked. */
+function isWithinRomfsFolder(fsPath: string): boolean {
+    const parts = fsPath.split(/[\\/]/).filter((part) => part.length > 0);
+    const romfsIndex = parts.findIndex((part) => part.toLowerCase() === 'romfs');
+    return romfsIndex >= 0 && romfsIndex < parts.length - 1;
 }
 
 /** Where the game's RomFS has a file of the project, relative to it, or undefined when the file is not under the project's RomFS. */
@@ -74,18 +81,64 @@ function cacheKey(filePath: string): string {
  * Marks the files of a mod project whose content differs from the game's: loose files, and files inside archives (nested ones
  * too). The host compares with the game's own copy of each file, so only the game's files that a project has are ever read, and their
  * hashes are kept per game for next time. The marker follows the active game.
+ *
+ * Marked files are shown like git shows changed files: their name in a colour of their own, with a dot on the right. Folders
+ * inside archives are marked the same way when anything under them is; folders on disk never are.
  */
-export class ModifiedFileMarker {
+export class ModifiedFileMarker implements vscode.FileDecorationProvider {
     // Results are kept by file and checked against the file's modified time and size.
     private readonly files = new Map<string, { stamp: string; modified: boolean }>();
     private readonly archives = new Map<string, { stamp: string; modified: Set<string> }>();
-
+    /** The tree items' URIs currently drawn as modified, and whether each is a folder. */
+    private readonly flagged = new Map<string, { uri: vscode.Uri; folder: boolean }>();
+    private readonly onDidChangeFileDecorationsEmitter = new vscode.EventEmitter<vscode.Uri[]>();
+    readonly onDidChangeFileDecorations = this.onDidChangeFileDecorationsEmitter.event;
     constructor(private readonly deps: ModifiedFileMarkerDeps) {}
+
+    provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+        const flag = this.flagged.get(uri.toString());
+        if (!flag) {
+            return undefined;
+        }
+        return new vscode.FileDecoration(
+            '●',
+            flag.folder ? "Contains files that differ from the game's" : "Differs from the game's copy",
+            new vscode.ThemeColor(MODIFIED_COLOR_ID),
+        );
+    }
 
     /** Forgets every result, for when the game or its dump changes. */
     invalidate(): void {
         this.files.clear();
         this.archives.clear();
+        const cleared = [...this.flagged.values()].map((flag) => flag.uri);
+        this.flagged.clear();
+        if (cleared.length > 0) {
+            this.onDidChangeFileDecorationsEmitter.fire(cleared);
+        }
+    }
+
+    /** Draws (or stops drawing) items as modified, and tells VS Code about the ones that changed. */
+    private applyFlags(updates: ReadonlyArray<{ item: MarkableItem; modified: boolean; folder: boolean }>): void {
+        const changed: vscode.Uri[] = [];
+        for (const { item, modified, folder } of updates) {
+            const key = item.resourceUri.toString();
+            const existing = this.flagged.get(key);
+            if (modified && (!existing || existing.folder !== folder)) {
+                this.flagged.set(key, { uri: item.resourceUri, folder });
+                changed.push(item.resourceUri);
+            } else if (!modified && existing) {
+                this.flagged.delete(key);
+                changed.push(item.resourceUri);
+            }
+        }
+        if (changed.length > 0) {
+            this.onDidChangeFileDecorationsEmitter.fire(changed);
+        }
+    }
+
+    dispose(): void {
+        this.onDidChangeFileDecorationsEmitter.dispose();
     }
 
     /**
@@ -105,6 +158,9 @@ export class ModifiedFileMarker {
 
         for (const item of items) {
             const fsPath = item.resourceUri.fsPath;
+            if (!isWithinRomfsFolder(fsPath)) {
+                continue;
+            }
             if (isPathInsideArchive(fsPath)) {
                 const disk = getDiskArchivePath(fsPath);
                 const rel = this.relativeToMount(disk, fallbackProjectRoot, romfs);
@@ -121,13 +177,13 @@ export class ModifiedFileMarker {
             }
         }
 
+        const updates: Array<{ item: MarkableItem; modified: boolean; folder: boolean }> = [];
+
         const missingFiles: Array<{ path: string; rel: string }> = [];
         for (const [file, { item, rel }] of wantedFiles) {
             const cached = this.files.get(cacheKey(file));
             if (cached && cached.stamp === stampOf(file)) {
-                if (cached.modified) {
-                    this.flag(item);
-                }
+                updates.push({ item, modified: cached.modified, folder: false });
             } else {
                 missingFiles.push({ path: file, rel });
             }
@@ -142,10 +198,16 @@ export class ModifiedFileMarker {
         }
         for (const { item, disk, inner } of inside) {
             const cached = this.archives.get(cacheKey(disk));
-            if (cached && cached.stamp === stampOf(disk) && cached.modified.has(inner.toLowerCase())) {
-                this.flag(item);
+            if (cached && cached.stamp === stampOf(disk)) {
+                // A folder (or nested archive) inside the archive is modified when anything under it is.
+                const key = inner.toLowerCase();
+                const prefix = `${key}/`;
+                const isFolder = item.collapsibleState !== undefined && item.collapsibleState !== vscode.TreeItemCollapsibleState.None;
+                const modified = cached.modified.has(key) || (isFolder && [...cached.modified].some((entry) => entry.startsWith(prefix)));
+                updates.push({ item, modified, folder: isFolder && !cached.modified.has(key) });
             }
         }
+        this.applyFlags(updates);
 
         if (missingFiles.length > 0 || missingArchives.length > 0) {
             void this.compare(cachePath, missingFiles, missingArchives)
@@ -157,13 +219,6 @@ export class ModifiedFileMarker {
                 .catch((error: unknown) => {
                     logger.debug(`Could not look for modified files: ${error instanceof Error ? error.message : String(error)}`);
                 });
-        }
-    }
-
-    private flag(item: MarkableItem): void {
-        const existing = typeof item.description === 'string' ? item.description : '';
-        if (!existing.includes(MODIFIED_MARKER)) {
-            item.description = existing ? `${existing} ${MODIFIED_MARKER}` : MODIFIED_MARKER;
         }
     }
 

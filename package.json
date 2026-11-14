@@ -30,6 +30,18 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "colors": [
+      {
+        "id": "TKVSC.modifiedResourceForeground",
+        "description": "Colour of files in Your Projects that differ from the game's copy.",
+        "defaults": {
+          "dark": "#4EC9B0",
+          "light": "#00897B",
+          "highContrast": "#4EC9B0",
+          "highContrastLight": "#00695C"
+        }
+      }
+    ],
     "customEditors": [
       {
         "viewType": "totk-editor.tkprojEditor",
@@ -1059,7 +1071,7 @@
         "TKVSC.markModifiedFiles": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Mark files in Your Projects that differ from the game's, including files inside archives, with `- modified`. It compares content, so it reads the game's copy of each file in a project once (in the background) and remembers the result per game."
+          "markdownDescription": "Mark files in Your Projects that differ from the game's, including files inside archives, by colouring their name and adding a dot (like git shows changed files). Folders inside archives that hold such files are marked the same way. Only things inside a `romfs` folder are marked. The colour is the `TKVSC.modifiedResourceForeground` theme colour. It compares content, so it reads the game's copy of each file in a project once (in the background) and remembers the result per game."
         },
         "TKVSC.projectFolders": {
           "type": "object",

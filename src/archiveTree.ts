@@ -232,7 +232,7 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                 (root) => {
                     const logicalPath = this.resolveConfigRoot(root);
                     const isMissing = this.isRootMissing(root);
-                    return new ArchiveTreeItem(
+                    const item = new ArchiveTreeItem(
                         path.basename(root.fsPath),
                         root,
                         isMissing
@@ -244,6 +244,7 @@ export class ArchiveTreeProvider implements vscode.TreeDataProvider<ArchiveTreeI
                             isMissing,
                         },
                     );
+                    return item;
                 }
             );
         }

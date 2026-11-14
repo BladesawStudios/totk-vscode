@@ -41,7 +41,7 @@ export function openBarsViewer(
     editLoop?: (index: number) => Promise<BarsEntry[] | undefined>,
     replaceGroup?: (indices: number[]) => Promise<BarsEntry[] | undefined>,
     replaceSame?: (indices: number[]) => Promise<BarsEntry[] | undefined>,
-    /** The entries that differ from the game's, shown "- modified" like the file browser shows changed files. */
+    /** The entries that differ from the game's, shown in a colour with a dot, like Your Projects shows changed files. */
     findModified?: () => Promise<number[]>,
     /** Puts one entry back the way the game's copy has it. */
     resetEntry?: (index: number) => Promise<BarsEntry[] | undefined>,
@@ -228,7 +228,7 @@ function renderEntry(e: BarsEntry, idx: number, canReplace: boolean): string {
     return `
         <div class="entry" data-index="${idx}" data-name="${escapeHtml(e.name)}">
             <div class="entry-header">
-                <div class="entry-name">${escapeHtml(e.name)}<span class="entry-modified" id="modified-${idx}" hidden title="Differs from the game's copy of this track">- modified</span></div>
+                <div class="entry-name">${escapeHtml(e.name)}<span class="entry-modified" id="modified-${idx}" hidden title="Differs from the game's copy of this track">●</span></div>
                 <div class="entry-meta">
                     ${e.has_prefetch ? `<button class="tag prefetch" id="tag-prefetch-${idx}" data-index="${idx}">Prefetch</button>` : ''}
                     ${e.has_romfs_bwav ? `<button class="tag romfs" id="tag-romfs-${idx}" data-index="${idx}">Full</button>` : ''}
@@ -349,12 +349,16 @@ function renderPage(barsName: string, entriesHtml: string, playableIndices: numb
         font-size: 14px;
         word-break: break-all;
     }
+    /* Modified tracks look like modified files in Your Projects: the name in the marker colour, with a dot after it. */
+    .entry-name:has(.entry-modified:not([hidden])) {
+        color: var(--vscode-TKVSC-modifiedResourceForeground, #4EC9B0);
+    }
     .entry-modified {
-        margin-left: 6px;
+        margin-left: 8px;
         font-weight: normal;
-        font-size: 12px;
-        color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-descriptionForeground));
+        font-size: 11px;
         white-space: nowrap;
+        cursor: default;
     }
     .entry-meta {
         display: flex;

@@ -1192,6 +1192,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
         getCachePath: () => gameIndexPaths().fileHashCache,
         isEnabled: () => vscode.workspace.getConfiguration('TKVSC').get<boolean>('markModifiedFiles', true),
     });
+    context.subscriptions.push(modifiedFileMarker, vscode.window.registerFileDecorationProvider(modifiedFileMarker));
 
     const runCanonicalPropagation = async (info: {
         diskArchivePath: string;
