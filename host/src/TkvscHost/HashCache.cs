@@ -98,8 +98,25 @@ public sealed class HashCache : IDisposable
 
     private (long Size, long Mtime)? Stamp(string rel)
     {
-        FileInfo file = new(Path.Combine(_romfs, rel));
+        FileInfo file = new(OnDisk(rel));
         return file.Exists ? (file.Length, file.LastWriteTimeUtc.Ticks) : null;
+    }
+
+    // Paths are case-insensitive here (as in the database), but the file system may not be: on Linux, find each part's real casing.
+    private string OnDisk(string rel)
+    {
+        string direct = Path.Combine(_romfs, rel);
+        if (File.Exists(direct) || !Directory.Exists(_romfs)) return direct;
+
+        string current = _romfs;
+        foreach (string part in rel.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string? match = Directory.EnumerateFileSystemEntries(current)
+                .FirstOrDefault(entry => string.Equals(Path.GetFileName(entry), part, StringComparison.OrdinalIgnoreCase));
+            if (match is null) return direct;
+            current = match;
+        }
+        return current;
     }
 
     // A file hashed as a tree has its own hash too, so it answers both questions.
@@ -120,7 +137,7 @@ public sealed class HashCache : IDisposable
     {
         List<(string Path, string Hash)> rows = [];
         // A file that can't be read or opened has no hash, which counts as nothing to compare with.
-        try { _archives.HashFileTree(Path.Combine(_romfs, rel), rel, (path, hash) => rows.Add((path, hash)), descend: tree); }
+        try { _archives.HashFileTree(OnDisk(rel), rel, (path, hash) => rows.Add((path, hash)), descend: tree); }
         catch (Exception) { }
 
         // Writing is best effort: if another process holds the database, the caller still gets this run's answer.

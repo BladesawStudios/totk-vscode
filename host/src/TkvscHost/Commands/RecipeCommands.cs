@@ -217,8 +217,11 @@ public static partial class RecipeCommands
     /// <summary>A path from a recipe under a root folder; one that would leave it (<c>..</c>, a drive, a rooted path) is refused.</summary>
     private static string Inside(string root, string relative)
     {
-        string rootFull = Full(root), full = Path.GetFullPath(Path.Combine(rootFull, relative));
-        if (Path.IsPathRooted(relative) || !full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        // Recipes are shared between systems, so a Windows drive or a backslash path is refused on Linux too.
+        string portable = relative.Replace('\\', '/');
+        bool rooted = Path.IsPathRooted(relative) || portable.StartsWith('/') || (portable.Length >= 2 && portable[1] == ':' && char.IsAsciiLetter(portable[0]));
+        string rootFull = Full(root), full = Path.GetFullPath(Path.Combine(rootFull, portable));
+        if (rooted || !full.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"\"{relative}\" is not a path inside the RomFS; recipes cannot use .. or a full path");
         return full;
     }
