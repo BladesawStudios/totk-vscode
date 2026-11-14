@@ -1051,6 +1051,11 @@
           "minimum": 0,
           "markdownDescription": "How much disk space (MB) decoded BARS audio may use, so a BARS opens without decoding its sounds again. The least recently played sounds are dropped first. `0` turns the cache off. **TKVSC: Clear BARS Audio Cache** empties it."
         },
+        "TKVSC.deleteBarsStreams": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When you delete a BARS from Your Projects, also delete your project's full stream `.bwav` files for its tracks (in `Sound/Resource/Stream`, `Sound/Resource`, `Voice/Resource/Stream`, or `Stream/` beside the BARS). Without the BARS, those streams would still replace the game's audio."
+        },
         "TKVSC.markModifiedFiles": {
           "type": "boolean",
           "default": true,

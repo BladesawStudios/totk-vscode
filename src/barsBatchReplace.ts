@@ -122,6 +122,34 @@ function streamTarget(archiveDir: string, result: BarsBatchItemResult): string {
 }
 
 /**
+ * The project's own full BWAVs for the entries of a BARS on disk: where the host looks for them under the mod's romfs
+ * (Sound/Resource/Stream, Sound/Resource, Voice/Resource/Stream) and Stream/ beside the BARS, where `streamTarget` saves them.
+ */
+export async function findOwnStreams(host: BatchHost, barsPath: string): Promise<string[]> {
+    const listed = await runBridgeReadAsync(host.hostExe, ['list-bars', barsPath, ''], host.env);
+    const entries: BarsEntry[] = (listed as { entries?: BarsEntry[] }).entries ?? [];
+    const archiveDir = path.dirname(barsPath);
+    const modRomfs = /^(.*)[\\/](?:sound|voice)[\\/]resource$/i.exec(archiveDir)?.[1];
+    const folders = [path.join(archiveDir, 'Stream')];
+    if (modRomfs !== undefined) {
+        folders.push(...['Sound/Resource/Stream', 'Sound/Resource', 'Voice/Resource/Stream'].map((dir) => path.join(modRomfs, dir)));
+    }
+    const found = new Map<string, string>();
+    for (const { name } of entries) {
+        if (!name || /[\\/]|^\.\.?$/.test(name)) {
+            continue;
+        }
+        for (const folder of folders) {
+            const candidate = path.join(folder, `${name}.bwav`);
+            if (fs.existsSync(candidate)) {
+                found.set(path.normalize(candidate).toLowerCase(), candidate);
+            }
+        }
+    }
+    return [...found.values()];
+}
+
+/**
  * Replaces the entries of a BARS from dropped audio files, matching each file to the entry of the same name.
  * Shows what matched before changing anything, asks once how the clips should loop, and saves the BARS once.
  */

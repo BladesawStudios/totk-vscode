@@ -13,6 +13,7 @@ import { isPathInsideRomfsFolder } from './projectPaths';
 import { askForProjectOption, getActiveProjectOption, isAdapterOptionFolderContextValue, isAdapterOptionsContextValue } from './projectAdapters/registry';
 import { isFontFilePath } from './fontReplace';
 import { renameDiskPath } from './diskFsOps';
+import { logger } from './logger';
 
 let archiveTreeView: vscode.TreeView<ArchiveTreeItem> | undefined;
 
@@ -43,6 +44,13 @@ const RESETTABLE_CONTEXTS = new Set(['archiveFile', 'archiveBars', 'archiveVirtu
 
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
     return a.length === b.length && Buffer.from(a.buffer, a.byteOffset, a.byteLength).equals(Buffer.from(b.buffer, b.byteOffset, b.byteLength));
+}
+
+/** Finds the project's own full streams for the entries of a BARS on disk, so they go when it is deleted. */
+let barsStreamFinder: ((barsPath: string) => Promise<string[]>) | undefined;
+
+export function setBarsStreamFinder(finder: (barsPath: string) => Promise<string[]>): void {
+    barsStreamFinder = finder;
 }
 
 export function setArchiveRawIo(io: ArchiveRawIo): void {
@@ -381,6 +389,33 @@ async function parallelMap<T, R>(items: T[], fn: (item: T) => Promise<R>, limit 
 
 async function createFolder(uri: vscode.Uri): Promise<void> {
     await vscode.workspace.fs.createDirectory(toSarc(uri));
+}
+
+/**
+ * The project's full streams for the BARS among items being deleted: without the BARS they would still replace the
+ * game's audio. A stream inside one of the items is left out, since it goes with that item anyway.
+ */
+async function streamsOfDeletedBars(items: ArchiveTreeItem[]): Promise<string[]> {
+    if (!barsStreamFinder || !vscode.workspace.getConfiguration('TKVSC').get<boolean>('deleteBarsStreams', true)) {
+        return [];
+    }
+    const streams = new Map<string, string>();
+    for (const item of items) {
+        const fsPath = item.resourceUri.fsPath;
+        if (!isBarsAudioArchive(fsPath) || isPathInsideArchive(fsPath)) {
+            continue;
+        }
+        try {
+            for (const stream of await barsStreamFinder(fsPath)) {
+                if (!items.some((entry) => isSameOrInside(stream, entry.resourceUri.fsPath))) {
+                    streams.set(normalizeFsPath(stream), stream);
+                }
+            }
+        } catch (error) {
+            logger.warn(`Delete: could not list the streams of ${path.basename(fsPath)}: ${errorMessage(error)}`);
+        }
+    }
+    return [...streams.values()];
 }
 
 async function deleteEntry(uri: vscode.Uri): Promise<void> {
@@ -742,15 +777,26 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                     return;
                 }
                 const label = describeCount(items.map((entry) => entry.entryName));
+                const streams = await streamsOfDeletedBars(items);
+                const streamNames = streams.map((stream) => path.basename(stream));
+                const streamNote = streams.length === 0
+                    ? ''
+                    : `Also deletes ${streams.length === 1 ? 'the matching full stream' : `the ${streams.length} matching full streams`} ` +
+                    `in your project: ${streamNames.slice(0, 8).join(', ')}` +
+                    `${streams.length > 8 ? ` and ${streams.length - 8} more` : ''}.\n\n`;
                 const confirm = await vscode.window.showWarningMessage(
                     `Delete ${label}?`,
-                    { modal: true, detail: 'You can undo this with Ctrl+Z in Your Projects while VS Code stays open.' },
+                    { modal: true, detail: `${streamNote}You can undo this with Ctrl+Z in Your Projects while VS Code stays open.` },
                     'Delete',
                 );
                 if (confirm !== 'Delete') {
                     return;
                 }
-                const deleted: { uri: vscode.Uri; snapshot: EntrySnapshot }[] = [];
+                const targets = [
+                    ...items.map((entry) => ({ uri: entry.resourceUri, name: entry.entryName, stream: false })),
+                    ...streams.map((stream) => ({ uri: vscode.Uri.file(stream), name: path.basename(stream), stream: true })),
+                ];
+                const deleted: { uri: vscode.Uri; snapshot: EntrySnapshot; stream: boolean }[] = [];
                 const errors: string[] = [];
                 await vscode.window.withProgress(
                     {
@@ -759,8 +805,8 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                         cancellable: false,
                     },
                     async () => {
-                        for (const entry of items) {
-                            const uri = entry.resourceUri;
+                        for (const target of targets) {
+                            const uri = target.uri;
                             try {
                                 if (!(await pathExists(uri))) {
                                     continue;
@@ -768,16 +814,19 @@ export function registerArchiveFileCommands(context: vscode.ExtensionContext): v
                                 // Never delete something we could not back up for undo.
                                 const snapshot = await snapshotEntry(uri);
                                 await deleteEntry(uri);
-                                deleted.push({ uri, snapshot });
+                                deleted.push({ uri, snapshot, stream: target.stream });
                             } catch (error) {
-                                errors.push(`${entry.entryName}: ${errorMessage(error)}`);
+                                errors.push(`${target.name}: ${errorMessage(error)}`);
                             }
                         }
                     },
                 );
                 if (deleted.length > 0) {
+                    const deletedItems = deleted.filter((entry) => !entry.stream);
+                    const deletedStreams = deleted.length - deletedItems.length;
                     historyManager.push({
-                        description: `Delete ${describeCount(deleted.map((entry) => path.basename(entry.uri.fsPath)))}`,
+                        description: `Delete ${describeCount((deletedItems.length > 0 ? deletedItems : deleted).map((entry) => path.basename(entry.uri.fsPath)))}`
+                            + (deletedItems.length > 0 && deletedStreams > 0 ? ` and ${deletedStreams === 1 ? 'its stream' : `${deletedStreams} streams`}` : ''),
                         undo: async () => {
                             for (const entry of deleted) {
                                 await writeSnapshot(entry.uri, entry.snapshot);

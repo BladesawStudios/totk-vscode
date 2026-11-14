@@ -88,7 +88,7 @@ import {
     migrateSarcWorkspaceFolders,
     registerArchiveTree,
 } from './archiveTree';
-import { getArchiveSelection, invalidateArchiveListings, setArchiveRawIo, setGameCopyResolver } from './archiveFsCommands';
+import { getArchiveSelection, invalidateArchiveListings, setArchiveRawIo, setBarsStreamFinder, setGameCopyResolver } from './archiveFsCommands';
 import { getDumpSelection, registerGameDumpTree, type DumpTreeItem } from './dumpTree';
 import { registerGamePicker } from './gamePicker';
 import { gameCopyPath, ModifiedFileMarker } from './modifiedFiles';
@@ -109,7 +109,7 @@ import { FontViewerProvider } from './fontViewer';
 import { FONT_IMPORT_FILTERS, isFontFilePath } from './fontReplace';
 import { InfoJsonEditorProvider } from './infoJsonEditor';
 import { resolveEditableCopy } from './addToProject';
-import { replaceBarsFromFiles } from './barsBatchReplace';
+import { findOwnStreams, replaceBarsFromFiles } from './barsBatchReplace';
 import { exportBarsTracks } from './barsExport';
 import { BwavEditorProvider } from './bwavEditor';
 import { openHexEditor } from './editors/hexEditor';
@@ -2194,6 +2194,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<TkvscA
 
     archiveTree = registerArchiveTree(context);
     archiveTree.setModifiedFileMarker(modifiedFileMarker);
+    setBarsStreamFinder(async (barsPath) => {
+        const hostExe = getHost();
+        return hostExe ? findOwnStreams({ hostExe, env: getBridgeEnv() }, barsPath) : [];
+    });
     setGameCopyResolver((fsPath) => {
         const romfs = resolveRomfsPath();
         const projectRoot = archiveTree?.projectRootFor(fsPath);
