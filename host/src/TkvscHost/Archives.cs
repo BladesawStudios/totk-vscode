@@ -13,10 +13,6 @@ public sealed class Archives(Containers containers)
 {
     private bool IsArchiveName(string name) => containers.Env.IsArchiveName(name);
 
-    /// <summary>A file that opens as an archive when asked to, but that listings and indexes leave unopened: it would open every part of a model or particle file.</summary>
-    public static bool IsBfresName(Env env, string name)
-        => env.StripCompressedSuffix(name) is var stripped && (stripped.EndsWith(".bfres", StringComparison.OrdinalIgnoreCase) || stripped.EndsWith(".vsetb.byml", StringComparison.OrdinalIgnoreCase));
-
     private bool IsBntxName(string name) => containers.Env.StripCompressedSuffix(name).EndsWith(".bntx", StringComparison.OrdinalIgnoreCase);
 
     // A plugin's format is told from the contents; everything else is SARC.
@@ -214,7 +210,7 @@ public sealed class Archives(Containers containers)
         {
             string path = prefix + entry.Name;
             names.Add(path);
-            if (!IsArchiveName(entry.Name) || IsBfresName(containers.Env, entry.Name)) continue;
+            if (!IsArchiveName(entry.Name)) continue;
 
             // A nested archive that doesn't open still lists as the file it is.
             try
@@ -242,7 +238,7 @@ public sealed class Archives(Containers containers)
         catch (Exception) { plain = raw; }
 
         add(path, FileHashes.Hex(plain));
-        if (!descend || !IsArchiveName(name) || IsBfresName(containers.Env, name) || IsBntxName(name)) return;
+        if (!descend || !IsArchiveName(name) || IsBntxName(name)) return;
 
         // A file that is named like an archive but doesn't open still has its own hash.
         OpenArchive archive;
@@ -385,28 +381,6 @@ public sealed class Archives(Containers containers)
             try { File.Delete(temp); } catch (IOException) { }
             throw;
         }
-    }
-
-    /// <summary>
-    /// Changes the entries of an archive on disk in one pass: <paramref name="edit"/> gets each entry's name and bytes and
-    /// returns its new bytes, or null to leave it. The archive is saved once, and only if something changed; the count of
-    /// changed entries is returned.
-    /// </summary>
-    public int EditEntries(string diskArchivePath, Func<string, byte[], byte[]?> edit)
-    {
-        RejectBntxMutation(diskArchivePath, "write");
-        (OpenArchive archive, Unwrapped wrapping) = LoadArchive(diskArchivePath);
-        int changed = 0;
-        for (int i = 0; i < archive.Entries.Count; i++)
-        {
-            SarcEntry entry = archive.Entries[i];
-            if (edit(entry.Name, entry.Data) is not { } data || data.AsSpan().SequenceEqual(entry.Data)) continue;
-            archive.Entries[i] = entry with { Data = data };
-            changed++;
-        }
-
-        if (changed > 0) Save(diskArchivePath, archive, wrapping);
-        return changed;
     }
 
     public void WriteArchiveFileBytes(string diskArchivePath, string filePath, byte[] data)

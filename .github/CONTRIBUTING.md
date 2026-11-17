@@ -47,7 +47,7 @@ CI runs `lint`, `check-types` and `dotnet test`, then builds a VSIX for every pl
 - Don't include unrelated formatting or whitespace changes
 - Update the docs when behavior changes (see [Documentation](#documentation))
 
-Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) where it makes sense: `feat(recipes): ...`, `fix(bfres): ...`, `chore(deps): ...`. Keep the subject short and in the imperative.
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) where it makes sense: `feat(audio): ...`, `fix(bars): ...`, `chore(deps): ...`. Keep the subject short and in the imperative.
 
 ## Code style
 
@@ -75,13 +75,13 @@ Follow the existing patterns in the file you're editing. There is no auto-format
 
 ### Tests
 
-- Host behavior gets a test in `host/tests/TkvscHost.Tests/`. Build small synthetic files in the test (see `RecipeTests.cs`) instead of committing game files.
+- Host behavior gets a test in `host/tests/TkvscHost.Tests/`. Build small synthetic files in the test (see `AudioTests.cs`) instead of committing game files.
 - **Never commit game data.** No romfs files, dumps, or anything extracted from the game. Tests must run without a game dump.
 - The TypeScript side has no automated tests yet, so describe how you tested your change manually in the PR.
 
 ## Documentation
 
-- User-facing changes get an entry in the next file under `docs/release-notes/`, and the relevant page in `docs/` (`commands.md`, `settings.md`, `recipes.md`, ...) is updated when behavior changes.
+- User-facing changes get an entry in the next file under `docs/release-notes/`, and the relevant page in `docs/` (`commands.md`, `settings.md`, ...) is updated when behavior changes.
 - New settings and commands are declared in `package.json` and documented in `docs/settings.md` / `docs/commands.md`.
 
 ### Addon API documentation
