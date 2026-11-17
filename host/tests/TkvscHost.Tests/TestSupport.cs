@@ -30,7 +30,7 @@ public sealed class Workspace : IDisposable
         File.WriteAllText(path, """
             {
               "version": 1,
-              "extensionToHandler": { "byml": "byml", "bgyml": "byml", "msbt": "msbt", "belnk": "xlnk", "bslnk": "xlnk", "fmaa": "fmaa", "fmat": "fmat", "emitter": "emitter" },
+              "extensionToHandler": { "byml": "byml", "bgyml": "byml", "msbt": "msbt", "belnk": "xlnk", "bslnk": "xlnk" },
               "aampExtensions": ["bphysics"],
               "handlers": {}
             }
